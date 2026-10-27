@@ -5,9 +5,12 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 # Columns added after a table first shipped; applied to older databases on connect.
-ADDED_COLUMNS = [("memories", "source", "TEXT")]
+ADDED_COLUMNS = [("memories", "source", "TEXT"),
+                 ("memories", "times", "INTEGER NOT NULL DEFAULT 1"),  # decision 20: how often it happened
+                 ("memories", "gist_due", "INTEGER NOT NULL DEFAULT 0"),  # 1: rewrite as a gist tonight
+                 ("memories", "pattern", "TEXT")]  # its wording before the gist, to recognise the next time
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (

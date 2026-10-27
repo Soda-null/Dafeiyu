@@ -45,7 +45,7 @@ def run_browse(conn: sqlite3.Connection, now: datetime | None = None, *, brain: 
                     "picked": 0, "seen": 0}
     if items:
         browser = Browser(brain.llm, brain.persona)
-        threads = [m.text for m in store.alive("self")][-5:]
+        threads = [m.line() for m in store.alive("self")][-5:]
         topics = [e.gist for e in EpisodeManager(conn).recent(3) if e.gist]
         picks = browser.pick(items, day=day, threads=threads, topics=topics)
         opened: list[tuple[Item, str]] = []

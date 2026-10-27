@@ -52,7 +52,7 @@ def show(conn: sqlite3.Connection, now: datetime | None = None) -> None:
         else:
             flag = "清楚"
         where = f"  ← {m.source}" if m.source else ""
-        print(f"  [#{m.id}] {m.kind:7} 重要{m.importance:2} R={r:.2f} {flag}  {m.text}{where}")
+        print(f"  [#{m.id}] {m.kind:7} 重要{m.importance:2} R={r:.2f} {flag}  {m.line()}{where}")
     print("== 惦记 ==")
     for f in ProspectiveStore(conn).open():
         print(f"  [#{f.id}] {f.due}  {f.text}")

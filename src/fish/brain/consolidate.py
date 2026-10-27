@@ -1,5 +1,5 @@
 """The night's model calls (docs/memory_design_zh.md §5.4): merge duplicates, spot
-contradictions, reflect, write her diary. Each is one call that returns JSON; a bad reply
+contradictions, rewrite often-repeated things as gists (decision 20), reflect, write her diary. Each is one call that returns JSON; a bad reply
 means "do nothing tonight", never an exception, so the mechanical steps still run.
 """
 
@@ -73,6 +73,19 @@ class Consolidator:
                     and frozenset(ids) in allowed and merged):
                 merges.append(Merge(tuple(ids), merged[:200]))
         return merges
+
+    def gists(self, memories: list[Memory]) -> dict[int, str]:
+        """Things that happened many times, each rewritten without one-off details."""
+        if not memories:
+            return {}
+        items = "\n".join(f"- [#{m.id}]（{m.times} 回）{m.text}" for m in memories)
+        data = self._ask("gist", items=items, temperature=0.3)
+        allowed = {m.id for m in memories}
+        out: dict[int, str] = {}
+        for item in (data or {}).get("gists") or []:
+            if isinstance(item, dict) and item.get("id") in allowed and str(item.get("text", "")).strip():
+                out[item["id"]] = str(item["text"]).strip()[:80]
+        return out
 
     def find_updates(self, groups: list[tuple[Memory, list[Memory]]]) -> list[Update]:
         """groups: (new fact, older facts it might replace)."""

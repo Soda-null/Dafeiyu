@@ -49,12 +49,52 @@ def test_facts_need_to_be_nearly_the_same_to_count_as_a_repeat(store):
     assert len(store.alive("fact")) == 2
 
 
-def test_events_only_repeat_within_one_day(store):
+def test_the_same_thing_every_week_is_one_memory_that_happened_often(store):
+    """Decision 20: a repeat across days counts one more time instead of a new memory."""
     store.note("event", "2026-10-26 他下午有实验课，没法翘课", importance=4, now=T0)
-    store.note("event", "2026-10-26 他下午有实验课，翘不了", importance=4, now=T0 + timedelta(hours=1))
-    store.note("event", "2026-10-27 他下午有实验课，没法翘课", importance=4, now=T0 + timedelta(days=1))
-    assert len(store.alive("event")) == 2  # the same day folded, the next week's lab kept
+    store.note("event", "2026-11-02 他下午有实验课，没法翘课", importance=4, now=T0 + timedelta(days=7))
+    m = store.note("event", "2026-11-09 他下午有实验课，翘不了", importance=4, now=T0 + timedelta(days=14))
+    assert len(store.alive("event")) == 1 and m.times == 3 and m.often == "好几回了"
+    assert m.line().endswith("（好几回了）")
     assert overlap("2026-10-26 他下午有实验课", "2026年10月27日 他下午有实验课") == 1.0  # dates do not count
+
+
+def test_counting_to_three_asks_for_a_gist_and_the_night_writes_it(tmp_path):
+    """She keeps that she counted rice many times, not what number she reached each night."""
+    def respond(messages, json_mode):
+        text = messages[-1]["content"]
+        if "反复发生过好几回" in text:
+            assert "（3 回）" in text
+            return json.dumps({"gists": [{"id": 1, "text": "我老在睡前数米粒，数过好多回，总数不到头"}]},
+                              ensure_ascii=False)
+        return "{}"
+
+    conn = connect(tmp_path / "fish.db")
+    store = MemoryStore(conn)
+    for i, n in enumerate(("三十七", "四十一", "四十四")):
+        store.note("self", f"睡前数米粒，今天数到{n}就乱了", importance=3, now=T0 + timedelta(days=i))
+    (m,) = store.alive("self")
+    assert m.times == 3 and m.gist_due and store.gists_due() == [m]
+    settings = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db")
+    brain = Brain(conn, settings, FakeLLM(respond), persona_text="你是大肥鱼。")
+    report = run_nightly(conn, T0 + timedelta(days=2, hours=8), brain=brain)
+    (m,) = store.alive("self")
+    assert report["gists"] == 1 and m.text == "我老在睡前数米粒，数过好多回，总数不到头"
+    assert m.times == 3 and not m.gist_due and m.line().endswith("（好几回了）")
+    for _ in range(3):  # 6 times: due again
+        store.note("self", "睡前数米粒，今天数到五十就乱了", importance=3, now=T0 + timedelta(days=5))
+    assert store.get(m.id).gist_due and store.get(m.id).often == "很多回了"
+
+
+def test_her_prompt_says_how_often(tmp_path):
+    from fish.brain.prompt import render_recalled
+    from fish.memory.retrieval import recall
+
+    store = MemoryStore(connect(tmp_path / "fish.db"))
+    for day in range(6):
+        store.note("event", "他周五吃食堂的糖醋排骨", importance=4, now=T0 + timedelta(days=7 * day))
+    got = recall(store, "糖醋排骨", T0 + timedelta(days=36))
+    assert "他周五吃食堂的糖醋排骨（很多回了）" in render_recalled(got)
 
 
 INSIGHTS = ["他早上不爱说话", "下雨天他心情差", "考完试他就想吃火锅", "他一忙就不回消息", "他喜欢被损两句",

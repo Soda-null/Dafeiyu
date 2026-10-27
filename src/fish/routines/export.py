@@ -23,12 +23,12 @@ def render_notebook(conn: sqlite3.Connection, now: datetime) -> str:
     lines = [f"# 大肥鱼的小本本（{now.strftime('%Y-%m-%d %H:%M')} 导出）", "",
              "> 她记得的东西。只给你看，不要改；改她要改 docs/persona_zh.md 或提示词。", "",
              "## 底牌"]
-    lines += [f"- [#{m.id}] {m.text}" for m in store.profile()] or ["（还没有）"]
+    lines += [f"- [#{m.id}] {m.line()}" for m in store.profile()] or ["（还没有）"]
     lines += ["", owner_words("## 和他相处的方式")]
-    lines += [f"- [#{m.id}] {m.text}" for m in store.howto_card()] or ["（还在摸索）"]
+    lines += [f"- [#{m.id}] {m.line()}" for m in store.howto_card()] or ["（还在摸索）"]
     lines += ["", "## 长期条目"]
     for m in store.alive():
-        lines.append(f"- [#{m.id}] {m.kind} 重要{m.importance} {clarity(m, now)}  {m.text}")
+        lines.append(f"- [#{m.id}] {m.kind} 重要{m.importance} {clarity(m, now)}  {m.line()}")
     lines += ["", "## 惦记"]
     lines += [f"- {f.due}  {f.text}" for f in ProspectiveStore(conn).open()] or ["（没有）"]
     lines += ["", "## 最近的聊天"]

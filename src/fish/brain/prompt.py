@@ -83,7 +83,7 @@ def render_growth(growth: list[str]) -> str:
 
 
 def render_howto(howto: list[Memory]) -> str:
-    return "\n".join(f"- [#{m.id}] {m.text}" for m in howto) or "（还在摸索）"
+    return "\n".join(f"- [#{m.id}] {m.line()}" for m in howto) or "（还在摸索）"
 
 
 def render_stickers(stickers: list[Sticker]) -> str:
@@ -91,7 +91,7 @@ def render_stickers(stickers: list[Sticker]) -> str:
 
 
 def render_profile(profile: list[Memory]) -> str:
-    return "\n".join(f"- [#{m.id}] {m.text}" for m in profile) or "（还没有）"
+    return "\n".join(f"- [#{m.id}] {m.line()}" for m in profile) or "（还没有）"
 
 
 def render_recalled(recalled: list[Recalled]) -> str:
@@ -100,7 +100,7 @@ def render_recalled(recalled: list[Recalled]) -> str:
     for r in recalled:
         tag = "（模糊）" if r.fuzzy else ""
         tag += "（被提醒才想起）" if r.cued else ""
-        lines.append(f"- [#{r.memory.id}] {r.memory.text}{tag}")
+        lines.append(f"- [#{r.memory.id}] {r.memory.line()}{tag}")
         if r.former and not former_shown:
             lines.append(f"  （你之前记的是：{r.former.text}）")
             former_shown = True

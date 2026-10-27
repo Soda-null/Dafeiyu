@@ -133,6 +133,15 @@ def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
                 done += 1
         report["updated"] = done
 
+    # 3b. things that kept happening -> one gist each, without one-off details (decision 20)
+    if thinker:
+        repeated = store.gists_due()
+        if repeated:
+            rewritten = thinker.gists(repeated)
+            for memory_id, text in rewritten.items():
+                store.rewrite_as_gist(memory_id, text)
+            report["gists"] = len(rewritten)
+
     # 4. reflection: every 7 days, or after 5 chats
     if thinker:
         last_reflect = last_run(conn, "reflect")
@@ -168,7 +177,7 @@ def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
         todays = [e for e in episodes.recent(20)
                   if fish_day(datetime.fromisoformat(e.started)) == day and (e.gist or e.summary)]
         gists = [e.gist or e.summary[:60] for e in reversed(todays)]
-        threads = [m.text for m in store.alive("self")][-5:]
+        threads = [m.line() for m in store.alive("self")][-5:]
         yesterday = next((t for d, t in diary.recent(1) if d < day.isoformat()), "")
         seen_today = [m.text for m in store.seen_recently(now, 2)
                       if fish_day(datetime.fromisoformat(m.created)) == day]

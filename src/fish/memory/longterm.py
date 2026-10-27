@@ -26,6 +26,7 @@ KIND_CAPS = {"insight": 20, "howto": 20}  # beyond this the least stable is push
 # Notes about the chat itself (he is testing her memory) are not things about him.
 ABOUT_THE_CHAT = re.compile(r"考我|考她|记性|记不记得|试探我|试探她|测我记")
 ABOUT_HIM_KINDS = ("fact", "event", "insight", "howto")
+GIST_AT = (3, 6, 12, 24, 48, 96)  # times at which a repeated thing is rewritten as a gist
 _DATE = re.compile(r"\d{4}\s*[-年/.]\s*\d{1,2}\s*[-月/.]\s*\d{1,2}\s*日?")
 
 
@@ -67,6 +68,18 @@ class Memory:
     tags: tuple[str, ...]
     pinned: bool
     source: str | None = None  # kind=world: where she saw it
+    times: int = 1  # how many times it happened or was said (decision 20)
+    gist_due: bool = False  # often enough now to be rewritten as a gist tonight
+    pattern: str | None = None  # how one time of it was worded, kept when the text became a gist
+
+    @property
+    def often(self) -> str:
+        """How she feels about how often: nothing, 好几回, 很多回."""
+        return "" if self.times < 2 else ("好几回了" if self.times < 5 else "很多回了")
+
+    def line(self) -> str:
+        """The text as it goes into a prompt: with "（很多回了）" when it kept happening."""
+        return f"{self.text}（{self.often}）" if self.often else self.text
 
     def retrievability(self, now: datetime) -> float:
         return st.retrievability(self.stability, days_between(self.last_recalled, now))
@@ -90,6 +103,9 @@ def _from_row(r: sqlite3.Row) -> Memory:
         tags=tuple(json.loads(r["tags"] or "[]")),
         pinned=bool(r["pinned"]),
         source=r["source"] if "source" in r.keys() else None,
+        times=r["times"] if "times" in r.keys() else 1,
+        gist_due=bool(r["gist_due"]) if "gist_due" in r.keys() else False,
+        pattern=r["pattern"] if "pattern" in r.keys() else None,
     )
 
 
@@ -147,7 +163,7 @@ class MemoryStore:
             return None
         same = self.repeat_of(kind, text, now)
         if same is not None:
-            return self.touch(same.id, now)
+            return self.happened_again(same.id, now)
         new = self.add(kind, text, importance=importance, now=now, **fields)
         cap = KIND_CAPS.get(kind)
         if cap is not None:
@@ -157,16 +173,37 @@ class MemoryStore:
         return new
 
     def repeat_of(self, kind: str, text: str, now: datetime) -> Memory | None:
-        """The live memory this text repeats, if any. Events only repeat within one day."""
+        """The live memory this text repeats, if any. Across days too (decision 20): the
+        same thing every Friday is one memory that happened many times."""
         threshold = FACT_REPEAT_SIMILARITY if kind == "fact" else REPEAT_SIMILARITY
         best: tuple[float, Memory] | None = None
         for m in self.alive(kind):
-            if kind == "event" and m.created[:10] != iso(now)[:10]:
-                continue
-            sim = overlap(text, m.text)
+            sim = max(overlap(text, m.text), overlap(text, m.pattern) if m.pattern else 0.0)
             if sim >= threshold and (best is None or sim > best[0]):
                 best = (sim, m)
         return best[1] if best else None
+
+    def happened_again(self, memory_id: int, now: datetime | None = None) -> Memory:
+        """The same thing once more: one more time, recalled once, and flagged for a gist
+        rewrite when the count reaches 3, 6, 12, ..."""
+        m = self.touch(memory_id, now)
+        times = m.times + 1
+        self.conn.execute("UPDATE memories SET times = ?, gist_due = gist_due OR ? WHERE id = ?",
+                          (times, int(times in GIST_AT), memory_id))
+        self.conn.commit()
+        return self.get(memory_id)
+
+    def gists_due(self) -> list[Memory]:
+        rows = self.conn.execute("SELECT * FROM memories WHERE gist_due = 1 AND superseded_by IS NULL"
+                                 " ORDER BY id")
+        return [_from_row(r) for r in rows]
+
+    def rewrite_as_gist(self, memory_id: int, text: str) -> Memory:
+        """Nightly: the one-off details are gone, the gist stays; same memory, same strength."""
+        self.conn.execute("UPDATE memories SET pattern = COALESCE(pattern, text), text = ?, gist_due = 0"
+                          " WHERE id = ?", (text, memory_id))
+        self.conn.commit()
+        return self.get(memory_id)
 
     def touch(self, memory_id: int, now: datetime | None = None) -> Memory:
         """She just used this memory: it gets stronger, more so if it was nearly gone."""
@@ -224,7 +261,10 @@ class MemoryStore:
         )
         for o in olds:
             self.supersede(o.id, new.id)
-        return new
+        times = sum(o.times for o in olds)  # both counts carry over (decision 20)
+        self.conn.execute("UPDATE memories SET times = ? WHERE id = ?", (times, new.id))
+        self.conn.commit()
+        return self.get(new.id)
 
     # --- read --------------------------------------------------------------
 
