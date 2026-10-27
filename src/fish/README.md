@@ -9,7 +9,7 @@
 | `config.py` | 从 `.env` 读密钥、模型名、数据库路径；别处不碰环境变量。`TZ` 没写就用她家的时区（`data/home/home.json`） | 能用 |
 | `storage/` | SQLite 连接和建表（八张表，`memory_design_zh.md` §9） | 能用 |
 | `persona/` | 读 `docs/persona_zh.md`：底子（每轮原样进提示词）和"熟悉程度"三档（只有当前档进，决定 11） | 能用 |
-| `memory/` | 只有数据和数学，不调模型：`stability`（遗忘公式）、`longterm`（长期条目：加 / 想起 / 改口 / 合并 / 底牌）、`retrieval`（召回：两道门 + 三项打分；`BigramEmbedder` 不用模型）、`window`（最近 N 轮 + 折叠）、`episodes`（一次聊天）、`prospective`（惦记）、`relationship`（关系账）、`diary` | 能用，30 个测试 |
+| `memory/` | 只有数据和数学，不调模型：`stability`（遗忘公式）、`longterm`（长期条目：加 / 想起 / 改口 / 合并 / 底牌；`note` 是写之前挑：关于聊天本身的不记、重复的加固旧的、规律和相处方式各 20 条上限，决定 19）、`retrieval`（召回：两道门 + 三项打分；`BigramEmbedder` 不用模型）、`window`（最近 N 轮 + 折叠）、`episodes`（一次聊天）、`prospective`（惦记）、`relationship`（关系账）、`diary` | 能用，30 个测试 |
 | `mood/` | 性格最快的一层（决定 13）：精力、无聊、饿每轮变，时钟加偏移不存，`log` 每轮记一行，`rest(tone, drive)` 夜里回到阶段定的基线；`stage_of` 按亲近值分档 | 能用 |
 | `memory/phase.py` | 性格中间层：基调、劲头、在意的事、一句话，`update` 每晚八成旧两成新 | 能用 |
 | `memory/traits.py` | 性格底色层：五根有界滑杆，`apply` 一次最多挪 0.15，`describe` 只说挪得明显的；每月的"回头看"笔记 | 能用 |

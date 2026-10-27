@@ -181,11 +181,11 @@ class Brain:
     def record(self, reply: Reply, episode_id: int, now: datetime,
                seen_source: str | None = None) -> None:
         for n in reply.notes:
-            self.store.add(n.kind, n.text, importance=n.importance, valence=n.valence,
-                           source_episode=episode_id, tags=n.tags, now=now)
+            self.store.note(n.kind, n.text, importance=n.importance, valence=n.valence,
+                            source_episode=episode_id, tags=n.tags, now=now)
         for n in reply.seen:
-            self.store.add("world", n.text, importance=n.importance, valence=n.valence,
-                           source_episode=episode_id, tags=n.tags, source=seen_source, now=now)
+            self.store.note("world", n.text, importance=n.importance, valence=n.valence,
+                            source_episode=episode_id, tags=n.tags, source=seen_source, now=now)
         for f in reply.followups:
             self.prospective.add(f.text, f.due, now=now)
         for c in reply.corrections:
@@ -266,8 +266,8 @@ class Brain:
         fallback = ep.running_summary or "、".join(t.text for t in turns)[:200]
         closed = parse_episode_close(raw, fallback)
         for n in closed.notes:
-            self.store.add(n.kind, n.text, importance=n.importance, valence=n.valence,
-                           source_episode=ep.id, tags=n.tags, now=now)
+            self.store.note(n.kind, n.text, importance=n.importance, valence=n.valence,
+                            source_episode=ep.id, tags=n.tags, now=now)
         for f in closed.followups:
             self.prospective.add(f.text, f.due, now=now)
         return self.episodes.close(ep.id, summary=closed.summary, gist=closed.gist,

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from fish.brain.world import Browser
 from fish.memory import EpisodeManager, MemoryStore
-from fish.routines.nightly import fish_day
+from fish.routines.nightly import SELF_NOTES_PER_NIGHT, fish_day, strongest
 from fish.routines.runs import claim_run, last_run
 from fish.world import Fetch, Item, gather, load_sources, open_item, urllib_fetch
 
@@ -59,9 +59,9 @@ def run_browse(conn: sqlite3.Connection, now: datetime | None = None, *, brain: 
         seen, self_notes = browser.read(opened)
         for s in seen:
             item = opened[s.index][0]
-            store.add("world", s.text, importance=s.importance, valence=s.valence,
-                      tags=tuple(s.tags) + (item.source,), source=item.url, now=now)
-        for text, importance in self_notes:
-            store.add("self", text, importance=importance, now=now)
+            store.note("world", s.text, importance=s.importance, valence=s.valence,
+                       tags=tuple(s.tags) + (item.source,), source=item.url, now=now)
+        for text, importance in strongest(self_notes, SELF_NOTES_PER_NIGHT):
+            store.note("self", text, importance=importance, now=now)
         report.update(picked=len(opened), seen=len(seen), self_notes=len(self_notes))
     return report

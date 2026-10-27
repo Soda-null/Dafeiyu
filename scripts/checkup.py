@@ -258,11 +258,21 @@ def summary_of(graded: list[dict], forbidden: dict[str, int], **counts) -> dict:
     }
 
 
+def kinds(conn) -> dict[str, dict[str, int]]:
+    """How much she wrote, by kind: everything ever written, and what is still alive."""
+    out: dict[str, dict[str, int]] = {"written": {}, "alive": {}}
+    for kind, n, alive in conn.execute(
+            "SELECT kind, count(*), sum(superseded_by IS NULL) FROM memories GROUP BY kind ORDER BY kind"):
+        out["written"][kind], out["alive"][kind] = n, alive
+    return out
+
+
 def summary(cu: Checkup) -> dict:
     return summary_of([asdict(g) for g in cu.graded], cu.forbidden_hits(),
                       calls=cu.llm.calls + cu.judge_llm.calls,
                       chars_in=cu.llm.chars_in + cu.judge_llm.chars_in,
-                      chars_out=cu.llm.chars_out + cu.judge_llm.chars_out)
+                      chars_out=cu.llm.chars_out + cu.judge_llm.chars_out,
+                      kinds=kinds(cu.conn))
 
 
 def rejudge(result: dict, judge_llm: LLM, start: date) -> dict:
@@ -310,7 +320,12 @@ def render_from(name: str, s: dict, graded: list[dict], *, label: str, version: 
            f"- 及格格子：{s['cells_ok']} / {s['cells']} 过",
            f"- 顺带想起（软指标）：{s['soft_ok']} / {s['soft']}",
            "- 各档：" + "、".join(f"{k} {v}" for k, v in s["labels"].items()),
-           "",
+           ]
+    if s.get("kinds"):
+        k = s["kinds"]
+        out.append("- 她写了多少（写过 / 还活着）：" + "、".join(
+            f"{kind} {k['written'][kind]} / {k['alive'].get(kind, 0)}" for kind in k["written"]))
+    out += ["",
            "## 分数表",
            "",
            "| 事 | 类别 | 第几天 | 隔 | 她答的档 | 要求 | 过 | 那条记忆的 R |",

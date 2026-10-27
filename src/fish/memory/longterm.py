@@ -8,6 +8,7 @@ Field meanings: docs/memory_design_zh.md §4.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -17,6 +18,27 @@ from fish.memory import stability as st
 KINDS = ("fact", "event", "howto", "insight", "self", "world")  # world: things she saw online
 PROFILE_IMPORTANCE = 8  # facts at or above this importance form the always-present profile
 PROFILE_SIZE = 12
+
+# Choosing before writing (decision 19): what `note` refuses or folds into an old memory.
+REPEAT_SIMILARITY = 0.5  # same kind, this much bigram overlap (dates removed): a repeat
+FACT_REPEAT_SIMILARITY = 0.8  # facts differ by one number when he corrects himself; stricter
+KIND_CAPS = {"insight": 20, "howto": 20}  # beyond this the least stable is pushed out
+# Notes about the chat itself (he is testing her memory) are not things about him.
+ABOUT_THE_CHAT = re.compile(r"考我|考她|记性|记不记得|试探我|试探她|测我记")
+ABOUT_HIM_KINDS = ("fact", "event", "insight", "howto")
+_DATE = re.compile(r"\d{4}\s*[-年/.]\s*\d{1,2}\s*[-月/.]\s*\d{1,2}\s*日?")
+
+
+def _bigrams(text: str) -> set[str]:
+    chars = [c for c in _DATE.sub("", text) if c.isalnum()]
+    return {a + b for a, b in zip(chars, chars[1:])}
+
+
+def overlap(a: str, b: str) -> float:
+    """Dice overlap of character bigrams with dates taken out: "he had lab on 10-26" and
+    "he had lab on 10-27" are the same words."""
+    x, y = _bigrams(a), _bigrams(b)
+    return 2 * len(x & y) / (len(x) + len(y)) if x and y else 0.0
 
 
 def iso(now: datetime) -> str:
@@ -112,6 +134,39 @@ class MemoryStore:
         )
         self.conn.commit()
         return self.get(cur.lastrowid)
+
+    def note(self, kind: str, text: str, *, importance: int, now: datetime | None = None,
+             **fields) -> Memory | None:
+        """How the brain and the routines write (decision 19): choose before writing.
+
+        None: not written (it is about the chat itself, not about him). An older memory:
+        this was a repeat, so the old one was recalled instead. Otherwise the new memory;
+        if its kind is over its cap, the least stable one of that kind is pushed out."""
+        now = now or datetime.now()
+        if kind in ABOUT_HIM_KINDS and ABOUT_THE_CHAT.search(text):
+            return None
+        same = self.repeat_of(kind, text, now)
+        if same is not None:
+            return self.touch(same.id, now)
+        new = self.add(kind, text, importance=importance, now=now, **fields)
+        cap = KIND_CAPS.get(kind)
+        if cap is not None:
+            others = [m for m in self.alive(kind) if m.id != new.id and not m.pinned]
+            for weakest in sorted(others, key=lambda m: (m.stability, m.id))[:max(0, len(others) + 1 - cap)]:
+                self.supersede(weakest.id, new.id)
+        return new
+
+    def repeat_of(self, kind: str, text: str, now: datetime) -> Memory | None:
+        """The live memory this text repeats, if any. Events only repeat within one day."""
+        threshold = FACT_REPEAT_SIMILARITY if kind == "fact" else REPEAT_SIMILARITY
+        best: tuple[float, Memory] | None = None
+        for m in self.alive(kind):
+            if kind == "event" and m.created[:10] != iso(now)[:10]:
+                continue
+            sim = overlap(text, m.text)
+            if sim >= threshold and (best is None or sim > best[0]):
+                best = (sim, m)
+        return best[1] if best else None
 
     def touch(self, memory_id: int, now: datetime | None = None) -> Memory:
         """She just used this memory: it gets stronger, more so if it was nearly gone."""

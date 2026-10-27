@@ -34,6 +34,7 @@ NIGHT_BOUNDARY = time(3, 30)
 EXPIRED_IMPORTANCE = 3
 MERGE_SIMILARITY = 0.4  # bigram Dice; the model makes the final call, this only picks candidates
 RELATED_SIMILARITY = 0.15
+SELF_NOTES_PER_NIGHT = 1  # decision 19: her life grows by one thread a night at most
 MAX_PAIRS = 10
 MAX_CANDIDATES = 3
 REFLECT_EVERY_DAYS = 7
@@ -49,6 +50,11 @@ def fish_day(ts: datetime) -> date:
 def diary_day(now: datetime) -> date:
     """The day the night closes: yesterday once the boundary has passed."""
     return fish_day(now) - timedelta(days=1)
+
+
+def strongest(notes: list[tuple[str, int]], n: int) -> list[tuple[str, int]]:
+    """Her life grows by at most n threads a night (decision 19): keep the most important."""
+    return sorted(notes, key=lambda x: -x[1])[:n]
 
 
 def _new_today(store: MemoryStore, day: date) -> list[Memory]:
@@ -141,9 +147,9 @@ def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
             old_howto = [m.text for m in store.howto_card()]
             insights, howtos = thinker.reflect(gists, facts, old, old_howto)
             for text, importance in insights:
-                store.add("insight", text, importance=importance, now=now)
+                store.note("insight", text, importance=importance, now=now)
             for text, importance in howtos:
-                store.add("howto", text, importance=importance, now=now)
+                store.note("howto", text, importance=importance, now=now)
             mark_run(conn, "reflect", day.isoformat())
             report["insights"] = len(insights)
             report["howto"] = len(howtos)
@@ -172,8 +178,8 @@ def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
                                           tone_word=prev.tone_word, drive_word=prev.drive_word)
         if text:
             diary.write(day.isoformat(), text)
-            for note, importance in notes:
-                store.add("self", note, importance=importance, now=now)
+            for note, importance in strongest(notes, SELF_NOTES_PER_NIGHT):
+                store.note("self", note, importance=importance, now=now)
             report["diary"] = True
         else:
             line = None
