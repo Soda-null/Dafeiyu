@@ -85,6 +85,7 @@ Dafeiyu/
 ├── src/fish/            代码：channels / persona / memory / mood / brain / routines / world / storage
 ├── tests/               测试
 ├── scripts/             小工具和服务文件
+├── evals/               记忆体检的剧本和结果（编的朋友小周，不含真人）
 ├── data/                她的记忆（SQLite）、微信凭证，不进 git
 └── .env                 密钥和设置，不进 git（样例见 .env.example）
 ```

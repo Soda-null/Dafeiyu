@@ -34,6 +34,30 @@ class DeepSeekLLM:
         return (resp.choices[0].message.content or "").strip()
 
 
+class CountingLLM:
+    """Wraps any LLM and counts calls and characters in and out (the checkup's cost line)."""
+
+    def __init__(self, inner: LLM) -> None:
+        self.inner = inner
+        self.calls = 0
+        self.chars_in = 0
+        self.chars_out = 0
+
+    def chat(self, messages, *, json_mode=False, temperature=1.0, max_tokens=800) -> str:
+        self.calls += 1
+        self.chars_in += sum(len(_text_of(m["content"])) for m in messages)
+        out = self.inner.chat(messages, json_mode=json_mode, temperature=temperature,
+                              max_tokens=max_tokens)
+        self.chars_out += len(out)
+        return out
+
+
+def _text_of(content) -> str:
+    if isinstance(content, str):
+        return content
+    return "".join(part.get("text", "") for part in content if isinstance(part, dict))
+
+
 Responder = Callable[[list[dict[str, str]], bool], str]
 
 

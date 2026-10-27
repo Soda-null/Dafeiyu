@@ -14,7 +14,7 @@
 | `memory/phase.py` | 性格中间层：基调、劲头、在意的事、一句话，`update` 每晚八成旧两成新 | 能用 |
 | `memory/traits.py` | 性格底色层：五根有界滑杆，`apply` 一次最多挪 0.15，`describe` 只说挪得明显的；每月的"回头看"笔记 | 能用 |
 | `memory/relationship.py` | 关系账：认识天数、连续天数、**亲近值**按天涨（每轮 +0.3、开心 +1，但一天最多 +2，熟了以后 +1、很熟以后 +0.8；没聊的日子 −0.5；决定 17） | 能用 |
-| `brain/` | 所有模型调用都在这：`respond.py` 每轮流程（收尾旧情景 → 挑 → 拼 → 问 → 记 → 心情 → 折叠）；`prompt.py` 按 `prompts/*.md` 渲染；`budget.py` 字数预算；`parse.py` 读 JSON 回复；`llm.py`：`DeepSeekLLM`（JSON 模式）和 `FakeLLM` | 能用，还没用真模型验过 |
+| `brain/` | 所有模型调用都在这：`respond.py` 每轮流程（收尾旧情景 → 挑 → 拼 → 问 → 记 → 心情 → 折叠）；`prompt.py` 按 `prompts/*.md` 渲染；`budget.py` 字数预算；`parse.py` 读 JSON 回复；`llm.py`：`DeepSeekLLM`（JSON 模式）、`FakeLLM`、`CountingLLM`（数调用，体检用） | 能用，还没用真模型验过 |
 | `brain/prompts/` | 聊天：`chat.md`（人设 + 怎么回 + 输出格式 + 底牌 / 日记 / 现在 / 想起 / 惦记 / 摘要）、`fold.md`（折叠窗口）、`close_episode.md`（收尾聊天）；夜里：`merge.md`（合并重复）、`contradictions.md`（新事实取代旧的）、`reflect.md`（反思）、`diary.md`（日记和生活线）；用户能直接改 | 能用 |
 | `brain/consolidate.py` | 夜里的四次模型调用（合并、取代、反思、日记），回复坏了就当"今晚不做" | 能用 |
 | `brain/world.py` | 逛的两次模型调用：从今天的标题里挑最多 3 条、看完写见闻和新念头（`prompts/browse_pick.md`、`browse_read.md`）；`brain/ask.py` 是它们共用的"问一句拿 JSON" | 能用 |
