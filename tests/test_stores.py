@@ -50,12 +50,23 @@ def test_followups_come_due_and_expire(conn):
     f = ps.add("问他机器人演示怎么样", "2026-10-31", now=T0)
     assert ps.due(datetime(2026, 10, 30)) == []
     assert [x.id for x in ps.due(datetime(2026, 10, 31, 9))] == [f.id]
-    assert ps.expire(datetime(2026, 11, 3)) == []  # due + 3 days: still within grace
-    expired = ps.expire(datetime(2026, 11, 4))
+    assert ps.expire(datetime(2026, 11, 1)) == []  # due + 1 day: still within grace
+    expired = ps.expire(datetime(2026, 11, 2))
     assert [x.id for x in expired] == [f.id] and ps.get(f.id).status == "expired"
     g = ps.add("问他论文投了没", "2026-11-01", now=T0)
     ps.close(g.id)
     assert ps.get(g.id).status == "asked" and ps.open() == []
+
+
+def test_she_keeps_only_a_few_things_in_mind(conn):
+    """At most five open follow-ups, and none that repeats an open one (decision 17)."""
+    ps = ProspectiveStore(conn)
+    assert ps.add("问他机器人演示怎么样", "2026-10-31", now=T0)
+    assert ps.add("问问他机器人演示怎么样了", "2026-11-01", now=T0) is None  # the same thing again
+    for i, what in enumerate(["期中考试", "面试", "看牙", "去外地", "论文截止", "搬家"]):
+        ps.add(f"问他{what}的结果", f"2026-11-0{i + 2}", now=T0)
+    assert len(ps.open()) == 5
+    assert "搬家" not in "".join(f.text for f in ps.open())
 
 
 def test_relationship_counts_days_and_streak(conn):

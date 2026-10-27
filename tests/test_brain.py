@@ -166,7 +166,7 @@ def test_mood_moves_with_the_turn(tmp_path):
     closeness_before = brain.relationship.closeness
     brain.respond("请你吃饭", now=T0)
     after = MoodStore(conn).load()
-    assert brain.relationship.closeness == pytest.approx(closeness_before + 2)  # relationship layer
+    assert brain.relationship.closeness == pytest.approx(closeness_before + 1)  # relationship layer
     assert after.hunger < before.hunger
     (row,) = conn.execute("SELECT word, energy FROM mood_log").fetchall()
     assert row["word"] == "开心"  # layer C leaves a trace for layer B

@@ -9,9 +9,16 @@ from datetime import date, datetime, timedelta
 from fish.memory.longterm import iso
 
 CLOSENESS_START = 10.0
-CLOSENESS_PER_TURN = 0.5
-CLOSENESS_WHEN_HAPPY = 2.0
-CLOSENESS_DECAY_PER_QUIET_DAY = 1.0
+CLOSENESS_PER_TURN = 0.3
+CLOSENESS_WHEN_HAPPY = 1.0
+# Friends are made over days, not messages (decision 17): one day of talk adds at most this
+# much, less once they are close. Talking daily: 熟了 after about a week, 很熟 after about six.
+DAILY_CAP = ((60.0, 0.8), (25.0, 1.0), (0.0, 2.0))  # (closeness from, most gained per day)
+CLOSENESS_DECAY_PER_QUIET_DAY = 0.5
+
+
+def daily_cap(closeness: float) -> float:
+    return next(cap for floor, cap in DAILY_CAP if closeness >= floor)
 
 
 class Relationship:
@@ -35,7 +42,16 @@ class Relationship:
         return value
 
     def bump_closeness(self, reported: str | None, now: datetime | None = None) -> float:
+        """One turn's worth, until today's cap is used up."""
+        now = now or datetime.now()
+        today = now.date().isoformat()
+        gained = float(self.get("closeness_gained", "0") or 0) if self.get("closeness_day") == today else 0.0
         step = CLOSENESS_WHEN_HAPPY if reported == "开心" else CLOSENESS_PER_TURN
+        step = min(step, daily_cap(self.closeness) - gained)
+        if step <= 0:
+            return self.closeness
+        self.set("closeness_day", today, now)
+        self.set("closeness_gained", f"{gained + step:.2f}", now)
         return self.set_closeness(self.closeness + step, now)
 
     def quiet_day(self, now: datetime | None = None) -> float:

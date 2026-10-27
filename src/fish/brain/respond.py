@@ -19,6 +19,7 @@ from fish.config import Settings
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
 from fish.memory import (Diary, Episode, EpisodeManager, MemoryStore, PhaseStore, ProspectiveStore,
                          Relationship, StickerAlbum, TraitStore, Window, recall)
+from fish.memory.prospective import DUE_SHOWN
 from fish.memory.window import FOLD_BATCH
 from fish.mood import MoodStore, stage_of
 from fish.persona import load_persona, load_stages
@@ -102,7 +103,7 @@ class Brain:
             persona=self.persona, now=now, mood=mood,
             relationship=self.relationship.stats(now),
             profile=self.store.profile(), diary=self.diary.recent(2),
-            recalled=recalled, followups=self.prospective.due(now),
+            recalled=recalled, followups=self.prospective.due(now)[:DUE_SHOWN],
             summary=ep.running_summary, window=window, user_text=user_text,
             limit=self.settings.prompt_chars,
             seen=self.store.seen_recently(now, SEEN_DAYS)[:SEEN_SHOWN],

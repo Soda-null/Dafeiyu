@@ -20,6 +20,7 @@ from fish.brain.prompt import WEEKDAYS
 from fish.config import owner_words
 from fish.memory import Followup, Memory, MemoryStore, ProspectiveStore, Relationship, Window
 from fish.memory.longterm import iso
+from fish.memory.prospective import DUE_SHOWN
 from fish.mood import Mood
 
 DAY_START, DAY_END = time(9, 0), time(22, 30)
@@ -125,7 +126,7 @@ class ReachPolicy:
         shared = self.shared_ids()
         seen = [m for m in store.seen_recently(now, 1)
                 if m.importance >= SHARE_IMPORTANCE and m.id not in shared][:3]
-        due = ProspectiveStore(self.conn).due(now)[:3]
+        due = ProspectiveStore(self.conn).due(now)[:DUE_SHOWN]
         known = self.kv.days_known(now)
         anniversary = known if known in ANNIVERSARIES or (known > 0 and known % 100 == 0) else None
         bored = mood.boredom >= BORED_LEVEL and silence >= BORED_SILENCE_HOURS

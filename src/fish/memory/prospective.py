@@ -7,8 +7,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from fish.memory.longterm import iso
+from fish.memory.retrieval import BigramEmbedder
 
-GRACE_DAYS = 3  # an open follow-up this many days past due is given up on
+# A friend keeps a few things in mind, asks within a day or so, and lets the rest go (decision 17).
+GRACE_DAYS = 1  # an open follow-up this many days past due is given up on
+MAX_OPEN = 5  # no new follow-up while this many are open
+SAME_AS = 0.5  # bigram overlap at which a new follow-up repeats an open one
+DUE_SHOWN = 2  # due follow-ups offered to her in one turn
 
 
 @dataclass(frozen=True)
@@ -21,6 +26,11 @@ class Followup:
     status: str  # open | asked | expired
 
 
+def _overlap(a: str, b: str) -> float:
+    x, y = BigramEmbedder.bigrams(a), BigramEmbedder.bigrams(b)
+    return 2 * len(x & y) / (len(x) + len(y)) if x and y else 0.0
+
+
 def _from_row(r: sqlite3.Row) -> Followup:
     return Followup(r["id"], r["text"], r["due"], r["created"], r["source_memory"], r["status"])
 
@@ -30,8 +40,12 @@ class ProspectiveStore:
         self.conn = conn
 
     def add(self, text: str, due: str, *, source_memory: int | None = None,
-            now: datetime | None = None) -> Followup:
+            now: datetime | None = None) -> Followup | None:
+        """None when she already has enough on her mind, or already means to ask this."""
         now = now or datetime.now()
+        held = self.open()
+        if len(held) >= MAX_OPEN or any(_overlap(text, f.text) >= SAME_AS for f in held):
+            return None
         cur = self.conn.execute(
             "INSERT INTO prospective (text, due, created, source_memory, status)"
             " VALUES (?, ?, ?, ?, 'open')",

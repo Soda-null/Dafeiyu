@@ -115,7 +115,7 @@ def test_closeness_decays_only_on_a_day_without_him(tmp_path):
     run_nightly(conn, datetime(2026, 10, 25, 3, 30), brain=brain)  # closes 10-24: they talked
     assert rel.closeness == 30
     run_nightly(conn, datetime(2026, 10, 26, 3, 30), brain=brain)  # closes 10-25: silence
-    assert rel.closeness == 29
+    assert rel.closeness == 29.5
 
 
 
@@ -128,3 +128,23 @@ def test_owner_can_be_she(monkeypatch):
     assert "他" not in load_template("reflect").replace("其他", "")
     assert "她是你唯一认真聊的人" in load_persona()
     assert "他" not in "".join(load_stages().values()).replace("其他", "")
+
+
+def test_closeness_grows_by_days_not_messages(tmp_path):
+    """A hundred happy messages in one day still make one day's worth (decision 17)."""
+    rel = Relationship(connect(tmp_path / "fish.db"))
+    day = datetime(2026, 10, 26, 20, 0)
+    for i in range(100):
+        rel.bump_closeness("开心", day + timedelta(minutes=i))
+    assert rel.closeness == 12  # 10 to start, 2 a day while new
+    days = 1
+    while stage_of(rel.closeness) != "熟了":
+        days += 1
+        for i in range(30):
+            rel.bump_closeness("开心", day + timedelta(days=days - 1, minutes=i))
+    assert 7 <= days <= 9  # a week or so of talking every day
+    while stage_of(rel.closeness) != "很熟":
+        days += 1
+        for i in range(30):
+            rel.bump_closeness("开心", day + timedelta(days=days - 1, minutes=i))
+    assert 35 <= days <= 50  # about six weeks
