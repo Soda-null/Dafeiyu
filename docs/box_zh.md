@@ -26,6 +26,7 @@
 | 看她今天逛了什么 | `ssh ubuntu-tailscale journalctl --user -u dafeiyu-browse -n 20`（见闻本身在 `fish show` 或导出文件里） |
 | 让她现在就逛一次 | `ssh ubuntu-tailscale 'cd Dafeiyu && .venv/bin/python -m fish browse'`（一天一次，第二次跳过） |
 | 微信说过期了，重扫码 | 先 `ssh ubuntu-tailscale systemctl --user stop dafeiyu-wechat`，再 `ssh -t ubuntu-tailscale 'cd Dafeiyu && .venv/bin/python -m fish wechat login'`（二维码画在 Mac 的终端里），再 `ssh ubuntu-tailscale systemctl --user start dafeiyu-wechat` |
+| 导出她的记忆给试算脚本（`scripts/memory_v2_trial.py`，只读） | 在 box 上 `cd Dafeiyu && .venv/bin/python -c "import json; from dataclasses import asdict; from fish.config import load_settings; from fish.storage import connect; from fish.memory import MemoryStore; c = connect(load_settings().db_path); print(json.dumps({'memories': [asdict(m) for m in MemoryStore(c).alive()], 'episodes': [dict(r) for r in c.execute('SELECT id, started, ended, gist, importance, valence FROM episodes')]}, ensure_ascii=False))" > her_memories.json`，再 scp 到 Mac |
 | 备份她的记忆到 Mac | `rsync -az ubuntu-tailscale:Dafeiyu/data/ ~/Dafeiyu/backups/$(date +%F)/` |
 | 停掉她 | `ssh ubuntu-tailscale systemctl --user stop dafeiyu-wechat` |
 | 不让她先开口 / 改每天上限 | box 的 `~/Dafeiyu/.env` 里加 `FISH_REACH_OUT=0` 或 `FISH_REACH_MAX=1`，然后 `systemctl --user restart dafeiyu-wechat` |
