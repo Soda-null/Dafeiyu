@@ -166,6 +166,9 @@ class MemoryStore:
         now = now or datetime.now()
         if kind in ABOUT_HIM_KINDS and ABOUT_THE_CHAT.search(text):
             return None
+        if kind == "self" and text.lstrip().startswith(("他", "她")):
+            return None  # her life threads are about her; his things are noted in chat
+        # (the persona calls him 他 or 她, FISH_OWNER; she is never the subject in third person)
         same = self.repeat_of(kind, text, now)
         if same is not None:
             return self.happened_again(same.id, now)

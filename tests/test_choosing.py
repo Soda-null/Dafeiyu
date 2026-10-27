@@ -32,6 +32,12 @@ def test_notes_about_the_chat_itself_are_not_kept(store):
     assert [m.text for m in store.alive()] == ["他学机械，大二", "我记性越来越差，米粒数乱了"]
 
 
+def test_her_life_threads_are_not_about_him(store):
+    assert store.note("self", "他最近失眠，还没解决。", importance=3, now=T0) is None
+    assert store.note("self", "他每晚数米粒，数到四十八", importance=3, now=T0) is None  # the pronoun went wrong
+    assert store.note("self", "我老是打算盯着他别碰花生", importance=3, now=T0) is not None
+
+
 def test_a_repeat_reinforces_the_old_memory(store):
     old = store.note("self", "想给鱼缸加点芦苇和水草，弄成湿地那样，说不定有鸟来", importance=3, now=T0)
     again = store.note("self", "鱼缸想加水草，弄成湿地那样，盼着有鸟来", importance=4, now=T0 + timedelta(days=5))
