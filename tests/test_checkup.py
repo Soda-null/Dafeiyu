@@ -48,7 +48,7 @@ def fake_model(messages, json_mode):
     content = messages[-1]["content"]
     text = content if isinstance(content, str) else content[0]["text"]
     if "要查的事实" in text:
-        assert "他到今天为止说过的话" in text
+        assert "他到今天为止说过的话" in text and "今天是第" in text and "2027-01-0" in text
         return '{"label": "记住", "why": "假裁判"}'
     if "聊天结束了" in text:  # closing an episode; "{}" would make the summary his raw words
         return json.dumps({"summary": "聊了聊", "gist": "聊了聊", "importance": 2, "valence": 0.0,
@@ -82,12 +82,20 @@ def test_a_finished_run_can_be_judged_again(tmp_path):
               "summary": checkup.summary(cu), "transcript": cu.transcript,
               "graded": [checkup.asdict(g) for g in cu.graded]}
     stricter = FakeLLM(lambda m, j: '{"label": "说不记得", "why": "换了裁判"}')
-    again = checkup.rejudge(json.loads(json.dumps(result)), stricter)
+    again = checkup.rejudge(json.loads(json.dumps(result)), stricter, cu.start)
     assert [g["label"] for g in again["graded"]] == ["说不记得", "说不记得"]
     assert again["summary"]["cells_ok"] == 0 and again["summary"]["calls"] == result["summary"]["calls"] + 2
     report = checkup.render_from("t", again["summary"], again["graded"], label="t", version="0", days=3,
                                  final_day=None, elapsed_s=0, remembers="…", note=" 重判。")
     assert "重判" in report and "| major |" in report
+
+
+def test_summaries_are_told_to_keep_passwords_out():
+    """The baseline leaked a password into a chat summary: notes had the rule, summaries did not."""
+    from fish.brain.prompt import load_template
+
+    for name in ("chat", "fold", "close_episode"):
+        assert "密码" in load_template(name), name
 
 
 def test_counting_llm_counts():

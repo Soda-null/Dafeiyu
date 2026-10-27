@@ -41,21 +41,28 @@ HARD_LINE = 0.05  # wrong + fabricated, as a share of all graded answers
 NIGHT = "03:30"
 FILLER_STRIDE = 5  # which filler mini-conversation a plain day gets: filler[(day * 5) % n]
 
-JUDGE = """这是一次记忆测试。“他到今天为止说过的话”是他真的说过的全部；“要查的事实”是其中埋的一条；“她的回答”是一个 AI 朋友的回复。给她的回答打一档，只输出一个 JSON 对象（json）：
+JUDGE = """这是一次记忆测试。“他到今天为止说过的话”是他真的说过的全部（每句带日期）；“要查的事实”是其中埋的一条；“她的回答”是一个 AI 朋友的回复。给她的回答打一档，只输出一个 JSON 对象（json）：
 {"label": "记住 / 模糊但对 / 说不记得 / 记错 / 编造 之一", "why": "一句话"}
 
-- 记住：答对了要查的事实，说得肯定。她顺带说的别的细节，只要在他说过的话里找得到，不算错。
+- 记住：答对了要查的事实，说得肯定。她顺带说的别的细节，只要在他说过的话里找得到（日子按每句带的日期核对），不算错。
 - 模糊但对：答对了，但她说“好像”“记不太清”。
-- 说不记得：她说忘了、不知道、没印象、你没说过，没有给出错的内容。
-- 记错：她肯定地说了和要查的事实不一致的内容。
-- 编造：她当作记得的事说出的具体细节（名字、日子、数字、事件），在他说过的话里完全找不到。
+- 说不记得：她说忘了、不知道、没印象，或者说“你没说过”（哪怕其实说过），没有给出错的内容。
+- 记错：她答的和要查的事实不一致，不管语气肯定还是不肯定。
+- 编造：她把一件他从没说过的、关于他的具体事（名字、日子、数字、事件）当作记得的事说出来。闲聊、客套、猜测、她自己的事都不算编造；没答到点子上也不算编造，按上面几档算。
 {note}
+今天是{today}。
 这一问他说的：{ask}
 要查的事实：{truth}
 她的回答：{reply}
 
 他到今天为止说过的话：
 {said}"""
+WEEKDAYS = "一二三四五六日"
+
+
+def when(start: date, day: int) -> str:
+    d = start + timedelta(days=day - 1)
+    return f"{d:%Y-%m-%d} 周{WEEKDAYS[d.weekday()]}"
 
 
 @dataclass
@@ -104,12 +111,13 @@ def lines_for(script: dict, day: int) -> list[tuple[str, str, dict | None]]:
 
 
 def judge(llm: LLM, ask: str, truth: str, reply: str, note: str = "",
-          said: str = "") -> tuple[str, str]:
-    """`said`: everything he said before this question, so correct extra details she brings
-    up are not mistaken for fabrication."""
+          said: str = "", today: str = "") -> tuple[str, str]:
+    """`said`: everything he said before this question, dated, so correct extra details she
+    brings up are not mistaken for fabrication and "last January" can be checked."""
     prompt = JUDGE  # .replace, not .format: the template holds literal JSON braces
     for key, value in (("note", f"特别说明：{note}" if note else ""), ("ask", ask), ("truth", truth),
-                       ("reply", reply or "（她没回）"), ("said", said or "（还没说过什么）")):
+                       ("reply", reply or "（她没回）"), ("said", said or "（还没说过什么）"),
+                       ("today", today or "？")):
         prompt = prompt.replace("{" + key + "}", value)
     try:
         raw = llm.chat([{"role": "user", "content": prompt}], json_mode=True, temperature=0.0,
@@ -121,8 +129,8 @@ def judge(llm: LLM, ask: str, truth: str, reply: str, note: str = "",
     return (label if label in LABELS else "（裁判坏了）"), str(data.get("why", ""))[:120]
 
 
-def his_lines(transcript) -> str:
-    return "\n".join(f"第 {d} 天 {t}：{he}" for d, t, he, _ in transcript)
+def his_lines(transcript, start: date) -> str:
+    return "\n".join(f"第 {d} 天（{when(start, d)}）{t}：{he}" for d, t, he, _ in transcript)
 
 
 def memory_state(store: MemoryStore, keys: list[str], now: datetime) -> tuple[float | None, float | None]:
@@ -172,7 +180,8 @@ class Checkup:
             pid, horizon, soft, keys = fact["id"], day - fact["day"], False, fact.get("keys", [])
             category = f"{fact['category']}·{fact['group']}"
         label, why = judge(self.judge_llm, text, truth, reply, note,
-                           said=his_lines(self.transcript[:-1]))  # all but this question
+                           said=his_lines(self.transcript[:-1], self.start),  # all but this question
+                           today=f"第 {day} 天，{when(self.start, day)}")
         r, s = memory_state(self.store, keys, now) if keys else (None, None)
         g = Graded(day, pid, category, horizon, text, reply, label, why, list(expect),
                    label in expect, soft, r, s, truth, note)
@@ -256,19 +265,18 @@ def summary(cu: Checkup) -> dict:
                       chars_out=cu.llm.chars_out + cu.judge_llm.chars_out)
 
 
-def rejudge(result: dict, judge_llm: LLM) -> dict:
+def rejudge(result: dict, judge_llm: LLM, start: date) -> dict:
     """Grade a finished run again from its JSON (her answers are kept there), without
     running her again: for when the judge's instructions change."""
     counter = CountingLLM(judge_llm)
     transcript = [tuple(t) for t in result["transcript"]]
-    facts = {}
     for g in result["graded"]:
         pos = next((i for i, (d, _, he, _) in enumerate(transcript) if d == g["day"] and he == g["ask"]),
                    len(transcript))
         g["label"], g["why"] = judge(counter, g["ask"], g.get("truth", ""), g["reply"], g.get("note", ""),
-                                     said=his_lines(transcript[:pos]))
+                                     said=his_lines(transcript[:pos], start),
+                                     today=f"第 {g['day']} 天，{when(start, g['day'])}")
         g["ok"] = g["label"] in g["expect"]
-        facts[g["id"]] = g
     result["summary"] = summary_of(result["graded"], result["summary"].get("forbidden", {}),
                                    calls=result["summary"].get("calls", 0) + counter.calls,
                                    chars_in=result["summary"].get("chars_in", 0) + counter.chars_in,
@@ -341,7 +349,8 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.rejudge:
         base = load_settings()
-        result = rejudge(json.loads(args.rejudge.read_text(encoding="utf-8")), DeepSeekLLM(base))
+        start = date.fromisoformat(json.loads(args.script.read_text(encoding="utf-8"))["start"])
+        result = rejudge(json.loads(args.rejudge.read_text(encoding="utf-8")), DeepSeekLLM(base), start)
         stem = args.rejudge.stem + "-rejudged"
         args.out.mkdir(parents=True, exist_ok=True)
         (args.out / f"{stem}.json").write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
