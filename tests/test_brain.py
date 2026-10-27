@@ -149,7 +149,7 @@ def test_stale_episode_is_closed_with_a_summary(tmp_path):
 
 def test_budget_drops_recalled_memories_first(tmp_path):
     llm = scripted()
-    brain, conn = make_brain(tmp_path, llm, prompt_chars=2900)  # fixed part is ~2600 (decision 21 notes)
+    brain, conn = make_brain(tmp_path, llm, prompt_chars=3200)  # fixed part is ~2900 (decision 22 rules)
     store = MemoryStore(conn)
     for i in range(6):
         store.add("event", f"第{i}次聊考试，他说很慌" + "，细节" * 20, importance=5, tags=["考试"], now=T0)
@@ -157,7 +157,7 @@ def test_budget_drops_recalled_memories_first(tmp_path):
     system = system_of(llm)
     shown = sum(1 for i in range(6) if f"第{i}次聊考试" in system)
     assert 1 <= shown < 6
-    assert len(system) <= 2900 + 60
+    assert len(system) <= 3200 + 60
 
 
 def test_mood_moves_with_the_turn(tmp_path):
@@ -185,3 +185,19 @@ def test_her_files_live_next_to_her_database(tmp_path):
     """Stickers and home sit beside fish.db, so a test never reads the real data/ folder."""
     brain, _ = make_brain(tmp_path, scripted())
     assert brain.album.folder == tmp_path / "stickers"
+
+
+def test_close_sees_what_she_always_carries_about_him(tmp_path):
+    llm = scripted()
+    brain, conn = make_brain(tmp_path, llm)
+    MemoryStore(conn).add("fact", "他妹妹叫小雨", importance=9, now=T0)
+    brain.respond("我叫小周，学机械的", now=T0)
+    brain.respond("我回来了", now=T0 + timedelta(hours=2))  # the first chat is closed now
+    close = next(m[0]["content"] for m, _ in llm.calls if "这次和他的聊天结束了" in m[0]["content"])
+    assert "他妹妹叫小雨" in close  # so she can see the major is missing and write it down
+    assert "逐句过一遍" in close
+
+
+def test_nothing_recalled_tells_her_she_does_not_remember():
+    from fish.brain.prompt import render_recalled
+    assert "不记得" in render_recalled([])  # not a cue to guess "好像是面"

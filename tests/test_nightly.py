@@ -137,3 +137,27 @@ def test_no_diary_for_days_before_the_first_chat(tmp_path):
     brain.window.append("user", "你好", "terminal", now=datetime(2026, 10, 28, 12, 0))
     assert "diary" not in run_nightly(conn, NIGHT, brain=brain)  # closes 10-26: before they met
     assert run_nightly(conn, datetime(2026, 10, 29, 3, 30), brain=brain)["diary"] is True
+
+
+def test_a_move_is_checked_against_the_old_address_though_the_words_differ(tmp_path):
+    conn, brain = make(tmp_path, scripted())
+    store = MemoryStore(conn)
+    old = store.add("fact", "他住3号楼，宿舍隔音很差", importance=8, now=NIGHT - timedelta(days=13))
+    moved = store.add("fact", "他1月中旬搬到了七号楼", importance=4, now=datetime(2026, 10, 26, 21, 0))
+    brain.llm = scripted(updates=[{"old_id": old.id, "new_id": moved.id}])
+
+    run_nightly(conn, NIGHT, brain=brain)
+    assert "他住3号楼" in prompt_of(brain.llm, "说法不同")  # 七 counts as 7 when picking candidates
+    assert store.get(old.id).superseded_by == moved.id
+
+
+def test_a_change_the_merge_step_declines_still_replaces_the_old_fact(tmp_path):
+    conn, brain = make(tmp_path, scripted())
+    store = MemoryStore(conn)
+    old = store.add("fact", "他住3号楼，宿舍隔音很差", importance=8, now=NIGHT - timedelta(days=13))
+    new = store.add("fact", "他住七号楼，宿舍隔音不差", importance=8, now=datetime(2026, 10, 26, 21, 0))
+    brain.llm = scripted(merges=[], updates=[{"old_id": old.id, "new_id": new.id}])
+
+    run_nightly(conn, NIGHT, brain=brain)
+    assert "他住3号楼" in prompt_of(brain.llm, "看起来很像")  # alike enough to be offered for merging
+    assert store.get(old.id).superseded_by == new.id  # and still checked as a change

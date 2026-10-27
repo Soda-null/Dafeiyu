@@ -14,7 +14,7 @@ Never depends on the channels package.
 
 from fish.memory.diary import Diary
 from fish.memory.episodes import Episode, EpisodeManager
-from fish.memory.longterm import KINDS, Memory, MemoryStore
+from fish.memory.longterm import KINDS, Memory, MemoryStore, overlap
 from fish.memory.phase import Phase, PhaseStore
 from fish.memory.prospective import Followup, ProspectiveStore
 from fish.memory.relationship import Relationship
@@ -27,5 +27,5 @@ __all__ = [
     "KINDS", "TRAITS", "BigramEmbedder", "Diary", "Embedder", "Episode", "EpisodeManager",
     "Followup", "Growth", "Memory", "MemoryStore", "Phase", "PhaseStore", "ProspectiveStore",
     "Recalled", "Relationship", "Sticker", "StickerAlbum", "TraitStore", "Turn", "Window",
-    "recall",
+    "overlap", "recall",
 ]

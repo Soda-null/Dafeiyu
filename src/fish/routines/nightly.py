@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 from fish.brain.consolidate import Consolidator, similarity
 from fish.config import owner_words
 from fish.memory import (Diary, EpisodeManager, Memory, MemoryStore, PhaseStore, ProspectiveStore,
-                         Relationship, TraitStore)
+                         Relationship, TraitStore, overlap)
 from fish.mood import MoodStore
 from fish.routines.export import export_notebook
 from fish.routines.runs import claim_run, last_run, mark_run
@@ -33,10 +33,11 @@ if TYPE_CHECKING:
 NIGHT_BOUNDARY = time(3, 30)
 EXPIRED_IMPORTANCE = 3
 MERGE_SIMILARITY = 0.4  # bigram Dice; the model makes the final call, this only picks candidates
-RELATED_SIMILARITY = 0.15
+# "住 3 号楼" and "搬到了七号楼" must look alike to the update check: numerals become digits.
+_NUMERALS = str.maketrans("〇零一二两三四五六七八九", "001223456789")
 SELF_NOTES_PER_NIGHT = 1  # decision 19: her life grows by one thread a night at most
 MAX_PAIRS = 10
-MAX_CANDIDATES = 3
+MAX_CANDIDATES = 5
 REFLECT_EVERY_DAYS = 7
 REFLECT_AFTER_EPISODES = 5
 GROWTH_EVERY_DAYS = 30  # layer A looks back about once a month
@@ -76,6 +77,9 @@ def _merge_pairs(new: list[Memory], alive: list[Memory]) -> list[tuple[Memory, M
 
 def _update_groups(new: list[Memory], alive: list[Memory],
                    merged_away: set[int]) -> list[tuple[Memory, list[Memory]]]:
+    """Each new fact with the older facts it might replace. No upper bound on likeness: a pair
+    the merge step declined ("住 3 号楼" / "住七号楼") is exactly a changed fact. Any shared
+    words or tag make a candidate; the model decides, and "拿不准就不列"."""
     groups = []
     for n in new:
         if n.kind != "fact" or n.id in merged_away:
@@ -85,9 +89,9 @@ def _update_groups(new: list[Memory], alive: list[Memory],
             if o.id == n.id or o.kind != "fact" or o.id in merged_away or o.created >= n.created:
                 continue
             shared_tag = bool(set(n.tags) & set(o.tags))
-            sim = similarity(n.text, o.text)
-            if shared_tag or RELATED_SIMILARITY <= sim < MERGE_SIMILARITY:
-                olds.append((sim, o))
+            sim = overlap(n.text.translate(_NUMERALS), o.text.translate(_NUMERALS))
+            if shared_tag or sim > 0:
+                olds.append(((shared_tag, sim), o))
         if olds:
             olds.sort(key=lambda s: s[0], reverse=True)
             groups.append((n, [o for _, o in olds[:MAX_CANDIDATES]]))

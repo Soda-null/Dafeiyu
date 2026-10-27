@@ -104,7 +104,7 @@ def render_recalled(recalled: list[Recalled]) -> str:
         if r.former and not former_shown:
             lines.append(f"  （你之前记的是：{r.former.text}）")
             former_shown = True
-    return "\n".join(lines) or "（没有）"
+    return "\n".join(lines) or "（什么也没想起来。他要是问你记不记得，那就是不记得了）"
 
 
 def render_followups(followups: list[Followup]) -> str:
@@ -167,9 +167,12 @@ def build_fold_messages(summary: str, turns: list[Turn]) -> list[dict[str, str]]
 
 
 def build_close_messages(summary: str, turns: list[Turn], already: list[str],
-                         today: str) -> list[dict[str, str]]:
+                         today: str, known: list[str] | None = None) -> list[dict[str, str]]:
+    """known: what she always carries about him (her profile), so the close can see what is
+    still missing and fill in what the chat forgot to write down."""
     content = render(
         load_template("close_episode"), summary=summary or "（无）", turns=render_turns(turns),
         already="\n".join(f"- {a}" for a in already) or "（无）", today=today,
+        known="\n".join(f"- {k}" for k in known or []) or "（还没有）",
     )
     return [{"role": "user", "content": content}]

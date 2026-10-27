@@ -261,7 +261,8 @@ class Brain:
         if not turns and not ep.running_summary:
             return self.episodes.close(ep.id, summary="", gist="", importance=1, valence=0.0, now=now)
         raw = self.llm.chat(
-            build_close_messages(ep.running_summary, turns, already, ep.started[:10]),  # the chat's own date
+            build_close_messages(ep.running_summary, turns, already, ep.started[:10],  # the chat's own date
+                                 known=[m.text for m in self.store.profile()]),
             json_mode=True, temperature=0.3, max_tokens=600,
         )
         fallback = ep.running_summary or "、".join(t.text for t in turns)[:200]
