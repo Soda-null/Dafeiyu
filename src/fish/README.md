@@ -20,10 +20,10 @@
 | `brain/world.py` | 逛的两次模型调用：从今天的标题里挑最多 3 条、看完写见闻和新念头（`prompts/browse_pick.md`、`browse_read.md`）；`brain/ask.py` 是它们共用的"问一句拿 JSON" | 能用 |
 | `brain/reach.py` | 她先开口（决定 10）：`ReachPolicy` 规则的门和由头（状态存关系账的 `reach_*`），`Reacher` 问她一次说不说（`prompts/reach_out.md`）；`respond.py` 的 `tick(send)` 串起来 | 能用 |
 | `brain/respond.py` 的图片部分 | 他发的图作为图片给模型（只能放在用户那条消息里）；`image_note` 存进对话；`keep_sticker` 收进相册；`sticker` 编号 → `Outgoing` 带图；`prompts/sticker_caption.md` 给 inbox 的图起叫法 | 能用，待真机验证 |
-| `world/` | 只管"看"，不调模型：`feeds`（RSS / Atom）、`bilibili`（热门、分区榜、热评）、`wiki`（中文维基查一下，`Searcher` 协议）、`reader`（网页 → 正文）、`sources.json` + `sources.py`（订阅源、取今天的、点开一条） | 能用 |
+| `world/` | 只管"看"，不调模型：`feeds`（RSS / Atom）、`bilibili`（热门、分区榜、热评）、`wiki`（中文维基查一下，`Searcher` 协议）、`reader`（网页 → 正文）、`files`（他分享的 PDF / Word / 文本 → 正文，决定 23）、`sources.json` + `sources.py`（订阅源、取今天的、点开一条） | 能用 |
 | `world/place.py` + `routines/outside.py` | 她住哪（决定 15）：定位到街区、每天天气、附近的店、街区地图拼图并让她看一次 | 能用 |
 | `routines/` | `nightly.py` 八步，一个"鱼日"（03:30 到次日 03:30）只跑一次；`browse.py` 每天 09:30 起逛一次；`export.py` 写 `data/notebook_export.md`；`runs.py` 记每个例行做到哪天 | 能用 |
-| `messages.py` | 电话线和大脑之间传的 `Incoming(text, image)` / `Outgoing(text, sticker)`，和图片类型探测、data URL | 能用 |
+| `messages.py` | 电话线和大脑之间传的 `Incoming(text, image, file)` / `Outgoing(text, sticker)`，和图片类型探测、data URL | 能用 |
 | `channels/` | `terminal.py`；`ilink.py` 腾讯 ClawBot 的 HTTP 协议（照官方插件 2.4.10：扫码登录、长轮询 `getupdates`、`sendmessage`、正在输入；收图下载解密、上传发图，AES-128-ECB），`wechat.py` 微信电话线（`login` 扫码存凭证；`WeChatChannel` 只回主人、去重、每行一个气泡、文字后发表情包、出错退避、-14 提示重扫；每轮轮询之间 `tick` 让她有机会先开口，`push` 用上次的对话凭证发） | 文字真机验证过；图片待验证 |
 | `memory/stickers.py` | 表情包相册：存图、起叫法、按用过次数排、记用过 | 能用 |
 | `__main__.py` | `python3 -m fish [chat \| nightly \| browse \| show \| wechat [login]]` | 能跑 |

@@ -13,3 +13,5 @@ cryptography==50.0.2
 pytest==9.1.1
 # Stitches OpenStreetMap tiles into her neighbourhood map (decision 15)
 pillow==13.0.0
+# Reads the text of PDFs he shares (decision 23)
+pypdf==6.21.3

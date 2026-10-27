@@ -15,8 +15,9 @@ from pathlib import Path
 from typing import Callable
 
 from fish.channels.base import Incoming, Reply
+from fish.messages import SharedFile
 from fish.channels.ilink import (LOGIN_BASE, MSG_USER, TYPING, TYPING_CANCEL, ILinkClient,
-                                 ILinkError, SessionExpired, image_item_of, text_of)
+                                 ILinkError, SessionExpired, file_item_of, image_item_of, text_of)
 
 STATE_FILE = Path("data/wechat.json")
 SEEN_IDS_KEPT = 200
@@ -284,6 +285,7 @@ class WeChatChannel:
             return False
         texts: list[str] = []
         image: bytes | None = None
+        shared: SharedFile | None = None
         for msg in accepted:
             item = image_item_of(msg)
             if item is not None and image is None:
@@ -291,17 +293,24 @@ class WeChatChannel:
                     image = self.client.download_image(item)
                 except ILinkError as e:
                     self.out(f"（他发的图没取到：{e}）")
+            f_item = file_item_of(msg)
+            if f_item is not None and shared is None:
+                name = str(f_item.get("file_name") or "file")
+                try:
+                    shared = SharedFile(name, self.client.download_file(f_item))
+                except ILinkError as e:
+                    self.out(f"（他发的文件没取到：{e}）")
             text = text_of(msg)
             if text and not (item is not None and text == "[图片]" and image is not None):
                 texts.append(text)
         text = join_fragments(texts)
-        if not text and image is None:
+        if not text and image is None and shared is None:
             return False
         sender = self.state.user_id
         token = self.state.context_tokens.get(sender)
         self._typing(sender, token, TYPING)
         try:
-            out = reply(Incoming(text, image))
+            out = reply(Incoming(text, image, shared))
         finally:
             self._typing(sender, token, TYPING_CANCEL)
         if out.text.strip():

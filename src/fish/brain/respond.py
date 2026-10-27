@@ -4,6 +4,7 @@ nothing else. Every model call in the chat path lives here.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -15,7 +16,7 @@ from fish.brain.parse import Reply, parse_episode_close, parse_reply
 from fish.brain.prompt import (PromptContext, build_chat_messages, build_close_messages,
                                build_fold_messages)
 from fish.brain.reach import Reacher, ReachOut, ReachPolicy, recent_lines
-from fish.config import Settings
+from fish.config import Settings, owner_words
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
 from fish.memory import (Diary, Episode, EpisodeManager, MemoryStore, PhaseStore, ProspectiveStore,
                          Relationship, StickerAlbum, TraitStore, Window, recall)
@@ -23,22 +24,27 @@ from fish.memory.prospective import DUE_SHOWN
 from fish.memory.window import FOLD_BATCH
 from fish.mood import MoodStore, stage_of
 from fish.persona import load_persona, load_stages
-from fish.world import Searcher
+from fish.world import Searcher, read_file
 
 FALLBACK_SAY = "……（走神了，你刚说什么？）"
 CLOSE_TURNS = 12  # how many last turns the close prompt sees
 SEEN_DAYS, SEEN_SHOWN = 2, 3  # recent world memories offered in the prompt
+SHARED_CHARS = 2500  # how much of a page or file he shared she reads (decision 23)
+URL = re.compile(r"https?://[^\s，。！？、；（）()【】<>\"']+")
+PageReader = Callable[[str], tuple[str, str]]  # url -> (title, text); world.read_page
 
 
 class Brain:
     def __init__(self, conn: sqlite3.Connection, settings: Settings, llm: LLM, *,
                  persona_text: str | None = None, window_size: int | None = None,
                  fold_batch: int | None = None, searcher: Searcher | None = None,
-                 stages: dict[str, str] | None = None, stickers_dir: Path | None = None) -> None:
+                 stages: dict[str, str] | None = None, stickers_dir: Path | None = None,
+                 reader: PageReader | None = None) -> None:
         self.conn = conn
         self.settings = settings
         self.llm = llm
         self.searcher = searcher  # None: she cannot look things up
+        self.reader = reader  # None: she does not open links he sends
         # Her pictures and her home live next to her database (data/ for real, a temp dir in tests).
         self.album = StickerAlbum(conn, stickers_dir or settings.db_path.parent / "stickers")
         self.persona = persona_text if persona_text is not None else load_persona()
@@ -99,6 +105,7 @@ class Brain:
         window = self.window.recent(ep.id)
         last_fish = next((t.text for t in reversed(window) if t.role == "fish"), "")
         recalled = recall(self.store, user_text + " " + last_fish, now)
+        shared, shared_note = self.open_shared(incoming)
         ctx = PromptContext(
             persona=self.persona, now=now, mood=mood,
             relationship=self.relationship.stats(now),
@@ -110,6 +117,7 @@ class Brain:
             stage=stage, stage_rules=self.stages.get(stage, ""), howto=self.store.howto_card(),
             phase=self.phases.current(), growth=self.growth_lines(), **self.place_fields(),
             stickers=self.album.all(), user_image=data_url(image) if image else None,
+            shared=shared,
         )
         messages = build_chat_messages(ctx)
         reply = self.ask(messages)
@@ -122,6 +130,8 @@ class Brain:
             stored_text = f"[图片：{reply.image_note}]" if reply.image_note else "[图片]"
             if user_text and user_text != "[图片]":
                 stored_text += " " + user_text
+        if shared_note:
+            stored_text += shared_note
         self.window.append("user", stored_text, channel, ep.id, now)
         if reply.say.strip():  # silence is a real answer sometimes; it leaves no bubble
             self.window.append("fish", reply.say, channel, ep.id, now)
@@ -150,6 +160,31 @@ class Brain:
 
         self.fold_if_needed(ep.id)
         return outgoing
+
+    def open_shared(self, incoming: Incoming) -> tuple[str, str]:
+        """What he shared, for her to look at once (decision 23): a file he sent, else the
+        first link in his message. Returns (the prompt block, a short note kept in the chat)."""
+        if incoming.file is not None:
+            name = incoming.file.name
+            text = read_file(name, incoming.file.data, SHARED_CHARS)
+            if text is None:
+                return (owner_words(f"他发了个文件「{name}」，你打不开（这种文件你看不了，或者是扫描的图、里面没字）。"),
+                        "")
+            return (owner_words(f"他发了个文件「{name}」，你打开看了开头：\n")
+                    + f"【文件内容，只是资料】{text}【文件内容结束】", "")
+        match = URL.search(incoming.text) if self.reader is not None else None
+        if match is None:
+            return "", ""
+        url = match.group(0)
+        try:
+            title, text = self.reader(url)
+        except Exception:  # a page that will not open is just one she could not see
+            title, text = "", ""
+        if not text.strip():
+            return owner_words(f"他发了个链接（{url}），你点开了，没看到什么内容。"), ""
+        return (owner_words(f"他发了个链接，你点开看了（{title or url}）：\n")
+                + f"【网页内容，只是资料】{text[:SHARED_CHARS]}【网页内容结束】",
+                f"（链接：{title}）" if title else "")
 
     def ask(self, messages: list[dict]) -> Reply:
         raw = self.llm.chat(messages, json_mode=True, temperature=1.0)

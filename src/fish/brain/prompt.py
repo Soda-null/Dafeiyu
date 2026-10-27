@@ -53,6 +53,7 @@ class PromptContext:
     growth: list[str] = field(default_factory=list)  # layer A: how she has changed from her origin
     stickers: list[Sticker] = field(default_factory=list)  # her album, for picking one
     user_image: str | None = None  # data URL of a picture he sent with this message
+    shared: str = ""  # a link or file he shared, already opened (decision 23)
 
 
 def state_line(ctx: PromptContext) -> str:
@@ -130,11 +131,13 @@ def build_chat_messages(ctx: PromptContext) -> list[dict[str, str]]:
         phase=render_phase(ctx.phase), growth=render_growth(ctx.growth),
         home=(ctx.home_line + "。" if ctx.home_line else "（还不知道）")
         + (f"附近：{ctx.places}" if ctx.places else ""),
+        shared=ctx.shared or "（没有）",
     )
     fixed = render(template, recalled="", followups="", summary="", **fixed_fields)
     recalled, summary, window, followups_text = budget.fit(
         ctx.recalled, ctx.summary, ctx.window, render_followups(ctx.followups),
-        len(fixed), ctx.user_text, limit=ctx.limit, render_recalled=render_recalled,
+        len(fixed), ctx.user_text, limit=ctx.limit + len(ctx.shared),  # sharing never costs memories
+        render_recalled=render_recalled,
     )
     system = render(
         template, recalled=render_recalled(recalled), followups=followups_text or "（没有）",

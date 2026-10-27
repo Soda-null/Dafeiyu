@@ -49,6 +49,7 @@ CDN_BASE = "https://novac2c.cdn.weixin.qq.com/c2c"
 UPLOAD_IMAGE = 1  # UploadMediaType.IMAGE
 ENCRYPT_TYPE_AES = 1
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
+MAX_FILE_BYTES = 20 * 1024 * 1024  # she reads only the start; a bigger one is not worth fetching
 
 
 class ILinkError(RuntimeError):
@@ -256,22 +257,35 @@ class ILinkClient:
 
     # --- pictures ----------------------------------------------------------------
 
-    def download_image(self, image_item: dict) -> bytes:
-        """Fetch and decrypt a picture he sent (image_item of an inbound message)."""
-        media = image_item.get("media") or {}
+    def _download(self, media: dict, key: bytes | None, what: str) -> bytes:
         url = media.get("full_url")
         if not url:
             param = media.get("encrypt_query_param")
             if not param:
-                raise ILinkError("image has neither full_url nor encrypt_query_param")
+                raise ILinkError(f"{what} has neither full_url nor encrypt_query_param")
             url = f"{self.cdn_base}/download?encrypted_query_param={urllib.parse.quote(param, safe='')}"
         status, body, _ = self.blob_transport("GET", url, {}, None, 30.0)
         if status != 200:
             raise ILinkError(f"cdn download HTTP {status}")
         if len(body) > MAX_IMAGE_BYTES:
-            raise ILinkError("image too large")
-        key = image_key(image_item)
+            raise ILinkError(f"{what} too large")
         return aes_ecb_decrypt(body, key) if key else body
+
+    def download_image(self, image_item: dict) -> bytes:
+        """Fetch and decrypt a picture he sent (image_item of an inbound message)."""
+        return self._download(image_item.get("media") or {}, image_key(image_item), "image")
+
+    def download_file(self, file_item: dict) -> bytes:
+        """Fetch and decrypt a file he sent. The official plugin's rule: files always carry
+        media.aes_key (media-download.ts, FILE branch)."""
+        media = file_item.get("media") or {}
+        b64 = media.get("aes_key")
+        if not b64:
+            raise ILinkError("file has no aes_key")
+        size = str(file_item.get("len") or "")
+        if size.isdigit() and int(size) > MAX_FILE_BYTES:
+            raise ILinkError("file too large")
+        return self._download(media, parse_aes_key(b64), "file")
 
     def upload_image(self, to_user_id: str, data: bytes) -> dict:
         """Encrypt and upload a picture; returns the image_item for sendmessage."""
@@ -333,6 +347,18 @@ def image_item_of(msg: dict) -> dict | None:
     return None
 
 
+def file_item_of(msg: dict) -> dict | None:
+    for item in msg.get("item_list") or []:
+        if isinstance(item, dict) and item.get("type") == ITEM_FILE and isinstance(item.get("file_item"), dict):
+            return item["file_item"]
+    return None
+
+
+def file_label(file_item: dict) -> str:
+    name = str(file_item.get("file_name") or "").strip()
+    return f"[文件：{name}]" if name else MEDIA_LABELS[ITEM_FILE]
+
+
 def text_of(msg: dict) -> str:
     """What he said, as the official plugin reads it: text, else a voice transcript,
     else a label like [图片] so she can react to it."""
@@ -344,6 +370,8 @@ def text_of(msg: dict) -> str:
             return str(item["text_item"]["text"])
         if kind == ITEM_VOICE and (item.get("voice_item") or {}).get("text"):
             return str(item["voice_item"]["text"])
+        if kind == ITEM_FILE and isinstance(item.get("file_item"), dict):
+            return file_label(item["file_item"])
         if kind in MEDIA_LABELS:
             return MEDIA_LABELS[kind]
     return ""

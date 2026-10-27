@@ -13,9 +13,16 @@ MAGIC = ((b"\xff\xd8\xff", "image/jpeg"), (b"\x89PNG", "image/png"), (b"GIF8", "
 
 
 @dataclass(frozen=True)
+class SharedFile:
+    name: str  # as he sent it, "report.pdf"
+    data: bytes  # already decrypted
+
+
+@dataclass(frozen=True)
 class Incoming:
     text: str
     image: bytes | None = None  # a picture he sent, already decrypted
+    file: SharedFile | None = None  # a file he shared (decision 23)
 
 
 @dataclass(frozen=True)

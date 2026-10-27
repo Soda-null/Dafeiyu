@@ -25,7 +25,7 @@ from fish.routines import run_browse, run_nightly
 from fish.routines.outside import run_outside
 from fish.routines.nightly import EXPORT_PATH
 from fish.storage import connect
-from fish.world import WikiSearcher
+from fish.world import WikiSearcher, read_page
 
 WECHAT_STATE = REPO_ROOT / STATE_FILE
 EXPORT_FILE = REPO_ROOT / EXPORT_PATH
@@ -92,7 +92,7 @@ def main(argv: list[str] | None = None) -> None:
         login(ILinkClient(), WECHAT_STATE, previous=previous)
         return
 
-    brain = Brain(conn, settings, DeepSeekLLM(settings), searcher=WikiSearcher())
+    brain = Brain(conn, settings, DeepSeekLLM(settings), searcher=WikiSearcher(), reader=read_page)
     report = run_nightly(conn, brain=brain, export_path=EXPORT_FILE)
     if args.command == "nightly":
         print(report)
