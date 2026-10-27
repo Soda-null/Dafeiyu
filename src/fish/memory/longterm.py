@@ -35,6 +35,8 @@ HAPPENING_KINDS = ("event", "self")
 RULE_KINDS = ("insight", "howto")
 EVIDENCE_DAYS = 3
 UNCONFIRMED = "待印证"
+# Words that make a "him himself" note a passing state (a sore throat last week), not who he is.
+FOR_NOW = re.compile(r"最近|这几天|这阵子|这周|上周|今天|昨天|刚才|还没好|这次|暂时|目前|这两天")
 _DATE = re.compile(r"\d{4}\s*[-年/.]\s*\d{1,2}\s*[-月/.]\s*\d{1,2}\s*日?")
 
 
@@ -185,10 +187,12 @@ class MemoryStore:
         if kind == "self" and text.lstrip().startswith(("他", "她")):
             return None  # her life threads are about her; his things are noted in chat
         # (the persona calls him 他 or 她, FISH_OWNER; she is never the subject in third person)
-        same = self.repeat_of(kind, text, now)
+        about = fields.pop("about", None)
+        if about == "本人" and FOR_NOW.search(text):
+            about = "日常"  # a state for now is not who he is; it does not go on his card
+        same = self.repeat_of(kind, text, now, lifelong=about == "一辈子")
         if same is not None:
             return self.happened_again(same.id, now)
-        about = fields.pop("about", None)
         if kind in RULE_KINDS:
             about = UNCONFIRMED  # however sure the model sounds, one day is one day
             fields["stability"] = st.UNCONFIRMED_DAYS
@@ -209,13 +213,17 @@ class MemoryStore:
                 self.supersede(weakest.id, new.id)
         return new
 
-    def repeat_of(self, kind: str, text: str, now: datetime) -> Memory | None:
+    def repeat_of(self, kind: str, text: str, now: datetime, *, lifelong: bool = False) -> Memory | None:
         """The live memory this text repeats, if any. Across days too (decision 20): the
-        same thing every Friday is one memory that happened many times."""
+        same thing every Friday is one memory that happened many times. A lifelong fact (his
+        birthday) said in other words is still the same one: against pinned facts the bar
+        is the ordinary one, not the strict one for facts."""
         threshold = FACT_REPEAT_SIMILARITY if kind == "fact" else REPEAT_SIMILARITY
         best: tuple[float, Memory] | None = None
         for m in self.alive(kind):
             sim = max(overlap(text, m.text), overlap(text, m.pattern) if m.pattern else 0.0)
+            if lifelong and m.pinned and sim >= REPEAT_SIMILARITY:
+                sim = max(sim, threshold)
             if sim >= threshold and (best is None or sim > best[0]):
                 best = (sim, m)
         return best[1] if best else None

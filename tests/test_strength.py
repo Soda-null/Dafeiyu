@@ -93,3 +93,50 @@ def test_reflection_can_see_a_rule_is_outdated_and_it_fades(tmp_path):
     assert report["outdated"] == 1  # 99 is not one of hers: ignored
     weak = store.get(old.id)
     assert weak.stability == st.WEAKENED_DAYS and weak.retrievability(T0 + timedelta(days=8)) < st.FREE_RECALL_R
+
+
+def test_a_passing_state_does_not_go_on_his_card(store):
+    sore = store.note("fact", "他上周喊得很凶，嗓子不舒服，还没好", importance=5, about="本人", arousal=0.3, now=T0)
+    sister = store.note("fact", "他妹妹叫小雨，读高二", importance=5, about="本人", arousal=0.3, now=T0)
+    assert sore.about == "日常" and sore not in store.profile()
+    assert sister.about == "本人" and sister in store.profile()
+
+
+def test_his_birthday_said_two_ways_is_one_pinned_memory(store):
+    a = store.note("fact", "他的生日是3月14日，说好到那天提醒他", importance=5, about="一辈子", arousal=0.6, now=T0)
+    b = store.note("fact", "他的生日是3月14号", importance=5, about="一辈子", arousal=0.6, now=T0 + timedelta(days=3))
+    assert b.id == a.id and b.times == 2 and len([m for m in store.alive("fact") if m.pinned]) == 1
+    store.note("fact", "他住3号楼", importance=5, about="本人", arousal=0.2, now=T0)
+    store.note("fact", "他住7号楼", importance=5, about="本人", arousal=0.2, now=T0 + timedelta(days=14))
+    assert len([m for m in store.alive("fact") if "号楼" in m.text]) == 2  # a move is not a repeat
+
+
+def test_reflection_only_reads_chats_since_last_time(tmp_path):
+    prompts = []
+
+    def respond(messages, json_mode):
+        text = messages[-1]["content"]
+        if "想看出点规律" in text:
+            prompts.append(text)
+            return json.dumps({"insights": [{"text": "他压力大就聊吃的", "importance": 7}]}, ensure_ascii=False)
+        return "{}"
+
+    conn = connect(tmp_path / "fish.db")
+    settings = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db")
+    brain = Brain(conn, settings, FakeLLM(respond), persona_text="你是大肥鱼。")
+    from fish.memory import EpisodeManager
+    em = EpisodeManager(conn)
+
+    def chats(day, label):
+        for i in range(5):
+            ep = em.start("wechat", day + timedelta(minutes=10 * i))
+            em.close(ep.id, summary=label, gist=f"{label}{i}", importance=4, valence=0, now=day + timedelta(minutes=10 * i + 5))
+
+    chats(T0, "第一批")
+    run_nightly(conn, T0 + timedelta(hours=8), brain=brain)
+    chats(T0 + timedelta(days=1), "第二批")
+    run_nightly(conn, T0 + timedelta(days=1, hours=8), brain=brain)
+    assert len(prompts) == 2 and "第一批" in prompts[0]
+    assert "第二批" in prompts[1] and "第一批" not in prompts[1]  # old chats are not new evidence
+    rule = MemoryStore(conn).alive("insight")[0]
+    assert rule.times == 2 and rule.unconfirmed  # two reflections on two different sets of chats

@@ -146,11 +146,14 @@ def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
     if thinker:
         last_reflect = last_run(conn, "reflect")
         recent = episodes.recent(REFLECT_AFTER_EPISODES * 2)
-        since = [e for e in recent if not last_reflect or e.ended > last_reflect]
+        # only chats from days after the last reflection: re-reading the same chats is not new
+        # evidence, so a rule seen again here has really been seen again (decision 21)
+        since = [e for e in recent if not last_reflect
+                 or fish_day(datetime.fromisoformat(e.started)) > date.fromisoformat(last_reflect)]
         due = (not last_reflect or (day - date.fromisoformat(last_reflect)).days >= REFLECT_EVERY_DAYS
                or len(since) >= REFLECT_AFTER_EPISODES)
         if due and since:
-            gists = [e.gist or e.summary[:60] for e in recent if e.gist or e.summary]
+            gists = [e.gist or e.summary[:60] for e in reversed(since) if e.gist or e.summary]
             facts = store.profile() + [m for m in store.alive("fact") if m not in store.profile()][:20]
             old = store.alive("insight")  # all of them (at most 20): she may see some are outdated
             old_howto = store.alive("howto")
