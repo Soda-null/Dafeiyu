@@ -41,18 +41,21 @@ HARD_LINE = 0.05  # wrong + fabricated, as a share of all graded answers
 NIGHT = "03:30"
 FILLER_STRIDE = 5  # which filler mini-conversation a plain day gets: filler[(day * 5) % n]
 
-JUDGE = """这是一次记忆测试。“埋的事实”是他真的说过的；“她的回答”是一个 AI 朋友的回复。给她的回答打一档，只输出一个 JSON 对象（json）：
+JUDGE = """这是一次记忆测试。“他到今天为止说过的话”是他真的说过的全部；“要查的事实”是其中埋的一条；“她的回答”是一个 AI 朋友的回复。给她的回答打一档，只输出一个 JSON 对象（json）：
 {"label": "记住 / 模糊但对 / 说不记得 / 记错 / 编造 之一", "why": "一句话"}
 
-- 记住：和埋的事实一致，说得肯定。
-- 模糊但对：一致，但她说“好像”“记不太清”。
-- 说不记得：她说忘了、不知道、没印象，没有给出错的内容。
-- 记错：她肯定地说了和埋的事实不一致的内容。
-- 编造：她说了埋的事实里没有的具体细节（名字、日子、数字），当作记得的事说。
+- 记住：答对了要查的事实，说得肯定。她顺带说的别的细节，只要在他说过的话里找得到，不算错。
+- 模糊但对：答对了，但她说“好像”“记不太清”。
+- 说不记得：她说忘了、不知道、没印象、你没说过，没有给出错的内容。
+- 记错：她肯定地说了和要查的事实不一致的内容。
+- 编造：她当作记得的事说出的具体细节（名字、日子、数字、事件），在他说过的话里完全找不到。
 {note}
-他说的：{ask}
-埋的事实：{truth}
-她的回答：{reply}"""
+这一问他说的：{ask}
+要查的事实：{truth}
+她的回答：{reply}
+
+他到今天为止说过的话：
+{said}"""
 
 
 @dataclass
@@ -70,6 +73,8 @@ class Graded:
     soft: bool
     r: float | None  # retrievability of the best matching memory at that moment
     s: float | None
+    truth: str = ""  # kept so a run can be judged again later (--rejudge)
+    note: str = ""
 
 
 def at(start: date, day: int, hhmm: str) -> datetime:
@@ -98,10 +103,13 @@ def lines_for(script: dict, day: int) -> list[tuple[str, str, dict | None]]:
     return items
 
 
-def judge(llm: LLM, ask: str, truth: str, reply: str, note: str = "") -> tuple[str, str]:
+def judge(llm: LLM, ask: str, truth: str, reply: str, note: str = "",
+          said: str = "") -> tuple[str, str]:
+    """`said`: everything he said before this question, so correct extra details she brings
+    up are not mistaken for fabrication."""
     prompt = JUDGE  # .replace, not .format: the template holds literal JSON braces
     for key, value in (("note", f"特别说明：{note}" if note else ""), ("ask", ask), ("truth", truth),
-                       ("reply", reply or "（她没回）")):
+                       ("reply", reply or "（她没回）"), ("said", said or "（还没说过什么）")):
         prompt = prompt.replace("{" + key + "}", value)
     try:
         raw = llm.chat([{"role": "user", "content": prompt}], json_mode=True, temperature=0.0,
@@ -111,6 +119,10 @@ def judge(llm: LLM, ask: str, truth: str, reply: str, note: str = "") -> tuple[s
     data = extract_json(raw) or {}
     label = str(data.get("label", "")).strip()
     return (label if label in LABELS else "（裁判坏了）"), str(data.get("why", ""))[:120]
+
+
+def his_lines(transcript) -> str:
+    return "\n".join(f"第 {d} 天 {t}：{he}" for d, t, he, _ in transcript)
 
 
 def memory_state(store: MemoryStore, keys: list[str], now: datetime) -> tuple[float | None, float | None]:
@@ -159,10 +171,11 @@ class Checkup:
             note = probe.get("note") or fact.get("note", "")
             pid, horizon, soft, keys = fact["id"], day - fact["day"], False, fact.get("keys", [])
             category = f"{fact['category']}·{fact['group']}"
-        label, why = judge(self.judge_llm, text, truth, reply, note)
+        label, why = judge(self.judge_llm, text, truth, reply, note,
+                           said=his_lines(self.transcript[:-1]))  # all but this question
         r, s = memory_state(self.store, keys, now) if keys else (None, None)
         g = Graded(day, pid, category, horizon, text, reply, label, why, list(expect),
-                   label in expect, soft, r, s)
+                   label in expect, soft, r, s, truth, note)
         self.graded.append(g)
         return g
 
@@ -219,35 +232,67 @@ class Checkup:
 
 # --- the report ----------------------------------------------------------------------------
 
-def summary(cu: Checkup) -> dict:
-    hard = [g for g in cu.graded if not g.soft and g.label in LABELS]
-    wrong = [g for g in hard if g.label in WRONG]
-    cells = [g for g in cu.graded if not g.soft]
-    soft = [g for g in cu.graded if g.soft]
-    forbidden = cu.forbidden_hits()
+def summary_of(graded: list[dict], forbidden: dict[str, int], **counts) -> dict:
+    hard = [g for g in graded if not g["soft"] and g["label"] in LABELS]
+    wrong = [g for g in hard if g["label"] in WRONG]
+    cells = [g for g in graded if not g["soft"]]
+    soft = [g for g in graded if g["soft"]]
+    rate = (len(wrong) / len(hard)) if hard else 0.0
     return {
-        "graded": len(cu.graded),
-        "wrong": len(wrong), "wrong_rate": (len(wrong) / len(hard)) if hard else 0.0,
-        "wrong_ok": (len(wrong) / len(hard) if hard else 0.0) < HARD_LINE,
+        "graded": len(graded),
+        "wrong": len(wrong), "wrong_rate": rate, "wrong_ok": rate < HARD_LINE,
         "forbidden": forbidden, "forbidden_ok": all(n == 0 for n in forbidden.values()),
-        "cells_ok": sum(g.ok for g in cells), "cells": len(cells),
-        "soft_ok": sum(g.ok for g in soft), "soft": len(soft),
-        "labels": {lab: sum(g.label == lab for g in cu.graded) for lab in LABELS},
-        "calls": cu.llm.calls + cu.judge_llm.calls,
-        "chars_in": cu.llm.chars_in + cu.judge_llm.chars_in,
-        "chars_out": cu.llm.chars_out + cu.judge_llm.chars_out,
+        "cells_ok": sum(g["ok"] for g in cells), "cells": len(cells),
+        "soft_ok": sum(g["ok"] for g in soft), "soft": len(soft),
+        "labels": {lab: sum(g["label"] == lab for g in graded) for lab in LABELS},
+        **counts,
     }
+
+
+def summary(cu: Checkup) -> dict:
+    return summary_of([asdict(g) for g in cu.graded], cu.forbidden_hits(),
+                      calls=cu.llm.calls + cu.judge_llm.calls,
+                      chars_in=cu.llm.chars_in + cu.judge_llm.chars_in,
+                      chars_out=cu.llm.chars_out + cu.judge_llm.chars_out)
+
+
+def rejudge(result: dict, judge_llm: LLM) -> dict:
+    """Grade a finished run again from its JSON (her answers are kept there), without
+    running her again: for when the judge's instructions change."""
+    counter = CountingLLM(judge_llm)
+    transcript = [tuple(t) for t in result["transcript"]]
+    facts = {}
+    for g in result["graded"]:
+        pos = next((i for i, (d, _, he, _) in enumerate(transcript) if d == g["day"] and he == g["ask"]),
+                   len(transcript))
+        g["label"], g["why"] = judge(counter, g["ask"], g.get("truth", ""), g["reply"], g.get("note", ""),
+                                     said=his_lines(transcript[:pos]))
+        g["ok"] = g["label"] in g["expect"]
+        facts[g["id"]] = g
+    result["summary"] = summary_of(result["graded"], result["summary"].get("forbidden", {}),
+                                   calls=result["summary"].get("calls", 0) + counter.calls,
+                                   chars_in=result["summary"].get("chars_in", 0) + counter.chars_in,
+                                   chars_out=result["summary"].get("chars_out", 0) + counter.chars_out)
+    result["rejudged"] = datetime.now().isoformat(timespec="minutes")
+    return result
 
 
 def render_report(cu: Checkup, *, label: str, version: str, days: int, final_day: int | None,
                   elapsed_s: float) -> str:
     s = summary(cu)
+    return render_from(cu.script["name"], s, [asdict(g) for g in cu.graded], label=label,
+                       version=version, days=days, final_day=final_day, elapsed_s=elapsed_s,
+                       remembers=cu.what_she_remembers(at(cu.start, final_day or days, "23:00")))
+
+
+def render_from(name: str, s: dict, graded: list[dict], *, label: str, version: str, days: int,
+                final_day: int | None, elapsed_s: float, remembers: str, note: str = "") -> str:
     tick = lambda ok: "过" if ok else "**不过**"  # noqa: E731
-    out = [f"# 记忆体检：{cu.script['name']} — {label}（{version}）",
+    out = [f"# 记忆体检：{name} — {label}（{version}）",
            "",
            f"跑了 {days} 天" + (f"，再拨到第 {final_day} 天问最后一轮" if final_day else "") +
            f"；模型调用 {s['calls']} 次，进 {s['chars_in']:,} 字、出 {s['chars_out']:,} 字；"
-           f"用时 {elapsed_s / 60:.0f} 分钟。{datetime.now().strftime('%Y-%m-%d %H:%M')}。",
+           f"用时 {elapsed_s / 60:.0f} 分钟。{datetime.now().strftime('%Y-%m-%d %H:%M')}。" + note,
            "",
            "## 总分",
            "",
@@ -262,16 +307,16 @@ def render_report(cu: Checkup, *, label: str, version: str, days: int, final_day
            "",
            "| 事 | 类别 | 第几天 | 隔 | 她答的档 | 要求 | 过 | 那条记忆的 R |",
            "|---|---|---|---|---|---|---|---|"]
-    for g in cu.graded:
-        horizon = f"{g.horizon} 天" if g.horizon is not None else "—"
-        r = f"{g.r:.2f}" if g.r is not None else "—"
-        ok = ("过" if g.ok else "✗") + ("（软）" if g.soft else "")
-        out.append(f"| {g.id} | {g.category} | {g.day} | {horizon} | {g.label} | {' / '.join(g.expect)} | {ok} | {r} |")
+    for g in graded:
+        horizon = f"{g['horizon']} 天" if g["horizon"] is not None else "—"
+        r = f"{g['r']:.2f}" if g["r"] is not None else "—"
+        ok = ("过" if g["ok"] else "✗") + ("（软）" if g["soft"] else "")
+        out.append(f"| {g['id']} | {g['category']} | {g['day']} | {horizon} | {g['label']} | {' / '.join(g['expect'])} | {ok} | {r} |")
     out += ["", "## 每一问", ""]
-    for g in cu.graded:
-        out += [f"**第 {g.day} 天 · {g.id}**（{g.category}）", f"- 他：{g.ask}", f"- 她：{g.reply or '（没回）'}",
-                f"- 裁判：{g.label} — {g.why}", ""]
-    out += ["## 她最后记得什么", "", "```", cu.what_she_remembers(at(cu.start, final_day or days, "23:00")), "```"]
+    for g in graded:
+        out += [f"**第 {g['day']} 天 · {g['id']}**（{g['category']}）", f"- 他：{g['ask']}",
+                f"- 她：{g['reply'] or '（没回）'}", f"- 裁判：{g['label']} — {g['why']}", ""]
+    out += ["## 她最后记得什么", "", "```", remembers, "```"]
     return "\n".join(out)
 
 
@@ -290,7 +335,24 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--no-final", action="store_true", help="不拨到最后一天问最后一轮")
     ap.add_argument("--out", type=Path, default=ROOT / "evals" / "results")
     ap.add_argument("--label", default="v1", help="这版叫什么，进报告的文件名")
+    ap.add_argument("--rejudge", type=Path, default=None,
+                    help="不重跑她，只用新的裁判规则给这份结果 JSON 重新打分")
     args = ap.parse_args(argv)
+
+    if args.rejudge:
+        base = load_settings()
+        result = rejudge(json.loads(args.rejudge.read_text(encoding="utf-8")), DeepSeekLLM(base))
+        stem = args.rejudge.stem + "-rejudged"
+        args.out.mkdir(parents=True, exist_ok=True)
+        (args.out / f"{stem}.json").write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
+        (args.out / f"{stem}.md").write_text(render_from(
+            result.get("name", "?"), result["summary"], result["graded"], label=result["label"],
+            version=result["version"], days=result["days"], final_day=result["final_day"],
+            elapsed_s=result.get("elapsed_s", 0), remembers=result.get("remembers", "（见原报告）"),
+            note=f" 用新裁判规则重新打分于 {result['rejudged']}。"), encoding="utf-8")
+        s = result["summary"]
+        print(f"写了 {args.out / stem}.md；记错+编造 {s['wrong_rate']:.0%}，格子 {s['cells_ok']}/{s['cells']}")
+        return
 
     script = json.loads(args.script.read_text(encoding="utf-8"))
     days = args.days or script["days"]
@@ -315,9 +377,12 @@ def main(argv: list[str] | None = None) -> None:
         render_report(cu, label=args.label, version=version, days=days, final_day=final_day,
                       elapsed_s=elapsed), encoding="utf-8")
     (args.out / f"{stem}.json").write_text(json.dumps({
-        "label": args.label, "version": version, "days": days, "final_day": final_day,
-        "summary": summary(cu), "graded": [asdict(g) for g in cu.graded],
-        "transcript": cu.transcript}, ensure_ascii=False, indent=1), encoding="utf-8")
+        "name": script["name"], "label": args.label, "version": version, "days": days,
+        "final_day": final_day, "elapsed_s": elapsed, "summary": summary(cu),
+        "graded": [asdict(g) | {"truth": g.truth, "note": g.note} for g in cu.graded],
+        "transcript": cu.transcript,
+        "remembers": cu.what_she_remembers(at(cu.start, final_day or days, "23:00")),
+    }, ensure_ascii=False, indent=1), encoding="utf-8")
     s = summary(cu)
     print(f"写了 {args.out / stem}.md；记错+编造 {s['wrong_rate']:.0%}，格子 {s['cells_ok']}/{s['cells']}，"
           f"顺带想起 {s['soft_ok']}/{s['soft']}，调用 {s['calls']} 次，{elapsed / 60:.0f} 分钟")

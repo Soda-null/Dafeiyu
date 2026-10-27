@@ -47,7 +47,8 @@ def fake_model(messages, json_mode):
     """Chat turns get a quiet reply; the judge gets 记住; nightly prompts get nothing."""
     content = messages[-1]["content"]
     text = content if isinstance(content, str) else content[0]["text"]
-    if "埋的事实" in text:
+    if "要查的事实" in text:
+        assert "他到今天为止说过的话" in text
         return '{"label": "记住", "why": "假裁判"}'
     if "聊天结束了" in text:  # closing an episode; "{}" would make the summary his raw words
         return json.dumps({"summary": "聊了聊", "gist": "聊了聊", "importance": 2, "valence": 0.0,
@@ -71,6 +72,22 @@ def test_five_days_with_a_fake_model(tmp_path):
     assert "记错 + 编造：0 / 4" in report and "| major | 本人·被提过 | 2 | 1 天 | 记住 |" in report
     s = checkup.summary(cu)
     assert s["wrong_ok"] and s["forbidden_ok"] and s["cells_ok"] == 4
+
+
+def test_a_finished_run_can_be_judged_again(tmp_path):
+    cu = checkup.Checkup(SCRIPT, FakeLLM(fake_model), FakeLLM(fake_model), tmp_path)
+    cu.log = lambda *a, **k: None
+    cu.run(days=3, final_day=None)
+    result = {"name": "t", "label": "t", "version": "0", "days": 3, "final_day": None,
+              "summary": checkup.summary(cu), "transcript": cu.transcript,
+              "graded": [checkup.asdict(g) for g in cu.graded]}
+    stricter = FakeLLM(lambda m, j: '{"label": "说不记得", "why": "换了裁判"}')
+    again = checkup.rejudge(json.loads(json.dumps(result)), stricter)
+    assert [g["label"] for g in again["graded"]] == ["说不记得", "说不记得"]
+    assert again["summary"]["cells_ok"] == 0 and again["summary"]["calls"] == result["summary"]["calls"] + 2
+    report = checkup.render_from("t", again["summary"], again["graded"], label="t", version="0", days=3,
+                                 final_day=None, elapsed_s=0, remembers="…", note=" 重判。")
+    assert "重判" in report and "| major |" in report
 
 
 def test_counting_llm_counts():
