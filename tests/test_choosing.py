@@ -63,7 +63,7 @@ def test_counting_to_three_asks_for_a_gist_and_the_night_writes_it(tmp_path):
     """She keeps that she counted rice many times, not what number she reached each night."""
     def respond(messages, json_mode):
         text = messages[-1]["content"]
-        if "反复发生过好几回" in text:
+        if "夜里整理小本本" in text and "（3 回）" in text:
             assert "（3 回）" in text
             return json.dumps({"gists": [{"id": 1, "text": "我老在睡前数米粒，数过好多回，总数不到头"}]},
                               ensure_ascii=False)
