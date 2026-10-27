@@ -1,0 +1,15 @@
+# Pinned to what was installed and tested in .venv on 2026-10-26 (Python 3.14, macOS arm64).
+# Rebuild: python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt
+
+# DeepSeek's API is OpenAI-compatible; this client is the only network dependency.
+openai==3.37.0
+# Reads .env
+python-dotenv==1.2.4
+# Draws the WeChat login QR code in the terminal
+qrcode==8.2
+# AES-128-ECB for pictures on WeChat's CDN (decision 12)
+cryptography==50.0.2
+# Tests
+pytest==9.1.1
+# Stitches OpenStreetMap tiles into her neighbourhood map (decision 15)
+pillow==13.0.0

@@ -1,0 +1,26 @@
+.DS_Store
+._*
+
+# Editor recovery and lock files
+~$*
+*.swp
+*.swo
+*.tmp
+
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# The fish's memory: private chat data, never committed
+data/

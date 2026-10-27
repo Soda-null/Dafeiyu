@@ -1,0 +1,8 @@
+[
+  {"name": "少数派", "kind": "rss", "url": "https://sspai.com/feed", "flavor": "数码和生活"},
+  {"name": "IT之家", "kind": "rss", "url": "https://www.ithome.com/rss/", "flavor": "科技新闻"},
+  {"name": "BBC 中文", "kind": "rss", "url": "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml", "flavor": "新闻"},
+  {"name": "Hacker News", "kind": "rss", "url": "https://hnrss.org/frontpage", "flavor": "英文技术圈"},
+  {"name": "B 站热门", "kind": "bilibili", "url": "https://api.bilibili.com/x/web-interface/popular?ps=15", "flavor": "刷视频"},
+  {"name": "B 站音乐区", "kind": "bilibili", "url": "https://api.bilibili.com/x/web-interface/ranking/v2?rid=3&type=all", "flavor": "听歌"}
+]

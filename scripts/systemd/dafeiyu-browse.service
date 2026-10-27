@@ -1,0 +1,9 @@
+# Her daily browse (docs/world_design_zh.md §4), started by dafeiyu-browse.timer.
+[Unit]
+Description=Dafeiyu daily browse
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Dafeiyu
+ExecStart=%h/Dafeiyu/.venv/bin/python -m fish browse
+Environment=PYTHONUNBUFFERED=1

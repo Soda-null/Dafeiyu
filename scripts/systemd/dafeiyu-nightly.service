@@ -1,0 +1,9 @@
+# Her nightly routine (docs/memory_design_zh.md §5.4), started by dafeiyu-nightly.timer.
+[Unit]
+Description=Dafeiyu nightly routine
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Dafeiyu
+ExecStart=%h/Dafeiyu/.venv/bin/python -m fish nightly
+Environment=PYTHONUNBUFFERED=1

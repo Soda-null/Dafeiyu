@@ -1,0 +1,24 @@
+#!/bin/sh
+# Every commit names the agent that wrote it (AGENTS.md). Enable once per clone:
+#     git config core.hooksPath .githooks
+msg_file="$1"
+
+head -1 "$msg_file" | grep -Eq '^(Merge|Revert|fixup!|squash!)' && exit 0
+
+first_len=$(head -1 "$msg_file" | LC_ALL=en_US.UTF-8 wc -m | tr -d ' ')
+if [ "${first_len:-0}" -gt 100 ]; then
+    echo "note: first line is ${first_len} characters; AGENTS.md asks for under 100." >&2
+fi
+
+if grep -Eq '^Agent: (codex|claude-code|deepseek|human)$' "$msg_file"; then
+    exit 0
+fi
+
+cat >&2 <<'MSG'
+commit rejected: add an agent trailer on its own line, e.g.
+
+    Agent: claude-code
+
+See AGENTS.md.
+MSG
+exit 1

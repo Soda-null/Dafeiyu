@@ -1,0 +1,14 @@
+# 03:30 every night in her TZ (decision 6, item 4; systemd instead of launchd since she
+# lives on the Ubuntu box, decision 8). Persistent=true runs a missed night after a reboot.
+# The deploy script's drop-in tz.conf re-states OnCalendar with the user's timezone, because
+# a timer's clock is the box's own TZ, not the service's Environment=TZ.
+[Unit]
+Description=Dafeiyu nightly routine at 03:30
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,17 @@
+# Her WeChat line, as a user service on the always-on box (docs/box_zh.md).
+# Installed by scripts/deploy_box.sh into ~/.config/systemd/user/. TZ comes from the
+# drop-in tz.conf the script writes, so her clock matches where the user lives.
+[Unit]
+Description=Dafeiyu on WeChat
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=%h/Dafeiyu
+ExecStart=%h/Dafeiyu/.venv/bin/python -m fish wechat
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
