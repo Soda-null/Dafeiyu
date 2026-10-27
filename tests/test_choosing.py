@@ -86,6 +86,16 @@ def test_counting_to_three_asks_for_a_gist_and_the_night_writes_it(tmp_path):
     assert store.get(m.id).gist_due and store.get(m.id).often == "很多回了"
 
 
+def test_a_fact_said_again_is_confirmed_not_happening_often(store):
+    """His birthday said three times is still one birthday: counted, never "好几回", no gist."""
+    for i in range(3):
+        m = store.note("fact", "他的生日是3月14日", importance=8, now=T0 + timedelta(days=i))
+    assert m.times == 3 and not m.gist_due and m.often == "" and m.line() == "他的生日是3月14日"
+    for i in range(3):
+        h = store.note("howto", "他饿着赶路时直接催他先吃", importance=6, now=T0 + timedelta(days=i))
+    assert h.times == 3 and not h.gist_due and h.line() == h.text
+
+
 def test_her_prompt_says_how_often(tmp_path):
     from fish.brain.prompt import render_recalled
     from fish.memory.retrieval import recall

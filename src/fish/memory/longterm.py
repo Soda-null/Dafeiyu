@@ -27,6 +27,9 @@ KIND_CAPS = {"insight": 20, "howto": 20}  # beyond this the least stable is push
 ABOUT_THE_CHAT = re.compile(r"考我|考她|记性|记不记得|试探我|试探她|测我记")
 ABOUT_HIM_KINDS = ("fact", "event", "insight", "howto")
 GIST_AT = (3, 6, 12, 24, 48, 96)  # times at which a repeated thing is rewritten as a gist
+# Only for things that happen (his events, her own doings). A fact, a rule or an insight said again
+# is the same thing confirmed, not something that happened again: counted, never "好几回".
+HAPPENING_KINDS = ("event", "self")
 _DATE = re.compile(r"\d{4}\s*[-年/.]\s*\d{1,2}\s*[-月/.]\s*\d{1,2}\s*日?")
 
 
@@ -74,8 +77,10 @@ class Memory:
 
     @property
     def often(self) -> str:
-        """How she feels about how often: nothing, 好几回, 很多回."""
-        return "" if self.times < 2 else ("好几回了" if self.times < 5 else "很多回了")
+        """How she feels about how often: nothing, 好几回, 很多回 (only for things that happen)."""
+        if self.kind not in HAPPENING_KINDS or self.times < 2:
+            return ""
+        return "好几回了" if self.times < 5 else "很多回了"
 
     def line(self) -> str:
         """The text as it goes into a prompt: with "（很多回了）" when it kept happening."""
@@ -188,8 +193,9 @@ class MemoryStore:
         rewrite when the count reaches 3, 6, 12, ..."""
         m = self.touch(memory_id, now)
         times = m.times + 1
+        due = times in GIST_AT and m.kind in HAPPENING_KINDS
         self.conn.execute("UPDATE memories SET times = ?, gist_due = gist_due OR ? WHERE id = ?",
-                          (times, int(times in GIST_AT), memory_id))
+                          (times, int(due), memory_id))
         self.conn.commit()
         return self.get(memory_id)
 
