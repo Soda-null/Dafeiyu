@@ -24,6 +24,16 @@ CUED_RECALL_R = 0.02  # below: even a strong reminder fails
 
 INFINITE = float("inf")
 
+# Memory v2 step 2 (decision 21): strength from how moved she was and what the memory is
+# about, not from a 1-10 guess. S0 = 4 days x (1 + 3 x arousal) x what-it-is-about;
+# 一辈子 (birthdays, anniversaries, promises) is pinned. docs/memory_v2_zh.md §2.
+ABOUTS = ("路过", "日常", "本人", "一辈子")
+ABOUT_MULTIPLIER = {"路过": 1.0, "日常": 3.0, "本人": 40.0}
+BASE_DAYS = 4.0
+AROUSAL_GAIN = 3.0
+UNCONFIRMED_DAYS = 7.0  # an insight or a howto rule before it has three days of evidence
+WEAKENED_DAYS = 3.0  # an insight she sees is no longer true fades within days
+
 
 def clamp_importance(importance: int) -> int:
     return max(1, min(PINNED_IMPORTANCE, int(importance)))
@@ -37,6 +47,20 @@ def initial_stability(importance: int, valence: float = 0.0) -> float:
     if abs(valence) >= EMOTION_THRESHOLD:
         s *= EMOTION_BONUS
     return s
+
+
+def stability_from(about: str, arousal: float) -> float:
+    if about == "一辈子":
+        return INFINITE
+    arousal = max(0.0, min(1.0, arousal))
+    return BASE_DAYS * (1 + AROUSAL_GAIN * arousal) * ABOUT_MULTIPLIER.get(about, ABOUT_MULTIPLIER["日常"])
+
+
+def importance_of(stability: float) -> int:
+    """The old 1-10 scale, now worked out from strength (profile, recall and export still use it)."""
+    if stability == INFINITE:
+        return PINNED_IMPORTANCE
+    return max(1, min(PINNED_IMPORTANCE - 1, round(math.log(max(stability, 1.0)) / math.log(BASE))))
 
 
 def retrievability(stability: float, days: float) -> float:

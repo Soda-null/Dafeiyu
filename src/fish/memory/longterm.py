@@ -30,6 +30,11 @@ GIST_AT = (3, 6, 12, 24, 48, 96)  # times at which a repeated thing is rewritten
 # Only for things that happen (his events, her own doings). A fact, a rule or an insight said again
 # is the same thing confirmed, not something that happened again: counted, never "好几回".
 HAPPENING_KINDS = ("event", "self")
+# Insights and howto rules start unconfirmed (decision 21): they need evidence on this many
+# different days before they get the strength of a fact about him.
+RULE_KINDS = ("insight", "howto")
+EVIDENCE_DAYS = 3
+UNCONFIRMED = "待印证"
 _DATE = re.compile(r"\d{4}\s*[-年/.]\s*\d{1,2}\s*[-月/.]\s*\d{1,2}\s*日?")
 
 
@@ -74,6 +79,12 @@ class Memory:
     times: int = 1  # how many times it happened or was said (decision 20)
     gist_due: bool = False  # often enough now to be rewritten as a gist tonight
     pattern: str | None = None  # how one time of it was worded, kept when the text became a gist
+    about: str | None = None  # 路过 / 日常 / 本人 / 一辈子, or 待印证 for a rule not yet confirmed
+    last_time: str | None = None  # YYYY-MM-DD it last happened; a day counts once
+
+    @property
+    def unconfirmed(self) -> bool:
+        return self.about == UNCONFIRMED
 
     @property
     def often(self) -> str:
@@ -83,7 +94,10 @@ class Memory:
         return "好几回了" if self.times < 5 else "很多回了"
 
     def line(self) -> str:
-        """The text as it goes into a prompt: with "（很多回了）" when it kept happening."""
+        """The text as it goes into a prompt: with "（很多回了）" when it kept happening, and
+        "（还说不准）" for a rule she has not seen confirmed yet."""
+        if self.unconfirmed:
+            return f"{self.text}（还说不准）"
         return f"{self.text}（{self.often}）" if self.often else self.text
 
     def retrievability(self, now: datetime) -> float:
@@ -111,6 +125,8 @@ def _from_row(r: sqlite3.Row) -> Memory:
         times=r["times"] if "times" in r.keys() else 1,
         gist_due=bool(r["gist_due"]) if "gist_due" in r.keys() else False,
         pattern=r["pattern"] if "pattern" in r.keys() else None,
+        about=r["about"] if "about" in r.keys() else None,
+        last_time=r["last_time"] if "last_time" in r.keys() else None,
     )
 
 
@@ -172,7 +188,20 @@ class MemoryStore:
         same = self.repeat_of(kind, text, now)
         if same is not None:
             return self.happened_again(same.id, now)
+        about = fields.pop("about", None)
+        if kind in RULE_KINDS:
+            about = UNCONFIRMED  # however sure the model sounds, one day is one day
+            fields["stability"] = st.UNCONFIRMED_DAYS
+        elif about in st.ABOUTS:
+            fields["stability"] = st.stability_from(about, fields.get("arousal", 0.0))
+            fields["pinned"] = about == "一辈子"
+        if "stability" in fields:
+            importance = st.importance_of(fields["stability"])
         new = self.add(kind, text, importance=importance, now=now, **fields)
+        self.conn.execute("UPDATE memories SET about = ?, last_time = ? WHERE id = ?",
+                          (about, iso(now)[:10], new.id))
+        self.conn.commit()
+        new = self.get(new.id)
         cap = KIND_CAPS.get(kind)
         if cap is not None:
             others = [m for m in self.alive(kind) if m.id != new.id and not m.pinned]
@@ -192,13 +221,30 @@ class MemoryStore:
         return best[1] if best else None
 
     def happened_again(self, memory_id: int, now: datetime | None = None) -> Memory:
-        """The same thing once more: one more time, recalled once, and flagged for a gist
-        rewrite when the count reaches 3, 6, 12, ..."""
+        """The same thing once more: recalled once; on a new day, one more time, flagged for
+        a gist rewrite at 3, 6, 12, ... A rule seen on its third day is confirmed: it gets the
+        strength of a fact about him (decision 21)."""
+        now = now or datetime.now()
         m = self.touch(memory_id, now)
+        today = iso(now)[:10]
+        if m.last_time == today:
+            return m  # said twice the same day: still one time
         times = m.times + 1
         due = times in GIST_AT and m.kind in HAPPENING_KINDS
-        self.conn.execute("UPDATE memories SET times = ?, gist_due = gist_due OR ? WHERE id = ?",
-                          (times, int(due), memory_id))
+        self.conn.execute("UPDATE memories SET times = ?, gist_due = gist_due OR ?, last_time = ? WHERE id = ?",
+                          (times, int(due), today, memory_id))
+        if m.unconfirmed and times >= EVIDENCE_DAYS:
+            s = max(m.stability, st.stability_from("本人", m.arousal))
+            self.conn.execute("UPDATE memories SET about = '本人', stability = ?, importance = ? WHERE id = ?",
+                              (s, st.importance_of(s), memory_id))
+        self.conn.commit()
+        return self.get(memory_id)
+
+    def weaken(self, memory_id: int, now: datetime | None = None) -> Memory:
+        """She sees a rule is no longer true: it fades within days instead of lasting."""
+        now = now or datetime.now()
+        self.conn.execute("UPDATE memories SET stability = MIN(stability, ?), last_recalled = ? WHERE id = ?",
+                          (st.WEAKENED_DAYS, iso(now), memory_id))
         self.conn.commit()
         return self.get(memory_id)
 
@@ -292,10 +338,11 @@ class MemoryStore:
         return [_from_row(r) for r in self.conn.execute(sql + " ORDER BY id", args)]
 
     def profile(self, limit: int = PROFILE_SIZE) -> list[Memory]:
-        """The facts she always keeps in mind: pinned first, then the most stable."""
+        """The facts she always keeps in mind: pinned first, then the most stable. Facts
+        about him himself (about = 本人, decision 21) always qualify."""
         rows = self.conn.execute(
             "SELECT * FROM memories WHERE superseded_by IS NULL AND kind = 'fact'"
-            " AND (pinned = 1 OR importance >= ?)"
+            " AND (pinned = 1 OR importance >= ? OR about = '本人')"
             " ORDER BY pinned DESC, stability DESC, importance DESC, id LIMIT ?",
             (PROFILE_IMPORTANCE, limit),
         )

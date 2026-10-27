@@ -152,9 +152,12 @@ def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
         if due and since:
             gists = [e.gist or e.summary[:60] for e in recent if e.gist or e.summary]
             facts = store.profile() + [m for m in store.alive("fact") if m not in store.profile()][:20]
-            old = [m.text for m in store.alive("insight")][-5:]
-            old_howto = [m.text for m in store.howto_card()]
-            insights, howtos = thinker.reflect(gists, facts, old, old_howto)
+            old = store.alive("insight")  # all of them (at most 20): she may see some are outdated
+            old_howto = store.alive("howto")
+            insights, howtos, outdated = thinker.reflect(gists, facts, old, old_howto)
+            for memory_id in outdated:
+                store.weaken(memory_id, now)
+            report["outdated"] = len(outdated)
             for text, importance in insights:
                 store.note("insight", text, importance=importance, now=now)
             for text, importance in howtos:

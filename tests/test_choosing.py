@@ -87,8 +87,8 @@ def test_counting_to_three_asks_for_a_gist_and_the_night_writes_it(tmp_path):
     (m,) = store.alive("self")
     assert report["gists"] == 1 and m.text == "我老在睡前数米粒，数过好多回，总数不到头"
     assert m.times == 3 and not m.gist_due and m.line().endswith("（好几回了）")
-    for _ in range(3):  # 6 times: due again
-        store.note("self", "睡前数米粒，今天数到五十就乱了", importance=3, now=T0 + timedelta(days=5))
+    for i in range(3):  # 6 times, on three more days: due again (the same day counts once)
+        store.note("self", "睡前数米粒，今天数到五十就乱了", importance=3, now=T0 + timedelta(days=5 + i))
     assert store.get(m.id).gist_due and store.get(m.id).often == "很多回了"
 
 
@@ -123,13 +123,15 @@ INSIGHTS = ["他早上不爱说话", "下雨天他心情差", "考完试他就�
 def test_insights_are_capped_and_the_weakest_goes(store):
     cap = KIND_CAPS["insight"]
     assert max(overlap(a, b) for i, a in enumerate(INSIGHTS[:cap]) for b in INSIGHTS[i + 1:cap]) < 0.5
-    first = [store.note("insight", INSIGHTS[i], importance=6 if i else 7, now=T0 + timedelta(minutes=i))
+    first = [store.note("insight", INSIGHTS[i], importance=6, now=T0 + timedelta(minutes=i))
              for i in range(cap)]
-    assert len(store.alive("insight")) == cap
+    for d in (1, 2):  # the first one is seen again on two more days: confirmed, so the strongest
+        store.note("insight", INSIGHTS[0], importance=6, now=T0 + timedelta(days=d))
+    assert len(store.alive("insight")) == cap and not store.get(first[0].id).unconfirmed
     newest = store.note("insight", "他背包里总带着一把伞", importance=6, now=T0 + timedelta(days=1))
     alive = store.alive("insight")
     assert len(alive) == cap and newest in alive
-    assert first[0].id in {m.id for m in alive}  # importance 7 is the most stable: it stays
+    assert first[0].id in {m.id for m in alive}  # confirmed: it stays
     assert store.get(first[1].id).superseded_by == newest.id  # the least stable, oldest of its kind
 
 

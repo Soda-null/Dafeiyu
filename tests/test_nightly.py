@@ -108,7 +108,7 @@ def test_reflection_runs_after_five_chats_and_adds_insights(tmp_path):
     assert report["insights"] == 2
     insights = MemoryStore(conn).alive("insight")
     assert [m.text for m in insights] == ["他最近总是半夜才来找我", "太低"]
-    assert [m.importance for m in insights] == [7, 6]  # clamped to 6..8
+    assert all(m.unconfirmed and m.importance == 3 for m in insights)  # decision 21: a rule starts unconfirmed
     assert "第4次聊天" in prompt_of(llm, "想看出点规律")
     # the next night: only one new chat, less than a week -> no reflection
     ep = em.start("wechat", datetime(2026, 10, 27, 20, 0))

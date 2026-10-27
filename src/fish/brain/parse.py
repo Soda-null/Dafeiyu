@@ -36,6 +36,8 @@ class Note:
     importance: int = 5
     valence: float = 0.0
     tags: tuple[str, ...] = ()
+    about: str | None = None  # 路过 / 日常 / 本人 / 一辈子 (decision 21); None: the old importance rule
+    arousal: float = 0.0  # how moved, 0-1
 
 
 @dataclass(frozen=True)
@@ -146,6 +148,8 @@ def parse_notes(items, *, force_kind: str | None = None) -> list[Note]:
             importance=st.clamp_importance(_int(item.get("importance"), 5)),
             valence=_float(item.get("valence")),
             tags=tuple(str(t).strip() for t in tags if str(t).strip()) if isinstance(tags, list) else (),
+            about=item.get("about") if item.get("about") in st.ABOUTS else None,
+            arousal=max(0.0, min(1.0, _float(item.get("arousal")))),
         ))
         if len(notes) >= MAX_NOTES:
             break

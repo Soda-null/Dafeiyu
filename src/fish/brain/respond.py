@@ -182,7 +182,8 @@ class Brain:
                seen_source: str | None = None) -> None:
         for n in reply.notes:
             self.store.note(n.kind, n.text, importance=n.importance, valence=n.valence,
-                            source_episode=episode_id, tags=n.tags, now=now)
+                            arousal=n.arousal, about=n.about, source_episode=episode_id, tags=n.tags,
+                            now=now)
         for n in reply.seen:
             self.store.note("world", n.text, importance=n.importance, valence=n.valence,
                             source_episode=episode_id, tags=n.tags, source=seen_source, now=now)
@@ -267,7 +268,7 @@ class Brain:
         closed = parse_episode_close(raw, fallback)
         for n in closed.notes:
             self.store.note(n.kind, n.text, importance=n.importance, valence=n.valence,
-                            source_episode=ep.id, tags=n.tags, now=now)
+                            arousal=n.arousal, about=n.about, source_episode=ep.id, tags=n.tags, now=now)
         for f in closed.followups:
             self.prospective.add(f.text, f.due, now=now)
         return self.episodes.close(ep.id, summary=closed.summary, gist=closed.gist,

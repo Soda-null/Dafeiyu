@@ -102,13 +102,18 @@ class Consolidator:
                 updates.append(Update(item["old_id"], item["new_id"]))
         return updates
 
-    def reflect(self, gists: list[str], facts: list[Memory], old_insights: list[str],
-                old_howto: list[str] | None = None) -> tuple[list[tuple[str, int]], list[tuple[str, int]]]:
-        """Returns (insights, howto rules), each (text, importance)."""
+    def reflect(self, gists: list[str], facts: list[Memory], old_insights: list[Memory],
+                old_howto: list[Memory] | None = None
+                ) -> tuple[list[tuple[str, int]], list[tuple[str, int]], list[int]]:
+        """Returns (insights, howto rules, outdated): new ones as (text, importance), and the
+        ids of old rules she now sees are no longer true (decision 21)."""
+        old_howto = old_howto or []
         data = self._ask("reflect", persona=self.persona, gists=_lines(gists, "（最近没怎么聊）"),
-                         facts=_lines([f.text for f in facts], "（还不多）"),
-                         old_insights=_lines(old_insights, "（还没有）"),
-                         old_howto=_lines(old_howto or [], "（还没有）"))
+                         facts=_lines([f.line() for f in facts], "（还不多）"),
+                         old_insights=_lines([f"[#{m.id}] {m.line()}" for m in old_insights], "（还没有）"),
+                         old_howto=_lines([f"[#{m.id}] {m.line()}" for m in old_howto], "（还没有）"))
+        known = {m.id for m in old_insights} | {m.id for m in old_howto}
+        outdated = [i for i in ((data or {}).get("outdated") or []) if isinstance(i, int) and i in known]
 
         def take(key: str, limit: int) -> list[tuple[str, int]]:
             out: list[tuple[str, int]] = []
@@ -118,7 +123,7 @@ class Consolidator:
                                 _clamp(item.get("importance"), *INSIGHT_IMPORTANCE, default=6)))
             return out[:limit]
 
-        return take("insights", 3), take("howto", 2)
+        return take("insights", 3), take("howto", 2), outdated
 
     def diary(self, day: str, mood: str, threads: list[str], gists: list[str],
               yesterday: str, seen: list[str] | None = None, *, phase_line: str = "",

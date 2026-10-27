@@ -102,7 +102,7 @@ def test_reflection_grows_the_howto_card_and_diary_sets_the_recent_line(tmp_path
     report = run_nightly(conn, NIGHT, brain=brain)
     assert report["howto"] == 2 and report["diary"] is True
     store = MemoryStore(conn)
-    assert [m.text for m in store.howto_card()] == ["他说“笑死”就是真的开心", "别问他学习"]
+    assert sorted(m.text for m in store.howto_card()) == sorted(["他说“笑死”就是真的开心", "别问他学习"])
     assert PhaseStore(conn).current().line == "最近老想换鱼缸"
     assert Diary(conn).recent(1) == [("2026-10-26", "数米粒。")]
 
