@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import time
@@ -35,16 +36,31 @@ def owner_words(text: str) -> str:
     return re.sub(r"(?<!其)他", "她", text)
 
 
+def home_timezone(home_file: Path) -> str:
+    """The timezone of where she lives, saved with her home (decision 15) once she has
+    located it; "" before that or when the file is unreadable."""
+    try:
+        return str(json.loads(home_file.read_text(encoding="utf-8")).get("tz") or "")
+    except (OSError, ValueError):
+        return ""
+
+
 def load_settings(env_file: Path | None = None) -> Settings:
     """Read .env (or the given file). Missing key is allowed so tests can run offline.
 
-    A TZ line in .env sets her clock (so "late at night" is the user's night even when she
-    runs on a machine in another timezone)."""
+    Her clock: a TZ line in .env wins (the user lives elsewhere than the machine); without
+    one, the timezone of where she lives, so "late at night" is her night even on a machine
+    whose clock was set up in another country."""
     load_dotenv(env_file or REPO_ROOT / ".env")
-    if os.environ.get("TZ") and hasattr(time, "tzset"):
-        time.tzset()
     db = os.environ.get("FISH_DB_PATH", "data/fish.db")
     db_path = Path(db) if Path(db).is_absolute() else REPO_ROOT / db
+    tz = os.environ.get("TZ") or home_timezone(db_path.parent / "home" / "home.json")
+    if tz:
+        os.environ["TZ"] = tz
+        if hasattr(time, "tzset"):
+            time.tzset()
+    elif "TZ" in os.environ:
+        del os.environ["TZ"]  # an empty TZ= line would mean UTC to the C library
     return Settings(
         api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
         base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),

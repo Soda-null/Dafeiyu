@@ -6,7 +6,7 @@
 
 | 模块 | 做什么 | 状态（10-26） |
 |---|---|---|
-| `config.py` | 从 `.env` 读密钥、模型名、数据库路径；别处不碰环境变量 | 能用 |
+| `config.py` | 从 `.env` 读密钥、模型名、数据库路径；别处不碰环境变量。`TZ` 没写就用她家的时区（`data/home/home.json`） | 能用 |
 | `storage/` | SQLite 连接和建表（八张表，`memory_design_zh.md` §9） | 能用 |
 | `persona/` | 读 `docs/persona_zh.md`：底子（每轮原样进提示词）和"熟悉程度"三档（只有当前档进，决定 11） | 能用 |
 | `memory/` | 只有数据和数学，不调模型：`stability`（遗忘公式）、`longterm`（长期条目：加 / 想起 / 改口 / 合并 / 底牌）、`retrieval`（召回：两道门 + 三项打分；`BigramEmbedder` 不用模型）、`window`（最近 N 轮 + 折叠）、`episodes`（一次聊天）、`prospective`（惦记）、`relationship`（关系账）、`diary` | 能用，30 个测试 |

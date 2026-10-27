@@ -80,7 +80,13 @@ install_deps() {
 }
 
 detect_tz() {
+    # Where the machine actually is (its network location, the same service she uses to know
+    # where she lives), not how its clock was set up: a laptop configured elsewhere keeps the
+    # old timezone for years.
     local tz=""
+    tz="$(curl -s --max-time 5 https://ipinfo.io/timezone 2>/dev/null || true)"
+    case "$tz" in */*) printf '%s' "$tz"; return 0 ;; esac
+    tz=""
     if command -v timedatectl >/dev/null 2>&1; then tz="$(timedatectl show -p Timezone --value 2>/dev/null || true)"; fi
     if [ -z "$tz" ] && [ -L /etc/localtime ]; then tz="$(readlink /etc/localtime | sed 's#.*/zoneinfo/##')"; fi
     printf '%s' "${tz:-Asia/Shanghai}"
@@ -106,7 +112,7 @@ write_env() {
         warn "连不上 DeepSeek 检查不了（HTTP $code），先存下，之后不行再改 .env"; break
     done
     tz="$(detect_tz)"
-    tz="$(ask "你住的时区是 $tz 吗？她的白天黑夜按它算。回车确认，或输入别的（例如 Asia/Shanghai）：" "$tz")"
+    tz="$(ask "你在 $tz 这个时区吗（按这台机器的网络位置猜的）？她的白天黑夜按它算。回车确认，或输入别的（例如 Asia/Shanghai）：" "$tz")"
     owner="$(ask '她提到你的时候用"他"还是"她"？输入 他 或 她（回车 = 他）：' "他")"
     [ "$owner" = "她" ] || owner="他"
     umask 077

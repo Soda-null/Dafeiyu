@@ -49,6 +49,7 @@ class Home:
     area: str  # neighbourhood / quarter, may be ""
     lat: float  # rounded to COORD_DECIMALS
     lon: float
+    tz: str = ""  # the place's timezone (America/Chicago); her clock when .env has no TZ
 
     def line(self) -> str:
         where = f"{self.city}（{self.region}）" if self.region else self.city
@@ -87,7 +88,8 @@ def locate(fetch: Fetch = urllib_fetch, at: str = "") -> Home:
     except Exception:  # noqa: BLE001 - the neighbourhood is a nicety
         pass
     city = info.get("city") or addr.get("city") or addr.get("town") or addr.get("county") or ""
-    return Home(city, info.get("region") or addr.get("state", ""), area, lat, lon)
+    return Home(city, info.get("region") or addr.get("state", ""), area, lat, lon,
+                str(info.get("timezone") or ""))
 
 
 @dataclass(frozen=True)

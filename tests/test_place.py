@@ -15,12 +15,13 @@ from fish.storage import connect
 from fish.world.place import Home, locate, nearby, places_line, weather
 
 T = datetime(2026, 10, 27, 9, 0)
-HOME = Home("Springfield", "Ohio", "Downtown", 39.92, -83.81)
+HOME = Home("Springfield", "Ohio", "Downtown", 39.92, -83.81, "America/New_York")
 
 
 def fake_fetch(url, timeout):
     if "ipinfo" in url:
-        return json.dumps({"city": "Springfield", "region": "Ohio", "loc": "39.9242,-83.8088"})
+        return json.dumps({"city": "Springfield", "region": "Ohio", "loc": "39.9242,-83.8088",
+                           "timezone": "America/New_York"})
     if "nominatim" in url:
         assert "lat=39.92&lon=-83.81" in url  # only the rounded position ever leaves the box
         return json.dumps({"address": {"quarter": "Downtown", "house_number": "1", "road": "X St"}})
@@ -100,4 +101,29 @@ def test_home_can_be_set_by_hand_for_a_cloud_server():
         assert "lat=39.92&lon=-83.81" in url
         return json.dumps({"address": {"city": "Springfield", "state": "Ohio", "quarter": "Downtown",
                                        "road": "X St"}})
-    assert locate(fetch, at="39.9242,-83.8088") == HOME
+    assert locate(fetch, at="39.9242,-83.8088") == Home("Springfield", "Ohio", "Downtown", 39.92, -83.81)
+
+
+def test_her_clock_follows_her_home_when_env_has_no_tz(tmp_path, monkeypatch):
+    """No TZ in .env: once she knows where she lives, that place's timezone is her clock."""
+    import os
+    import time
+
+    from fish.config import load_settings
+
+    orig = os.environ.get("TZ")
+    monkeypatch.delenv("TZ", raising=False)
+    monkeypatch.setenv("FISH_DB_PATH", str(tmp_path / "fish.db"))
+    (tmp_path / "home").mkdir()
+    (tmp_path / "home" / "home.json").write_text(HOME.to_json(), encoding="utf-8")
+    (tmp_path / ".env").write_text("", encoding="utf-8")
+    try:
+        load_settings(tmp_path / ".env")
+        assert os.environ["TZ"] == "America/New_York"
+    finally:  # put the process clock back for the other tests
+        if orig is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = orig
+        if hasattr(time, "tzset"):
+            time.tzset()
