@@ -27,6 +27,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+# Imported up front: a run takes an hour, and code edited meanwhile must not reach the report step.
+from fish.__main__ import show  # noqa: E402
 from fish.brain import Brain, DeepSeekLLM  # noqa: E402
 from fish.brain.llm import LLM, CountingLLM  # noqa: E402
 from fish.brain.parse import extract_json  # noqa: E402
@@ -231,8 +233,6 @@ class Checkup:
         return hits
 
     def what_she_remembers(self, now: datetime) -> str:
-        from fish.__main__ import show
-
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             show(self.conn, now)
