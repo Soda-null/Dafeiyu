@@ -8,8 +8,7 @@ from pathlib import Path
 
 from fish.brain import budget
 from fish.config import owner_words
-from fish.memory import Followup, Memory, Phase, Recalled, Sticker, Turn
-from fish.memory.when import spoken
+from fish.memory import Followup, Memory, Phase, Recalled, Sticker, Turn, spoken, told_day
 from fish.mood import Mood
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -113,9 +112,10 @@ def render_profile(profile: list[Memory], mentioned: set[int] = frozenset(),
 
 
 def day_label(m: Memory, today: date | None) -> str:
-    """"（上周三 1月13日）": the day it happened, said the way he would say it (memory v3 §B3)."""
-    day = m.happened_on or (m.created[:10] if m.created else "")
-    return f"（{spoken(date.fromisoformat(day), today)}）" if today and day else ""
+    """"（上周三 1月13日）": the day it happened, said the way he would say it (memory v3 §B3).
+    None when nothing names its day: the day it was written would mislead her."""
+    day = told_day(m) if today else None
+    return f"（{spoken(day, today)}）" if day else ""
 
 
 def render_recalled(recalled: list[Recalled], today: date | None = None) -> str:

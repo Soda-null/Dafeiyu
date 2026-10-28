@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from fish.memory import stability as st
-from fish.memory.when import day_of, fix_weekday
+from fish.memory.when import day_of, fix_weekday, written_day
 
 KINDS = ("fact", "event", "howto", "insight", "self", "world")  # world: things she saw online
 PROFILE_IMPORTANCE = 8  # facts at or above this importance form the always-present profile
@@ -221,8 +221,8 @@ class MemoryStore:
         None: not written (it is about the chat itself, not about him). An older memory:
         this was a repeat, so the old one was recalled instead. Otherwise the new memory;
         if its kind is over its cap, the least stable one of that kind is pushed out.
-        said: his line the note came from; its time words date the note when the note's own
-        text names no day (memory v3 §B1). A date that disagrees with the weekday written
+        said: his line the note came from; for an event, its time words date the note when the
+        note's own text names no day (memory v3 §B1). A date that disagrees with the weekday written
         next to it is moved to that weekday first (§B2 D5)."""
         now = now or datetime.now()
         text = fix_weekday(text, now.date())
@@ -245,6 +245,7 @@ class MemoryStore:
             fields["pinned"] = about == "一辈子"
         if "stability" in fields:
             importance = st.importance_of(fields["stability"])
+        said = said if kind == "event" else ""  # a lasting fact is not dated by "明天" in his line
         fields.setdefault("happened_on", (day_of(text, now, said) or now.date()).isoformat())
         new = self.add(kind, text, importance=importance, now=now, **fields)
         self.conn.execute("UPDATE memories SET about = ?, last_time = ? WHERE id = ?",
@@ -359,11 +360,14 @@ class MemoryStore:
     def merge(self, ids: list[int], text: str, *, now: datetime | None = None) -> Memory:
         """Nightly: several near-duplicates become one, more stable, with its sources noted.
         What it is about, whether it is pinned and the day it last happened carry over; so does
-        the day it happened (the latest of its sources), unless the merged words name one."""
+        the day it happened (the latest of its sources), unless the merged words write a date."""
         olds = [self.get(i) for i in ids]
         if not olds:
             raise ValueError("merge needs at least one memory")
         now = now or datetime.now()
+        # only a date written out in the merged words: their "明天" was said on its source's
+        # day, and read at night it would land a day late
+        latest = max(datetime.fromisoformat(o.created) for o in olds)
         tags: list[str] = []
         for o in olds:
             tags += [t for t in o.tags if t not in tags]
@@ -376,7 +380,7 @@ class MemoryStore:
             pinned=any(o.pinned for o in olds),
             stability=st.after_merge(*(o.stability for o in olds)),
             merged_from=ids, now=now,
-            happened_on=(d.isoformat() if (d := day_of(text, now))
+            happened_on=(d.isoformat() if (d := written_day(text, latest.date()))
                          else max((o.happened_on for o in olds if o.happened_on), default=None)),
         )
         for o in olds:
@@ -427,10 +431,11 @@ class MemoryStore:
     def planned_for(self, days: list[date]) -> list[Memory]:
         """Things he said would happen on these days (an exam, a trip), said before the day came:
         what the "today" section reminds her of (memory v3 §B3). A note written on the day it is
-        about is not a plan, it is news, and the chat it came from is still in front of her."""
+        about is not a plan, it is news, and the chat it came from is still in front of her.
+        Events only: a fact is who he is, not something that happens on a day."""
         wanted = [d.isoformat() for d in days]
         rows = self.conn.execute(
-            f"SELECT * FROM memories WHERE superseded_by IS NULL AND kind IN ('event', 'fact')"
+            f"SELECT * FROM memories WHERE superseded_by IS NULL AND kind = 'event'"
             f" AND happened_on IN ({', '.join('?' * len(wanted))}) AND substr(created, 1, 10) < happened_on"
             " ORDER BY happened_on, id", wanted)
         return [_from_row(r) for r in rows]

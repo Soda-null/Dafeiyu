@@ -79,7 +79,7 @@ def test_prompt_carries_profile_recalled_followups_and_state(tmp_path):
     brain.respond("演示过去了，松口气", now=T0)
     system = system_of(llm)
     assert f"[#{core.id}] 他叫小杨" in system
-    assert f"[#{demo.id}] （上周三 10月21日）他上周有个机器人演示" in system  # the day, worked out
+    assert f"[#{demo.id}] 他上周有个机器人演示" in system  # no day named: none made up
     assert f"[#{due.id}] 问他演示怎么样" in system
     assert "现在是 2026-10-26 周一 20:00" in system and "你们认识第 1 天" in system
     assert llm.calls[-1][0][-1] == {"role": "user", "content": "演示过去了，松口气"}

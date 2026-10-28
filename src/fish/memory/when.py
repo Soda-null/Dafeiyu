@@ -176,19 +176,43 @@ def _relative_days(text: str, today: date) -> set[date]:
     return days
 
 
+def written_day(text: str, today: date) -> date | None:
+    """The first date written out in a text ("2027-01-06", "1月13号"), not its time words.
+    A birthday's day without a year is every year's, so it is not the one."""
+    annual = bool(ANNUAL.search(text))
+    for _, _, d, form in dates_in(text, today):
+        if not (annual and form.startswith("cn") and not form.endswith("y")):
+            return d
+    return None
+
+
+def _bigrams(text: str) -> set[str]:
+    return {a + b for a, b in zip(text, text[1:]) if a.isalnum() and b.isalnum()}
+
+
+def _about_the_note(said: str, text: str) -> bool:
+    """His line dates the note only if the note shares a word with a clause of it that names a
+    day: "明天开学了，对了我是学机械的" does not make "他是学机械的" tomorrow's."""
+    note = _bigrams(text)
+    for clause in re.split(r"[，。,；;！!？?、…~～\s]+", said):
+        rest = CN_DATE.sub("|", ISO_DATE.sub("|", _RELATIVE.sub("|", clause)))
+        if rest != clause and _bigrams(rest) & note:
+            return True
+    return False
+
+
 def day_of(text: str, now: datetime, said: str = "") -> date | None:
     """The day a note is about: a date written in it; else the one day its time words name
     ("他明天面试", read at `now`); else the same from his line (`said`, the message the note
-    came from). None when nothing names exactly one day: the caller uses the message's day.
+    came from), if the note shares a word with the part of it that names the day. None when
+    nothing names exactly one day: the caller uses the message's day.
     A bare "周五" names no day (last Friday or the coming one) and neither do "上周", "最近"."""
     today = now.date()
-    for words in (text, said):
+    for words in (text, said if said and _about_the_note(said, text) else ""):
         if not words:
             continue
-        annual = bool(ANNUAL.search(words))
-        for _, _, d, form in dates_in(words, today):
-            if not (annual and form.startswith("cn") and not form.endswith("y")):
-                return d
+        if (d := written_day(words, today)) is not None:
+            return d
         days = _relative_days(words, today)
         if len(days) == 1:
             return days.pop()
@@ -269,6 +293,20 @@ def days_of(memory: Memory) -> set[date]:
     elif memory.created:
         days.add(datetime.fromisoformat(memory.created).date())
     return days
+
+
+def told_day(memory: Memory) -> date | None:
+    """The day to show next to a recalled memory, only when something names it. A row from
+    before memory v3 has no `happened_on`: only a date written in it counts (its time words
+    were read when a chat closed at night, a day late). A newer row whose day is just the day
+    it was written, and whose words name no day ("他上周有个演示"), shows none."""
+    created = datetime.fromisoformat(memory.created) if memory.created else None
+    if not memory.happened_on:
+        return written_day(memory.text, created.date()) if created else None
+    d = date.fromisoformat(memory.happened_on)
+    if created is None or d != created.date() or day_of(memory.text, created) is not None:
+        return d
+    return None
 
 
 class TimeCued:

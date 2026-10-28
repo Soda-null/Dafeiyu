@@ -28,6 +28,7 @@ _CN_DAY = r"(\d{1,2}|[二三]?十[一二三四五六七八九]?|[一二三四五
 # "3月14日", "3月14号", "三月十四", "2005-03-14": a day of the year on a birthday fact.
 MONTH_DAY = re.compile(rf"\d{{4}}-(\d{{1,2}})-(\d{{1,2}})|{_CN_MONTH}月{_CN_DAY}")
 YEARLY = re.compile(r"生日|纪念日|周年")
+_YEAR_BEFORE = re.compile(r"\d{2,4}\s*年\s*$")
 _STOP = re.compile(r"[，。,；;！!？?、：:]")
 
 
@@ -71,15 +72,33 @@ def _next(month: int, day: int, today: date) -> date | None:
     return None
 
 
+def _day_of_year(text: str, word: re.Match) -> tuple[int, int] | None:
+    """The month and day of the birthday the word names: the nearest one after it without a
+    year, else the nearest before it. A date with a year is the day the note was written
+    ("他2027-01-05说他生日是3月14日"), unless it comes after the word ("他生日是2005-03-14")."""
+    plain, dated = [], []
+    for hit in MONTH_DAY.finditer(text):
+        md = (int(hit[1]), int(hit[2])) if hit[1] else (_num(hit[3]), _num(hit[4]))
+        with_year = bool(hit[1] or _YEAR_BEFORE.search(text[:hit.start()]))
+        (dated if with_year else plain).append((hit.start(), md))
+    after = [md for start, md in plain if start >= word.end()]
+    before = [md for start, md in plain if start < word.start()]
+    later = [md for start, md in dated if start >= word.end()]
+    for found in (after, before[::-1], later):
+        if found:
+            return found[0]
+    return None
+
+
 def yearly(card: list[Memory], today: date, him: str = "他") -> list[str]:
     """His birthday today or soon, or another day of the year written on her card."""
     lines = []
     for m in card:
         word = YEARLY.search(m.text)
-        hit = MONTH_DAY.search(m.text) if word else None
-        if hit is None:
+        md = _day_of_year(m.text, word) if word else None
+        if md is None:
             continue
-        month, day = (int(hit[1]), int(hit[2])) if hit[1] else (_num(hit[3]), _num(hit[4]))
+        month, day = md
         when = _next(month, day, today)
         if when is None or (when - today).days > SOON_DAYS:
             continue

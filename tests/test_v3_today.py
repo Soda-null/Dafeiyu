@@ -11,7 +11,7 @@ from fish.brain.prompt import build_close_messages, render_recalled
 from fish.config import Settings
 from fish.memory import MemoryStore, recall, today_section
 from fish.memory.today import calendar, pattern_lines, yearly
-from fish.memory.when import day_of, days_of, fix_weekday, spoken
+from fish.memory.when import day_of, days_of, fix_weekday, spoken, told_day
 from fish.storage import connect
 
 WED = datetime(2027, 1, 20, 20, 0)  # 小周 day 16, a Wednesday
@@ -98,6 +98,53 @@ def test_a_row_from_before_v3_is_dated_by_when_it_was_written(tmp_path):
     assert store.planned_for([date(2027, 1, 7)]) == []
 
 
+def test_a_fact_is_not_dated_by_tomorrow_in_his_line(tmp_path):
+    brain, conn, llm = make_brain(tmp_path, notes=[
+        {"text": "他是学机械的", "kind": "fact", "about": "本人", "tags": ["专业"]},
+        {"text": "他要开学了", "kind": "event", "about": "日常", "tags": ["开学"]},
+        {"text": "他室友叫阿杰", "kind": "event", "about": "日常", "tags": ["室友"]}])
+    brain.respond("明天开学了，对了我室友叫阿杰", now=datetime(2027, 2, 28, 21, 0))
+    store = MemoryStore(conn)
+    days = {m.text: m.happened_on for m in store.alive()}
+    assert days == {"他是学机械的": "2027-02-28", "他要开学了": "2027-03-01",
+                    "他室友叫阿杰": "2027-02-28"}  # shares no word with "明天开学了"
+    brain.respond("早", now=datetime(2027, 3, 1, 8, 0))
+    today = section(llm.calls[-1][0][0]["content"], "今天")
+    assert "开学" in today and "机械" not in today and "阿杰" not in today
+    fact = store.add("fact", "他明天搬去7号楼", importance=5, now=WED)  # even dated, a fact is no plan
+    assert fact.happened_on == "2027-01-21" and store.planned_for([date(2027, 1, 21)]) == []
+
+
+def test_a_plan_merged_at_night_keeps_its_day(tmp_path):
+    store = MemoryStore(connect(tmp_path / "fish.db"))
+    a = store.note("event", "他明天面试", importance=6, now=WED)
+    b = store.note("event", "他明天要去面试，有点紧张", importance=6, now=WED + timedelta(minutes=30))
+    assert a.happened_on == b.happened_on == "2027-01-21"
+    merged = store.merge([a.id, b.id], "他明天要去面试，有点紧张", now=datetime(2027, 1, 21, 3, 30))
+    assert merged.happened_on == "2027-01-21"  # not read again at night as 1/22
+    dated = store.merge([merged.id], "他2027-01-21面试，有点紧张", now=datetime(2027, 1, 22, 3, 30))
+    assert dated.happened_on == "2027-01-21"
+
+
+def test_a_recalled_line_shows_a_day_only_when_one_is_named(tmp_path):
+    conn = connect(tmp_path / "fish.db")
+    store = MemoryStore(conn)
+    # rows from before v3 (happened_on empty): only a date written in them counts, the day
+    # it was written does not (小周: noted 1/20, the concert is on Saturday 1/23)
+    old = store.add("event", "他2027-01-23周六要去上海看演唱会", importance=5, now=datetime(2027, 1, 20, 23, 0))
+    vague = store.add("event", "他昨晚吃了麻辣烫", importance=3, now=datetime(2027, 1, 7, 3, 30))
+    conn.execute("UPDATE memories SET happened_on = NULL")
+    assert told_day(store.get(old.id)) == date(2027, 1, 23)
+    assert told_day(store.get(vague.id)) is None  # written by a close at night: 昨晚 is a day late
+    # newer rows: a day named by the note or his line shows; the day it was written alone does not
+    week = store.note("event", "他上周有个机器人演示", importance=5, now=WED)
+    today = store.note("event", "他今天考完试了", importance=5, now=WED)
+    said = store.note("event", "他要去面试", importance=5, now=WED, said="我明天面试")
+    assert [told_day(m) for m in (week, today, said)] == [None, date(2027, 1, 20), date(2027, 1, 21)]
+    got = recall(store, "演示", WED + timedelta(days=1))
+    assert render_recalled(got, date(2027, 1, 21)).startswith(f"- [#{week.id}] 他上周有个机器人演示")
+
+
 # --- saying a day ---------------------------------------------------------------------------
 
 def test_days_are_said_the_way_he_would_say_them():
@@ -146,6 +193,16 @@ def test_her_card_says_when_his_birthday_is_today_or_soon(tmp_path):
     sister = store.add("fact", "他妹妹小雨的生日是十二月三十一号", importance=8, now=WED)
     assert yearly([sister], date(2027, 12, 30)) == ["再过 1 天是他妹妹小雨生日（12月31日）。"]
     assert yearly([sister], date(2028, 12, 31), him="她") == ["今天是他妹妹小雨生日（12月31日）！"]
+    # the model dates its notes: the day it was said is not the birthday
+    dated = store.add("fact", "他2027-01-05说他生日是3月14日，让我记得给他过", importance=9, now=WED)
+    assert yearly([dated], date(2028, 1, 5)) == [] and yearly([dated], date(2027, 1, 3)) == []
+    assert yearly([dated], date(2027, 3, 14)) == ["今天是他生日（3月14日）！"]
+    cn = store.add("fact", "2027年1月5日他说生日是三月十四", importance=9, now=WED)
+    assert yearly([cn], date(2027, 3, 13)) == ["再过 1 天是他生日（3月14日）。"]
+    born = store.add("fact", "他生日是2005-03-14", importance=9, now=WED)
+    assert yearly([born], date(2027, 3, 14)) == ["今天是他生日（3月14日）！"]
+    said = store.add("fact", "他2027-01-05说过生日的事", importance=9, now=WED)
+    assert yearly([said], date(2028, 1, 5)) == []
 
 
 def test_what_he_planned_comes_up_on_the_day(tmp_path):
