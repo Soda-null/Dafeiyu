@@ -5,14 +5,18 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import sys
 from pathlib import Path
+
+import pytest
 
 from fish.brain import FakeLLM
 from fish.brain.llm import CountingLLM
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = json.loads((ROOT / "evals" / "xiaozhou_90d.json").read_text(encoding="utf-8"))
+XIAOLIN = json.loads((ROOT / "evals" / "xiaolin_60d.json").read_text(encoding="utf-8"))
 
 spec = importlib.util.spec_from_file_location("checkup", ROOT / "scripts" / "checkup.py")
 checkup = importlib.util.module_from_spec(spec)
@@ -20,27 +24,44 @@ sys.modules["checkup"] = checkup  # dataclasses look the module up by name
 spec.loader.exec_module(checkup)  # type: ignore[union-attr]
 
 
-def test_the_script_hangs_together():
-    ids = [f["id"] for f in SCRIPT["facts"]]
+@pytest.mark.parametrize("script", [SCRIPT, XIAOLIN], ids=["xiaozhou", "xiaolin"])
+def test_the_script_hangs_together(script):
+    ids = [f["id"] for f in script["facts"]]
     assert len(ids) == len(set(ids))
-    for f in SCRIPT["facts"]:
-        assert f["probes"], f["id"]
+    for f in script["facts"]:
+        assert f["probes"] and f["keys"], f["id"]
         for p in f["probes"]:
             assert p["day"] > f["day"] and set(p["expect"]) <= set(checkup.LABELS), (f["id"], p)
-    for sp in SCRIPT["special"]:
+    for sp in script["special"]:
         assert set(sp["expect"]) <= set(checkup.LABELS)
-    for day in range(1, SCRIPT["days"] + 1):
-        lines = checkup.lines_for(SCRIPT, day)
-        if day in SCRIPT["silent"]:
+    for day in range(1, script["days"] + 1):
+        lines = checkup.lines_for(script, day)
+        if day in script["silent"]:
             assert lines == [], day
         else:
             assert lines, day
             assert [t for t, _, _ in lines] == sorted(t for t, _, _ in lines), day
+
+
+@pytest.mark.parametrize("script", [SCRIPT, XIAOLIN], ids=["xiaozhou", "xiaolin"])
+def test_every_filler_day_can_come_up(script):
+    """The stride must not share a factor with the filler count (小周 v1 used 4 of 20)."""
+    plain = [d for d in range(1, script["days"] + 1)
+             if str(d) not in script["scripted"] and d not in script["silent"]]
+    stride, n = script.get("filler_stride", checkup.FILLER_STRIDE), len(script["filler"])
+    assert math.gcd(stride, n) == 1
+    assert len({(d * stride) % n for d in plain}) >= 0.8 * min(len(plain), n)  # 小周: 18 of 20
+
+
+def test_xiaozhou_details():
     said = [s for d in SCRIPT["scripted"].values() for _, s in d if "zhou2027" in s]
     assert len(said) == 1  # the password is said once, on day 4
     assert sum(s.count("糖醋排骨") for d in SCRIPT["scripted"].values() for _, s in d) == 6
     final_probes = [m for _, _, m in checkup.lines_for(SCRIPT, SCRIPT["final_day"]) if m]
     assert len(final_probes) == 12  # every fact that has a last-day question
+    promise = next(f for f in SCRIPT["facts"] if f["id"] == "promise")
+    hits = [day for day, d in SCRIPT["scripted"].items() for _, s in d if any(k in s for k in promise["keys"])]
+    assert hits == ["6"]  # the promise itself, not the trip to 上海 (script v1 matched "海")
 
 
 def fake_model(messages, json_mode):
@@ -48,7 +69,7 @@ def fake_model(messages, json_mode):
     content = messages[-1]["content"]
     text = content if isinstance(content, str) else content[0]["text"]
     if "要查的事实" in text:
-        assert "他到今天为止说过的话" in text and "今天是第" in text and "2027-01-0" in text
+        assert "他到今天为止说过的话" in text and "今天是第" in text and SCRIPT["start"][:7] in text
         return '{"label": "记住", "why": "假裁判"}'
     if "聊天结束了" in text:  # closing an episode; "{}" would make the summary his raw words
         return json.dumps({"summary": "聊了聊", "gist": "聊了聊", "importance": 2, "valence": 0.0,

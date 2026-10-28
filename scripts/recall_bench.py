@@ -1,23 +1,26 @@
 #!/usr/bin/env python3
-"""Offline recall comparison (memory v2 step 5): no model calls, no money.
+"""Offline recall comparison (memory v2 step 5, v3 step 0): no model calls, no money.
 
-Takes a database a checkup left behind (the scripted friend, never data/) and the checkup
-script, and for every question asks: by the day it was asked, was the answer written down
-at all, and does each way of finding put it in her top six? Forgetting is ignored, so this
-measures finding only.
+Takes a database a checkup left behind (a scripted friend, never data/) and the checkup
+script it came from, and for every question asks: by the day it was asked, was the answer
+written down at all, and does each way of finding put it in front of her? Forgetting is
+ignored, so this measures finding only. Works for any script in evals/ (小周, 小林).
 
   .venv/bin/python scripts/recall_bench.py <checkup fish.db> evals/xiaozhou_90d.json
-                                           [--vectors bge.json] [--show malatang,movie]
+        [--cue his|his+hers] [--skip-card] [--vectors bge.json] [--show malatang,movie]
 
+--cue: what the search is given. "his" is only his line; "his+hers" adds her previous line
+       in the same chat, which is what respond.py does today (memory v3 §B3 drops it).
+--skip-card: what is on her card (store.profile at that moment) is in front of her anyway, so
+       it counts as found and does not take one of the six places.
 --vectors: {"M:<memory text>": [...], "Q:<question>": [...]} from any sentence model; adds
-the "by meaning" rows. Without it only by-words and by-time are compared.
+       the "by meaning" rows. Without it only by-words and by-time are compared.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import math
 import sqlite3
 import sys
 from datetime import date, datetime, time, timedelta
@@ -26,12 +29,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from fish.memory.longterm import Memory, _from_row  # noqa: E402
+from fish.memory.longterm import PROFILE_IMPORTANCE, PROFILE_SIZE, Memory, _from_row  # noqa: E402
 from fish.memory.retrieval import (DEFAULT_K, RECENCY_DECAY_PER_HOUR, W_IMPORTANCE, W_RECENCY,  # noqa: E402
                                    W_RELEVANCE, BigramEmbedder)
 from fish.memory.when import TimeCued  # noqa: E402
 
 COS_LO, COS_HI = 0.35, 0.80  # where a sentence model's cosine starts to mean anything, and "same thing"
+CUES = ("his", "his+hers")
 
 
 class Vectors:
@@ -77,66 +81,116 @@ def known_then(mems: list[Memory], now: datetime) -> list[Memory]:
     return out
 
 
-def rank_of_answer(way, ask: str, alive: list[Memory], answers: set[int], now: datetime) -> int | None:
+def card_then(alive: list[Memory]) -> set[int]:
+    """store.profile() as it would have been: pinned, important or about him himself. Uses
+    the final stability, so the order among unpinned facts is an approximation."""
+    card = [m for m in alive if m.kind == "fact"
+            and (m.pinned or m.importance >= PROFILE_IMPORTANCE or m.about == "本人")]
+    card.sort(key=lambda m: (not m.pinned, -m.stability, -m.importance, m.id))
+    return {m.id for m in card[:PROFILE_SIZE]}
+
+
+def her_line_before(conn: sqlite3.Connection, ask: str, now: datetime) -> str | None:
+    """Her last line before his question in the same chat; "" when the chat starts with it,
+    None when the question is not in this database (a different script or a short run)."""
+    row = conn.execute("SELECT id, episode_id FROM messages WHERE role = 'user' AND ts = ? AND text = ?",
+                       (now.isoformat(), ask)).fetchone()
+    if row is None:
+        return None
+    prev = conn.execute("SELECT text FROM messages WHERE role = 'fish' AND episode_id IS ? AND id < ?"
+                        " ORDER BY id DESC LIMIT 1", (row["episode_id"], row["id"])).fetchone()
+    return prev["text"] if prev else ""
+
+
+def rank_of_answer(way, cue: str, alive: list[Memory], answers: set[int], now: datetime,
+                   skip: set[int] = frozenset()) -> int | None:
     rows = []
     for m in alive:
-        rel = way.relevance(ask, m)
+        if m.id in skip:
+            continue
+        rel = way.relevance(cue, m)
         if rel > 0:
             rows.append((score(rel, m, now), m.id))
     rows.sort(reverse=True)
     return next((i + 1 for i, (_, mid) in enumerate(rows) if mid in answers), None)
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("db", type=Path)
-    ap.add_argument("script", type=Path)
-    ap.add_argument("--vectors", type=Path, action="append", default=[])
-    ap.add_argument("--show", default="", help="fact ids to print question by question")
-    args = ap.parse_args()
+def at(start: date, probe: dict) -> datetime:
+    return datetime.combine(start + timedelta(days=probe["day"] - 1), time(*map(int, probe["time"].split(":"))))
 
-    script = json.loads(args.script.read_text(encoding="utf-8"))
+
+def bench(db: Path, script: dict, *, cue: str = "his", skip_card: bool = False,
+          vectors: list[Path] = (), show: set[str] = frozenset(), out=print) -> dict:
+    """Counts per way of finding. Returns {"asked", "missing", "no_her_line", "totals"}."""
     start = date.fromisoformat(script["start"])
-    conn = sqlite3.connect(args.db)
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     mems = [_from_row(r) for r in conn.execute("SELECT * FROM memories")]
     words = BigramEmbedder()
+    tables = [(path.stem, Vectors(json.loads(path.read_text()))) for path in vectors]
 
     def ways(now: datetime) -> dict[str, object]:
-        out = {"按字面（现在）": words, "按字面 + 按时间": TimeCued(words, now)}
-        for path in args.vectors:
-            name = path.stem
-            vec = Vectors(json.loads(path.read_text()))
-            out[f"按意思（{name}）"] = vec
-            out[f"按字面 + 按意思（{name}）"] = Either(words, vec)
-            out[f"按字面 + 按时间 + 按意思（{name}）"] = TimeCued(Either(words, vec), now)
-        return out
+        res = {"按字面（现在）": words, "按字面 + 按时间": TimeCued(words, now)}
+        for name, vec in tables:
+            res[f"按意思（{name}）"] = vec
+            res[f"按字面 + 按意思（{name}）"] = Either(words, vec)
+            res[f"按字面 + 按时间 + 按意思（{name}）"] = TimeCued(Either(words, vec), now)
+        return res
 
-    show = set(filter(None, args.show.split(",")))
     totals: dict[str, int] = {}
-    missing, asked = 0, 0
+    missing = asked = no_her_line = 0
     for fact in script["facts"]:
         for p in fact["probes"]:
-            now = datetime.combine(start + timedelta(days=p["day"] - 1), time(*map(int, p["time"].split(":"))))
+            now = at(start, p)
             alive = known_then(mems, now)
-            answers = {m.id for m in alive if any(k in m.text for k in fact["keys"])}
+            keys = p.get("keys") or fact.get("keys", [])
+            answers = {m.id for m in alive if any(k in m.text for k in keys)}
             asked += 1
             if not answers:
                 missing += 1
                 if fact["id"] in show:
-                    print(f"[{fact['id']}] 第 {p['day']} 天「{p['ask']}」：没记下")
+                    out(f"[{fact['id']}] 第 {p['day']} 天「{p['ask']}」：没记下")
                 continue
-            line = []
+            text = p["ask"]
+            if cue == "his+hers":
+                hers = her_line_before(conn, p["ask"], now)
+                no_her_line += hers is None
+                text = f"{p['ask']} {hers}" if hers else p["ask"]
+            card = card_then(alive) if skip_card else set()
+            on_card = bool(answers & card)
+            line = ["在底牌上"] if on_card else []
             for name, way in ways(now).items():
-                r = rank_of_answer(way, p["ask"], alive, answers, now)
-                hit = r is not None and r <= DEFAULT_K
+                r = rank_of_answer(way, text, alive, answers, now, skip=card)
+                hit = on_card or (r is not None and r <= DEFAULT_K)
                 totals[name] = totals.get(name, 0) + hit
                 line.append(f"{name}: {'第 %d' % r if r else '找不到'}")
             if fact["id"] in show:
-                print(f"[{fact['id']}] 第 {p['day']} 天「{p['ask']}」：" + "；".join(line))
-    print(f"\n{asked} 问；到问的那天答案根本没记下的 {missing} 问（哪种找法都救不了）。")
-    print(f"其余 {asked - missing} 问里，答案排进前 {DEFAULT_K}（不管遗忘）：")
-    for name, n in totals.items():
+                out(f"[{fact['id']}] 第 {p['day']} 天「{p['ask']}」：" + "；".join(line))
+    conn.close()
+    return {"asked": asked, "missing": missing, "no_her_line": no_her_line, "totals": totals}
+
+
+def main(argv: list[str] | None = None) -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("db", type=Path)
+    ap.add_argument("script", type=Path)
+    ap.add_argument("--cue", choices=CUES, default="his", help="what the search is given")
+    ap.add_argument("--skip-card", action="store_true", help="what is on her card counts as found")
+    ap.add_argument("--vectors", type=Path, action="append", default=[])
+    ap.add_argument("--show", default="", help="fact ids to print question by question")
+    args = ap.parse_args(argv)
+
+    script = json.loads(args.script.read_text(encoding="utf-8"))
+    res = bench(args.db, script, cue=args.cue, skip_card=args.skip_card, vectors=args.vectors,
+                show=set(filter(None, args.show.split(","))))
+    asked, missing = res["asked"], res["missing"]
+    cue = "只用他这句" if args.cue == "his" else "他这句 + 她上一句"
+    print(f"\n{script['name']}：{asked} 问；到问的那天答案根本没记下的 {missing} 问（哪种找法都救不了）。")
+    if res["no_her_line"]:
+        print(f"（有 {res['no_her_line']} 问在库里找不到这句话，只用了他这句；库和剧本对不上？）")
+    card = "，底牌上的算找到、不占名额" if args.skip_card else ""
+    print(f"其余 {asked - missing} 问里，答案排进前 {DEFAULT_K}（{cue}{card}；不管遗忘）：")
+    for name, n in res["totals"].items():
         print(f"  {name}: {n} / {asked - missing}")
 
 

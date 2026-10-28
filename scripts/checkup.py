@@ -41,7 +41,8 @@ LABELS = ("记住", "模糊但对", "说不记得", "记错", "编造")
 WRONG = ("记错", "编造")
 HARD_LINE = 0.05  # wrong + fabricated, as a share of all graded answers
 NIGHT = "03:30"
-FILLER_STRIDE = 5  # which filler mini-conversation a plain day gets: filler[(day * 5) % n]
+FILLER_STRIDE = 5  # which filler mini-conversation a plain day gets: filler[(day * stride) % n];
+# a script may set its own "filler_stride" (coprime with its filler count, so every one is used)
 
 JUDGE = """这是一次记忆测试。“他到今天为止说过的话”是他真的说过的全部（每句带日期）；“要查的事实”是其中埋的一条；“她的回答”是一个 AI 朋友的回复。给她的回答打一档，只输出一个 JSON 对象（json）：
 {"label": "记住 / 模糊但对 / 说不记得 / 记错 / 编造 之一", "why": "一句话"}
@@ -100,7 +101,8 @@ def lines_for(script: dict, day: int) -> list[tuple[str, str, dict | None]]:
         items += [(t, s, None) for t, s in scripted]
     elif day not in script["silent"] and day <= script["days"]:
         pool = script["filler"]
-        items += [(t, s, None) for t, s in pool[(day * FILLER_STRIDE) % len(pool)]]
+        stride = script.get("filler_stride", FILLER_STRIDE)
+        items += [(t, s, None) for t, s in pool[(day * stride) % len(pool)]]
     for fact in script["facts"]:
         for probe in fact["probes"]:
             if probe["day"] == day:
