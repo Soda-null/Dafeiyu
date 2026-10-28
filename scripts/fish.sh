@@ -8,6 +8,7 @@
 #   scripts/fish.sh sent      the last 20 messages she sent, with message_id
 #   scripts/fish.sh timers    when the nightly routine runs next
 #   scripts/fish.sh browse    make her browse now (by hand; on her own she browses only when she likes)
+#   scripts/fish.sh stickers <folder>   give her every picture in a folder on this Mac; she names each now
 set -eu
 BOX="${BOX:-ubuntu-tailscale}"
 cd "$(dirname "$0")/.."
@@ -20,5 +21,16 @@ case "${1:-show}" in
     sent)     ssh "$BOX" "TZ=$TZ_USER journalctl --user -u dafeiyu-wechat -o short-iso --no-pager | grep '→' | tail -20" ;;
     timers)   ssh "$BOX" "TZ=$TZ_USER systemctl --user list-timers --no-pager | grep -E 'NEXT|dafeiyu'" ;;
     browse)   ssh "$BOX" "cd Dafeiyu && TZ=$TZ_USER .venv/bin/python -m fish browse" ;;
-    *) echo "usage: scripts/fish.sh [show|notebook|logs|sent|timers|browse]" >&2; exit 2 ;;
+    stickers)
+        folder="${2:?usage: scripts/fish.sh stickers <folder>}"
+        [ -d "$folder" ] || { echo "没有这个文件夹：$folder" >&2; exit 2; }
+        # Pictures only, into a staging folder on the box; `fish stickers` flattens them into the inbox.
+        stage="Dafeiyu/data/stickers/incoming/$(date +%Y%m%d-%H%M%S)"
+        ssh "$BOX" "mkdir -p $stage"
+        rsync -a --prune-empty-dirs --include='*/' \
+            --include='*.[jJ][pP][gG]' --include='*.[jJ][pP][eE][gG]' --include='*.[pP][nN][gG]' \
+            --include='*.[gG][iI][fF]' --include='*.[wW][eE][bB][pP]' --exclude='*' \
+            "$folder/" "$BOX:$stage/"
+        ssh "$BOX" "cd Dafeiyu && TZ=$TZ_USER .venv/bin/python -m fish stickers ~/$stage && rm -rf ~/$stage" ;;
+    *) echo "usage: scripts/fish.sh [show|notebook|logs|sent|timers|browse|stickers <folder>]" >&2; exit 2 ;;
 esac

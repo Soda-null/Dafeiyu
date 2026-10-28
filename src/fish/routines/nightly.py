@@ -27,6 +27,7 @@ from fish.memory import (Diary, EpisodeManager, Memory, MemoryStore, Pastimes, P
 from fish.mood import MoodStore
 from fish.routines.export import export_notebook
 from fish.routines.runs import claim_run, last_run, mark_run
+from fish.routines.stickers import adopt_inbox_stickers
 
 if TYPE_CHECKING:
     from fish.brain.respond import Brain
@@ -254,33 +255,3 @@ def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
         report["stickers_added"] = adopt_inbox_stickers(brain, now)
 
     return report
-
-
-STICKER_TYPES = (".jpg", ".jpeg", ".png", ".gif", ".webp")
-
-
-def adopt_inbox_stickers(brain: "Brain", now: datetime, limit: int = 10) -> int:
-    """Each picture under data/stickers/inbox/ becomes a sticker with a caption; the file moves
-    into the album. A picture she cannot caption stays in the inbox for another night."""
-    from fish.brain.ask import ask_json
-    from fish.messages import data_url, sniff_mime
-
-    inbox = brain.album.folder / "inbox"
-    if not inbox.is_dir():
-        return 0
-    added = 0
-    for path in sorted(p for p in inbox.iterdir() if p.suffix.lower() in STICKER_TYPES)[:limit]:
-        data = path.read_bytes()
-        mime = sniff_mime(data)
-        if mime is None:
-            continue
-        reply = ask_json(brain.llm, "sticker_caption", persona=brain.persona, image=data_url(data),
-                         temperature=0.9, max_tokens=200)
-        caption = str((reply or {}).get("caption") or "").strip()
-        if not caption:
-            continue
-        tags = reply.get("tags") if isinstance(reply.get("tags"), list) else []
-        brain.album.add(data, mime, caption, tags=[str(t) for t in tags][:3], source="inbox", now=now)
-        path.unlink()
-        added += 1
-    return added

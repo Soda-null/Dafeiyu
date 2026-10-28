@@ -64,5 +64,5 @@
 
 - 代码 `src/fish/`（每个模块一行在 `src/fish/README.md`）；测试 `tests/`；工具 `scripts/`。
 - 跑：`.venv/bin/python -m fish`（终端聊）、`-m fish wechat login`（扫码绑微信）、`-m fish wechat`（在微信上聊）、`-m fish show`（看她记了什么）、`-m fish nightly`、`-m fish browse`。
-- 记忆数据 `data/fish.db`、微信凭证 `data/wechat.json`、表情包 `data/stickers/`，都不进 git；备份就是复制 `data/`。送她表情包：图片丢进 box 的 `~/Dafeiyu/data/stickers/inbox/`。
+- 记忆数据 `data/fish.db`、微信凭证 `data/wechat.json`、表情包 `data/stickers/`，都不进 git；备份就是复制 `data/`。送她表情包：Mac 上 `scripts/fish.sh stickers <文件夹>`。
 - 她住在寝室 Ubuntu 机上（决定 8）：**box 上的 `data/` 才是她**，Mac 上不要再跑 `fish wechat`。部署、日志、重扫码、备份见 `docs/box_zh.md`。

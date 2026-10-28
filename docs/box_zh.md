@@ -30,7 +30,7 @@
 | 备份她的记忆到 Mac | `rsync -az ubuntu-tailscale:Dafeiyu/data/ ~/Dafeiyu/backups/$(date +%F)/` |
 | 停掉她 | `ssh ubuntu-tailscale systemctl --user stop dafeiyu-wechat` |
 | 不让她先开口 / 改每天上限 | box 的 `~/Dafeiyu/.env` 里加 `FISH_REACH_OUT=0` 或 `FISH_REACH_MAX=1`，然后 `systemctl --user restart dafeiyu-wechat` |
-| 送她表情包 | `scp 图.png ubuntu-tailscale:Dafeiyu/data/stickers/inbox/`，夜里她看图起叫法收进相册（也可以直接在微信里发给她，她觉得好玩会自己留） |
+| 送她表情包 | 攒进 Mac 上一个文件夹，`scripts/fish.sh stickers ~/某个文件夹`：只传图片，她当场一张张看、起叫法收进相册，相册里已有的同一张不重复收；一张问一次模型。也可以 `scp` 进 `Dafeiyu/data/stickers/inbox/` 等她夜里看（一晚最多 10 张），或者直接在微信里发给她，她觉得好玩会自己留 |
 | 看她的相册 | `ssh ubuntu-tailscale 'cd Dafeiyu && .venv/bin/python -c "from fish.storage import connect; from fish.memory import StickerAlbum; from pathlib import Path; [print(s.id, s.caption, s.uses) for s in StickerAlbum(connect(Path(\"data/fish.db\")), Path(\"data/stickers\")).all()]"'` |
 
 ## 2. 第一次搬家怎么做的（2026-10-26）

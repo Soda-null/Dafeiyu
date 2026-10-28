@@ -27,7 +27,8 @@
 | `routines/` | `nightly.py` 八步，一个"鱼日"（03:30 到次日 03:30）只跑一次；`browse.py` 只剩手动的 `fish browse`（决定 24 起她空闲时想逛才逛）；`outside.py` 天气和节假日表，微信服务每小时看一眼、一天真取一次；`export.py` 写 `data/notebook_export.md`；`runs.py` 记每个例行做到哪天 | 能用 |
 | `messages.py` | 电话线和大脑之间传的 `Incoming(text, image, file)` / `Outgoing(text, sticker)`，和图片类型探测、data URL | 能用 |
 | `channels/` | `terminal.py`；`ilink.py` 腾讯 ClawBot 的 HTTP 协议（照官方插件 2.4.10：扫码登录、长轮询 `getupdates`、`sendmessage`、正在输入；收图下载解密、上传发图，AES-128-ECB），`wechat.py` 微信电话线（`login` 扫码存凭证；`WeChatChannel` 只回主人、去重、每行一个气泡、文字后发表情包、出错退避、-14 提示重扫；每轮轮询之间 `tick` 让她有机会先开口，`push` 用上次的对话凭证发） | 文字真机验证过；图片待验证 |
-| `memory/stickers.py` | 表情包相册：存图、起叫法、按用过次数排、记用过 | 能用 |
-| `__main__.py` | `python3 -m fish [chat \| nightly \| browse \| show \| wechat [login]]` | 能跑 |
+| `memory/stickers.py` | 表情包相册：存图、起叫法、按用过次数排、记用过；同一张图按指纹只收一次；`offer` 每轮给她看常用的 12 张加随机换的其余，相册再大也轮得到没用过的 | 能用 |
+| `routines/stickers.py` | 送她表情包：`import_folder` 把一个文件夹的图拷进收件箱，`adopt_inbox` 一张张让她起叫法收下（`fish stickers` 当场全收，夜里一晚 10 张） | 能用 |
+| `__main__.py` | `python3 -m fish [chat \| nightly \| browse \| show \| stickers [文件夹] \| wechat [login]]` | 能跑 |
 
 依赖方向：`channels → brain → {persona, memory, mood, world} → storage`；`routines → {memory, mood, brain, world}`；`world` 只用标准库。`brain/`、`memory/`、`mood/` 不许 import `channels/`（`tests/test_skeleton.py` 查）；`memory/` 里没有任何模型调用，所以它的测试不用密钥。

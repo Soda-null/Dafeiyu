@@ -1,9 +1,11 @@
-"""`python3 -m fish [chat | nightly | browse | show | wechat [login]]`.
+"""`python3 -m fish [chat | nightly | browse | show | stickers [folder] | wechat [login]]`.
 
 chat          talk to her in the terminal (default). Runs the nightly routine first if due.
 nightly       run the nightly routine now (safe to repeat: once per day).
 browse        make her browse now (by hand only: she browses in her free time when she likes, decision 24).
 show          print what she remembers: profile, memories, follow-ups, episodes, diary, mood.
+stickers      give her the pictures in a folder (and whatever is in data/stickers/inbox/): she
+              looks at each now, names it and keeps it. The folder's files are copied, not moved.
 wechat login  show a QR code; scan it in WeChat to bind her to your account.
 wechat        answer you on WeChat until Ctrl-C.
 """
@@ -14,6 +16,7 @@ import argparse
 import sqlite3
 from collections import Counter
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from fish.brain import Brain, DeepSeekLLM
 from fish.channels import ILinkClient, TerminalChannel, WeChatChannel, WeChatState, login
@@ -27,6 +30,7 @@ from fish.mood import MoodStore, stage_of
 from fish.routines import run_browse, run_nightly
 from fish.routines.outside import run_outside
 from fish.routines.nightly import EXPORT_PATH
+from fish.routines.stickers import STICKER_TYPES, adopt_inbox, import_folder, inbox_of
 from fish.storage import connect
 from fish.world import WikiSearcher, read_page
 
@@ -87,12 +91,31 @@ def show(conn: sqlite3.Connection, now: datetime | None = None) -> None:
         print(f"  在追的：{p.title}（{status}，上次 {p.touched[:10]}）")
 
 
+def give_stickers(brain: Brain, folder: Path | None) -> None:
+    inbox = inbox_of(brain)
+    if folder is not None:
+        if not folder.is_dir():
+            raise SystemExit(f"没有这个文件夹：{folder}")
+        print(f"放进收件箱 {import_folder(folder, inbox)} 张")
+    waiting = len([p for p in inbox.iterdir() if p.suffix.lower() in STICKER_TYPES]) if inbox.is_dir() else 0
+    print(f"她挨张看（{waiting} 张，一张问一次模型）……")
+    done = adopt_inbox(brain, datetime.now())
+    for s in done.added:
+        print(f"  [#{s.id}] {s.caption}  {'、'.join(s.tags)}")
+    print(f"收下 {len(done.added)} 张；相册里本来就有的 {done.repeats} 张；现在一共 {brain.album.count()} 张")
+    for why in done.left:
+        print(f"  没收：{why}")
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="fish", description="大肥鱼")
-    ap.add_argument("command", nargs="?", choices=["chat", "nightly", "browse", "show", "wechat"],
+    ap.add_argument("command", nargs="?", choices=["chat", "nightly", "browse", "show", "stickers", "wechat"],
                     default="chat")
-    ap.add_argument("subcommand", nargs="?", choices=["login"])
+    ap.add_argument("subcommand", nargs="?", help="wechat: login; stickers: a folder of pictures")
     args = ap.parse_args(argv)
+    if args.subcommand is not None and (args.command, args.subcommand) != ("wechat", "login") \
+            and args.command != "stickers":
+        ap.error(f"unexpected argument: {args.subcommand}")
 
     settings = load_settings()
     conn = connect(settings.db_path)
@@ -105,6 +128,9 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     brain = Brain(conn, settings, DeepSeekLLM(settings), searcher=WikiSearcher(), reader=read_page)
+    if args.command == "stickers":
+        give_stickers(brain, Path(args.subcommand).expanduser() if args.subcommand else None)
+        return
     report = run_nightly(conn, brain=brain, export_path=EXPORT_FILE)
     if args.command == "nightly":
         print(report)

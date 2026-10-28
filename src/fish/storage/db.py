@@ -5,14 +5,15 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 # Columns added after a table first shipped; applied to older databases on connect.
 ADDED_COLUMNS = [("memories", "source", "TEXT"),
                  ("memories", "times", "INTEGER NOT NULL DEFAULT 1"),  # decision 20: how often it happened
                  ("memories", "gist_due", "INTEGER NOT NULL DEFAULT 0"),  # 1: rewrite as a gist tonight
                  ("memories", "pattern", "TEXT"),  # its wording before the gist, to recognise the next time
                  ("memories", "about", "TEXT"),  # decision 21: 路过 / 日常 / 本人 / 一辈子 / 待印证
-                 ("memories", "last_time", "TEXT")]  # the day it last happened: one count per day
+                 ("memories", "last_time", "TEXT"),  # the day it last happened: one count per day
+                 ("stickers", "digest", "TEXT")]  # sha1 of the picture: the same one is kept once
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (

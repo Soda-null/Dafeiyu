@@ -129,7 +129,7 @@ class Brain:
             stage=stage, stage_rules=self.stages.get(stage, ""), howto=self.store.howto_card(),
             phase=self.phases.current(), growth=self.growth_lines(), **self.place_fields(),
             **self.day_fields(now),
-            stickers=self.album.all(), user_image=data_url(image) if image else None,
+            stickers=self.album.offer(), user_image=data_url(image) if image else None,
             shared=shared,
         )
         messages = build_chat_messages(ctx)

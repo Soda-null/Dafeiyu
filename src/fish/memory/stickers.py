@@ -3,7 +3,9 @@ a caption in her words, so she can pick one to send. Files live under data/stick
 
 from __future__ import annotations
 
+import hashlib
 import json
+import random
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
@@ -12,6 +14,7 @@ from pathlib import Path
 from fish.memory.longterm import iso
 
 EXT = {"image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp"}
+OFFERED, FAVOURITES = 30, 12  # a turn sees her favourites plus a changing handful of the rest
 
 
 @dataclass(frozen=True)
@@ -23,6 +26,10 @@ class Sticker:
     created: str
     source: str  # 'him' | 'inbox'
     uses: int
+
+
+def digest(data: bytes) -> str:
+    return hashlib.sha1(data).hexdigest()
 
 
 def _from_row(r: sqlite3.Row, folder: Path) -> Sticker:
@@ -40,8 +47,10 @@ class StickerAlbum:
         now = now or datetime.now()
         self.folder.mkdir(parents=True, exist_ok=True)
         cur = self.conn.execute(
-            "INSERT INTO stickers (file, caption, tags, created, source, uses) VALUES ('', ?, ?, ?, ?, 0)",
-            (caption[:80], json.dumps([str(t) for t in tags], ensure_ascii=False), iso(now), source),
+            "INSERT INTO stickers (file, caption, tags, created, source, uses, digest)"
+            " VALUES ('', ?, ?, ?, ?, 0, ?)",
+            (caption[:80], json.dumps([str(t) for t in tags], ensure_ascii=False), iso(now), source,
+             digest(data)),
         )
         sid = cur.lastrowid
         name = f"{sid}.{EXT.get(mime, 'jpg')}"
@@ -59,6 +68,26 @@ class StickerAlbum:
     def all(self, limit: int = 30) -> list[Sticker]:
         rows = self.conn.execute("SELECT * FROM stickers ORDER BY uses DESC, id DESC LIMIT ?", (limit,))
         return [_from_row(r, self.folder) for r in rows]
+
+    def offer(self, n: int = OFFERED, favourites: int = FAVOURITES,
+              rng: random.Random | None = None) -> list[Sticker]:
+        """The ones shown to her this turn: the most used, then a fresh random handful, so a big
+        album does not hide the pictures she has not tried yet."""
+        everything = self.all(limit=-1)
+        if len(everything) <= n:
+            return everything
+        fav = [s for s in everything if s.uses > 0][:favourites]
+        rest = [s for s in everything if s not in fav]
+        return fav + (rng or random).sample(rest, n - len(fav))
+
+    def has(self, data: bytes) -> bool:
+        """The same picture is already in the album (pictures from before digests get theirs now)."""
+        for r in self.conn.execute("SELECT id, file FROM stickers WHERE digest IS NULL").fetchall():
+            path = self.folder / r["file"]
+            if path.exists():
+                self.conn.execute("UPDATE stickers SET digest = ? WHERE id = ?", (digest(path.read_bytes()), r["id"]))
+        self.conn.commit()
+        return self.conn.execute("SELECT 1 FROM stickers WHERE digest = ?", (digest(data),)).fetchone() is not None
 
     def touch(self, sticker_id: int, now: datetime | None = None) -> None:
         self.conn.execute("UPDATE stickers SET uses = uses + 1, last_used = ? WHERE id = ?",
