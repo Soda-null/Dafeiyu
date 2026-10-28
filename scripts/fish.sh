@@ -6,8 +6,8 @@
 #   scripts/fish.sh notebook  last night's exported notebook (diary, notes, phase)
 #   scripts/fish.sh logs      live WeChat log (Ctrl-C to stop)
 #   scripts/fish.sh sent      the last 20 messages she sent, with message_id
-#   scripts/fish.sh timers    when the nightly routine and the browse run next
-#   scripts/fish.sh browse    let her browse now
+#   scripts/fish.sh timers    when the nightly routine runs next
+#   scripts/fish.sh browse    make her browse now (by hand; on her own she browses only when she likes)
 set -eu
 BOX="${BOX:-ubuntu-tailscale}"
 cd "$(dirname "$0")/.."

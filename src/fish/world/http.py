@@ -22,8 +22,11 @@ FetchBytes = Callable[[str, float], bytes]  # (url, timeout) -> raw body (map ti
 FetchPost = Callable[[str, dict[str, str], float], str]  # (url, form fields, timeout) -> body text
 
 
+BOT_AGENT = "Dafeiyu/0.1 (personal AI friend; low volume)"
+
+
 def urllib_fetch_bytes(url: str, timeout: float = 15.0) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "Dafeiyu/0.1 (personal AI friend; low volume)"})
+    req = urllib.request.Request(url, headers={"User-Agent": BOT_AGENT})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.read(MAX_BYTES)
@@ -35,7 +38,7 @@ def urllib_post(url: str, form: dict[str, str], timeout: float = 40.0) -> str:
     import urllib.parse
 
     req = urllib.request.Request(url, data=urllib.parse.urlencode(form).encode(),
-                                 headers={"User-Agent": "Dafeiyu/0.1 (personal AI friend; low volume)"})
+                                 headers={"User-Agent": BOT_AGENT})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.read(MAX_BYTES).decode("utf-8", "replace")
@@ -56,3 +59,8 @@ def urllib_fetch(url: str, timeout: float = 15.0) -> str:
         return raw.decode(charset, "replace")
     except LookupError:
         return raw.decode("utf-8", "replace")
+
+
+def bot_fetch(url: str, timeout: float = 15.0) -> str:
+    """Text from an API that asks callers to say who they are (Wikimedia does)."""
+    return urllib_fetch_bytes(url, timeout).decode("utf-8", "replace")

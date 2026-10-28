@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from fish.brain import Brain, FakeLLM
+from fish.brain.leisure import Leisure
 from fish.brain.reach import ReachOut, ReachPolicy
 from fish.channels import WeChatChannel, WeChatState
 from fish.config import Settings
@@ -21,6 +22,7 @@ def make(tmp_path: Path, llm, **settings):
     conn = connect(tmp_path / "fish.db")
     s = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db", **settings)
     brain = Brain(conn, s, llm, persona_text=PERSONA)
+    brain.leisure = Leisure(brain, [], sources=[])  # a tick that does not reach out may be a free moment; no network
     return conn, brain
 
 

@@ -8,7 +8,7 @@
 
 - 代码 `~/Dafeiyu`（box 上），由 Mac `git push box main` 直接更新工作区（和 Yaqi 仓库同一招：`receive.denyCurrentBranch updateInstead`）。
 - 记忆 `~/Dafeiyu/data/fish.db`、微信凭证 `data/wechat.json`、密钥 `.env`：**都在 box 上，box 上的才是真的**。Mac 上 `data/` 是搬家那天的旧拷贝，别再在 Mac 上跑 `fish wechat`（两边同时收微信消息会互相抢）。
-- 三个 systemd 用户单元：`dafeiyu-wechat.service`（一直跑）、`dafeiyu-nightly.timer`（每天 03:30 跑 `fish nightly`）、`dafeiyu-browse.timer`（每天 09:30 跑 `fish browse`）。时区跟 Mac 一样（部署脚本从 Mac 读，写进 `tz.conf`），所以她的"深夜"和"上午"都是用户的，不是 box 的。
+- 两个 systemd 用户单元：`dafeiyu-wechat.service`（一直跑；她的空闲时间、天气也在这里面）、`dafeiyu-nightly.timer`（每天 03:30 跑 `fish nightly`）。原来每天 09:30 的 `dafeiyu-browse.timer` 决定 24 撤了，部署脚本会把旧的停掉删掉。时区跟 Mac 一样（部署脚本从 Mac 读，写进 `tz.conf`），所以她的"深夜"和"上午"都是用户的，不是 box 的。
 
 ## 1. 常用命令（都在 Mac 上敲）
 
@@ -23,8 +23,8 @@
 | 手动跑一次夜间整理 | `ssh ubuntu-tailscale 'cd Dafeiyu && .venv/bin/python -m fish nightly'`（同一天跑两次第二次会跳过） |
 | 看她的小本本（夜里导出的） | `ssh ubuntu-tailscale cat Dafeiyu/data/notebook_export.md` |
 | 看昨晚整理的日志 | `ssh ubuntu-tailscale journalctl --user -u dafeiyu-nightly -n 20` |
-| 看她今天逛了什么 | `ssh ubuntu-tailscale journalctl --user -u dafeiyu-browse -n 20`（见闻本身在 `fish show` 或导出文件里） |
-| 让她现在就逛一次 | `ssh ubuntu-tailscale 'cd Dafeiyu && .venv/bin/python -m fish browse'`（一天一次，第二次跳过） |
+| 看她空闲时干了什么 | `fish show` 的"空闲"一节（两周里每样选了几回、最近几段、在读的书）；见闻本身在 `fish show` 或导出文件里 |
+| 让她现在就逛一次 | `ssh ubuntu-tailscale 'cd Dafeiyu && .venv/bin/python -m fish browse'`（手动的，一天一次，第二次跳过；平时她想逛才逛） |
 | 微信说过期了，重扫码 | 先 `ssh ubuntu-tailscale systemctl --user stop dafeiyu-wechat`，再 `ssh -t ubuntu-tailscale 'cd Dafeiyu && .venv/bin/python -m fish wechat login'`（二维码画在 Mac 的终端里），再 `ssh ubuntu-tailscale systemctl --user start dafeiyu-wechat` |
 | 导出她的记忆给试算脚本（`scripts/memory_v2_trial.py`，只读） | 在 box 上 `cd Dafeiyu && .venv/bin/python -c "import json; from dataclasses import asdict; from fish.config import load_settings; from fish.storage import connect; from fish.memory import MemoryStore; c = connect(load_settings().db_path); print(json.dumps({'memories': [asdict(m) for m in MemoryStore(c).alive()], 'episodes': [dict(r) for r in c.execute('SELECT id, started, ended, gist, importance, valence FROM episodes')]}, ensure_ascii=False))" > her_memories.json`，再 scp 到 Mac |
 | 备份她的记忆到 Mac | `rsync -az ubuntu-tailscale:Dafeiyu/data/ ~/Dafeiyu/backups/$(date +%F)/` |

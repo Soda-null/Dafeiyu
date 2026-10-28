@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 # Columns added after a table first shipped; applied to older databases on connect.
 ADDED_COLUMNS = [("memories", "source", "TEXT"),
                  ("memories", "times", "INTEGER NOT NULL DEFAULT 1"),  # decision 20: how often it happened
@@ -116,6 +116,25 @@ CREATE TABLE IF NOT EXISTS stickers (
     source    TEXT NOT NULL,              -- him | inbox
     uses      INTEGER NOT NULL DEFAULT 0,
     last_used TEXT
+);
+CREATE TABLE IF NOT EXISTS pastimes (          -- decision 24: what she follows (a book she reads)
+    id        INTEGER PRIMARY KEY,
+    kind      TEXT NOT NULL,              -- the activity's key, e.g. book
+    title     TEXT NOT NULL,              -- what she calls it
+    ref       TEXT NOT NULL,              -- the activity's own id (a Wikisource title)
+    progress  TEXT NOT NULL DEFAULT '{}', -- JSON, the activity's own (chapter, offset)
+    status    TEXT NOT NULL DEFAULT 'on', -- on | dropped | finished
+    started   TEXT NOT NULL,
+    touched   TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS leisure_log (       -- decision 24: one row per free moment
+    id        INTEGER PRIMARY KEY,
+    ts        TEXT NOT NULL,
+    choice    TEXT,                       -- activity key, 'nothing', or NULL while asking
+    line      TEXT,                       -- the menu line she picked
+    why       TEXT,                       -- her one sentence
+    result    TEXT,                       -- what came of it, one line
+    memories  TEXT                        -- JSON list of memory ids written
 );
 """
 

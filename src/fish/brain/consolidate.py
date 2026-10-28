@@ -127,12 +127,13 @@ class Consolidator:
 
     def diary(self, day: str, mood: str, threads: list[str], gists: list[str],
               yesterday: str, seen: list[str] | None = None, *, phase_line: str = "",
-              tone_word: str = "一般", drive_word: str = "还行") -> tuple[str, list[tuple[str, int]], str]:
+              tone_word: str = "一般", drive_word: str = "还行",
+              leisure: list[str] | None = None) -> tuple[str, list[tuple[str, int]], str]:
         """Returns (diary text, new life threads, the phase line: how she has been lately)."""
         data = self._ask("diary", persona=self.persona, day=day, mood=mood,
                          threads=_lines(threads, "（还没有，可以开始一件）"),
                          gists=_lines(gists, "（今天没聊）"), yesterday=yesterday or "（没写）",
-                         seen=_lines(seen or [], "（今天没逛）"),
+                         seen=_lines(seen or [], "（今天没逛）"), leisure=_lines(leisure or [], "（没记下）"),
                          phase_line=phase_line or "（还没写过）", tone_word=tone_word, drive_word=drive_word)
         if not data or not str(data.get("diary", "")).strip():
             return "", [], ""

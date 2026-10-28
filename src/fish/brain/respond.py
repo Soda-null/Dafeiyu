@@ -11,6 +11,7 @@ from pathlib import Path
 
 from typing import Callable
 
+from fish.brain.leisure import Leisure, default_activities, moment_line, pastimes_line
 from fish.brain.llm import LLM
 from fish.brain.parse import Reply, parse_episode_close, parse_reply
 from fish.brain.prompt import (PromptContext, build_chat_messages, build_close_messages,
@@ -18,13 +19,14 @@ from fish.brain.prompt import (PromptContext, build_chat_messages, build_close_m
 from fish.brain.reach import Reacher, ReachOut, ReachPolicy, recent_lines
 from fish.config import Settings, owner_words
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
-from fish.memory import (Diary, Episode, EpisodeManager, MemoryStore, PhaseStore, ProspectiveStore,
-                         Relationship, StickerAlbum, TraitStore, Window, recall)
+from fish.memory import (Diary, Episode, EpisodeManager, MemoryStore, Moment, Pastimes, PhaseStore,
+                         ProspectiveStore, Relationship, StickerAlbum, TraitStore, Window, recall)
 from fish.memory.prospective import DUE_SHOWN
 from fish.memory.window import FOLD_BATCH
 from fish.mood import MoodStore, stage_of
 from fish.persona import load_persona, load_stages
 from fish.world import Searcher, read_file
+from fish.world.days import day_line
 
 FALLBACK_SAY = "……（走神了，你刚说什么？）"
 CLOSE_TURNS = 12  # how many last turns the close prompt sees
@@ -58,6 +60,8 @@ class Brain:
         self.relationship = Relationship(conn)
         self.phases = PhaseStore(conn)
         self.traits = TraitStore(conn)
+        self.pastimes = Pastimes(conn)
+        self.leisure: Leisure | None = None  # built on the first free moment; tests set their own
 
     def stage(self) -> str:
         return stage_of(self.relationship.closeness)
@@ -72,6 +76,14 @@ class Brain:
         return {"home_line": home.line() if home else "",
                 "weather_line": self.relationship.get("weather_line", "") or "",
                 "places": places_line(load_places(folder))}
+
+    def day_fields(self, now: datetime) -> dict[str, str]:
+        """What day it is, what she is following, what she did with her free time today (decision 24)."""
+        today = datetime.combine(now.date(), datetime.min.time())
+        done = [moment_line(m) for m in self.pastimes.moments(today, now) if m.choice][-3:]
+        return {"day_line": day_line(now.date(), self.album.folder.parent / "home"),
+                "pastimes_line": pastimes_line(self.pastimes, now),
+                "today_line": "你今天空闲时：" + "；".join(done) + "。" if done else ""}
 
     def growth_lines(self) -> list[str]:
         lines = self.traits.describe()
@@ -116,6 +128,7 @@ class Brain:
             seen=self.store.seen_recently(now, SEEN_DAYS)[:SEEN_SHOWN],
             stage=stage, stage_rules=self.stages.get(stage, ""), howto=self.store.howto_card(),
             phase=self.phases.current(), growth=self.growth_lines(), **self.place_fields(),
+            **self.day_fields(now),
             stickers=self.album.all(), user_image=data_url(image) if image else None,
             shared=shared,
         )
@@ -269,13 +282,21 @@ class Brain:
 
     def tick(self, send: Callable[[str], bool], channel: str = "wechat",
              now: datetime | None = None) -> bool:
-        """Called by a channel between polls. True when she reached out and it was delivered."""
+        """Called by a channel between polls. True when she reached out and it was delivered;
+        otherwise it may be one of her free moments."""
         now = now or datetime.now()
         ro = self.consider_reach_out(now)
-        if ro is None or not send(ro.text):
-            return False
-        self.commit_reach_out(ro, channel, now)
-        return True
+        if ro is not None and send(ro.text):
+            self.commit_reach_out(ro, channel, now)
+            return True
+        self.free_time(now)
+        return False
+
+    def free_time(self, now: datetime | None = None) -> Moment | None:
+        """A free moment, if she has one now: she may do something, or nothing (decision 24)."""
+        if self.leisure is None:
+            self.leisure = Leisure(self, default_activities(), searcher=self.searcher)
+        return self.leisure.run(now)
 
     # --- working memory upkeep ----------------------------------------------
 

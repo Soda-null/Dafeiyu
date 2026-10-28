@@ -1,6 +1,6 @@
 """Her place in the world (decision 15): where she lives, today's weather, what is nearby.
 
-Once per fish day (from 07:00): weather. Once ever (or when missing): locate home, list
+Once per fish day (from 07:00): weather, and the holiday table when it is a week old. Once ever (or when missing): locate home, list
 nearby places (refreshed every 30 days), fetch the neighbourhood map and let her look at
 it once, keeping up to three notes. Everything lives in data/home/ and the relationship
 ledger; nothing finer than a neighbourhood is stored.
@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from fish.memory import MemoryStore, Relationship
 from fish.routines.nightly import fish_day
 from fish.routines.runs import claim_run
+from fish.world.days import refresh_holidays
 from fish.world.http import Fetch, FetchBytes, FetchPost, urllib_fetch, urllib_fetch_bytes, urllib_post
 from fish.world.place import (Home, Place, locate, nearby, neighbourhood_map, places_line, weather)
 
@@ -83,6 +84,7 @@ def run_outside(conn: sqlite3.Connection, now: datetime | None = None, *, brain:
             report["weather"] = rel.get("weather_line")
         except Exception as e:  # noqa: BLE001
             report["weather_error"] = str(e)[:80]
+        report["holidays"] = refresh_holidays(folder, now.date(), fetch=fetch)  # decision 24
 
     map_file = folder / "map.png"
     if not map_file.exists():

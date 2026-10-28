@@ -50,6 +50,9 @@ class PromptContext:
     home_line: str = ""  # where she lives, city and neighbourhood (decision 15)
     weather_line: str = ""  # today's weather there
     places: str = ""  # nearby places, names and walking minutes
+    day_line: str = ""  # solar term, holiday (decision 24)
+    pastimes_line: str = ""  # the book she is reading
+    today_line: str = ""  # what she did with her free moments today
     growth: list[str] = field(default_factory=list)  # layer A: how she has changed from her origin
     stickers: list[Sticker] = field(default_factory=list)  # her album, for picking one
     user_image: str | None = None  # data URL of a picture he sent with this message
@@ -65,6 +68,7 @@ def state_line(ctx: PromptContext) -> str:
     parts = [when, known]
     if ctx.weather_line:
         parts.append(f"你那儿{ctx.weather_line}。")
+    parts += [x for x in (ctx.day_line, ctx.pastimes_line, ctx.today_line) if x]
     parts.append(f"你此刻的状态：{ctx.mood.describe(ctx.stage)}。")
     return " ".join(parts + ctx.extra_state)
 

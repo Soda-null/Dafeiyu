@@ -42,14 +42,15 @@ MAC_TZ="$(readlink /etc/localtime | sed 's#.*/zoneinfo/##')"
 ssh "$BOX" "cd ~/$REMOTE_DIR \
   && { [ -x .venv/bin/python ] || python3 -m venv .venv; } \
   && .venv/bin/python -m pip install -q -r requirements.txt -e . \
-  && for u in dafeiyu-wechat.service dafeiyu-nightly.service dafeiyu-nightly.timer dafeiyu-browse.service dafeiyu-browse.timer; do \
+  && for u in dafeiyu-browse.timer dafeiyu-browse.service; do \
+       systemctl --user disable --now \$u 2>/dev/null; rm -rf ~/.config/systemd/user/\$u ~/.config/systemd/user/\$u.d; done \
+  && for u in dafeiyu-wechat.service dafeiyu-nightly.service dafeiyu-nightly.timer; do \
        mkdir -p ~/.config/systemd/user/\$u.d && cp scripts/systemd/\$u ~/.config/systemd/user/; done \
-  && for u in dafeiyu-wechat.service dafeiyu-nightly.service dafeiyu-browse.service; do \
+  && for u in dafeiyu-wechat.service dafeiyu-nightly.service; do \
        printf '[Service]\nEnvironment=TZ=%s\n' '$MAC_TZ' > ~/.config/systemd/user/\$u.d/tz.conf; done \
   && printf '[Timer]\nOnCalendar=\nOnCalendar=*-*-* 03:30:00 %s\n' '$MAC_TZ' > ~/.config/systemd/user/dafeiyu-nightly.timer.d/tz.conf \
-  && printf '[Timer]\nOnCalendar=\nOnCalendar=*-*-* 09:30:00 %s\n' '$MAC_TZ' > ~/.config/systemd/user/dafeiyu-browse.timer.d/tz.conf \
   && systemctl --user daemon-reload \
-  && { systemctl --user is-enabled --quiet dafeiyu-wechat.service && systemctl --user enable --now dafeiyu-nightly.timer dafeiyu-browse.timer >/dev/null && systemctl --user restart dafeiyu-nightly.timer dafeiyu-browse.timer || true; } \
+  && { systemctl --user is-enabled --quiet dafeiyu-wechat.service && systemctl --user enable --now dafeiyu-nightly.timer >/dev/null && systemctl --user restart dafeiyu-nightly.timer || true; } \
   && .venv/bin/python -m pytest -q 2>&1 | tail -1"
 echo "installed; TZ=$MAC_TZ"
 
@@ -63,7 +64,7 @@ fi
 
 if [ "$START" = 1 ]; then
     ssh "$BOX" "loginctl enable-linger \$(whoami) 2>/dev/null || echo 'enable-linger needs: sudo loginctl enable-linger \$(whoami)'; \
-      systemctl --user enable --now dafeiyu-nightly.timer dafeiyu-browse.timer dafeiyu-wechat.service && systemctl --user --no-pager status dafeiyu-wechat.service | head -5"
+      systemctl --user enable --now dafeiyu-nightly.timer dafeiyu-wechat.service && systemctl --user --no-pager status dafeiyu-wechat.service | head -5"
 elif [ "$RESTART" = 1 ]; then
     ssh "$BOX" "systemctl --user restart dafeiyu-wechat.service && systemctl --user --no-pager status dafeiyu-wechat.service | head -5"
 fi

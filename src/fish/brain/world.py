@@ -55,12 +55,14 @@ class Browser:
                 picks.append(n)
         return picks[:MAX_PICKS]
 
-    def read(self, opened: list[tuple[Item, str]]) -> tuple[list[Seen], list[tuple[str, int]]]:
+    def read(self, opened: list[tuple[Item, str]], *, template: str = "browse_read",
+             **fields: str) -> tuple[list[Seen], list[tuple[str, int]]]:
+        """What she thought of what she opened; free time (decision 24) uses its own template."""
         if not opened:
             return [], []
         blocks = "\n\n".join(f"{i}. 【{it.source}】{it.title}（{it.url}）\n{text}" for i, (it, text) in enumerate(opened))
-        data = ask_json(self.llm, "browse_read", persona=self.persona, opened=blocks, temperature=0.9,
-                        max_tokens=900)
+        data = ask_json(self.llm, template, persona=self.persona, opened=blocks, temperature=0.9,
+                        max_tokens=900, **fields)
         seen: list[Seen] = []
         for s in (data or {}).get("seen") or []:
             if not isinstance(s, dict):

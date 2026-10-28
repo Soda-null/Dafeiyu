@@ -12,9 +12,12 @@
 set -euo pipefail
 
 REPO_URL="${DAFEIYU_REPO:-https://github.com/Soda-null/Dafeiyu.git}"
-UNITS=(dafeiyu-wechat.service dafeiyu-nightly.service dafeiyu-nightly.timer dafeiyu-browse.service dafeiyu-browse.timer)
+UNITS=(dafeiyu-wechat.service dafeiyu-nightly.service dafeiyu-nightly.timer)
 LAUNCH_DIR="$HOME/Library/LaunchAgents"
-LABELS=(com.dafeiyu.wechat com.dafeiyu.nightly com.dafeiyu.browse)
+LABELS=(com.dafeiyu.wechat com.dafeiyu.nightly)
+# 决定 24 起她想逛才逛，不再每天 09:30 定时逛；老版本装过的这几个在安装 / 卸载时清掉。
+RETIRED_UNITS=(dafeiyu-browse.service dafeiyu-browse.timer)
+RETIRED_LABELS=(com.dafeiyu.browse)
 
 say()  { printf '\033[1;34m🐟 %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m!! %s\033[0m\n' "$*" >&2; }
@@ -157,19 +160,22 @@ install_systemd() {
     local unit_dir="$HOME/.config/systemd/user" tz u
     tz="$(env_get TZ)"; tz="${tz:-$(detect_tz)}"
     mkdir -p "$unit_dir"
+    for u in "${RETIRED_UNITS[@]}"; do
+        systemctl --user disable --now "$u" 2>/dev/null || true
+        rm -rf "$unit_dir/$u" "$unit_dir/$u.d"
+    done
     for u in "${UNITS[@]}"; do
         # The templates say %h/Dafeiyu; point them at wherever this checkout really is.
         sed "s#%h/Dafeiyu#$DIR#g" "$DIR/scripts/systemd/$u" > "$unit_dir/$u"
         mkdir -p "$unit_dir/$u.d"
     done
-    for u in dafeiyu-wechat.service dafeiyu-nightly.service dafeiyu-browse.service; do
+    for u in dafeiyu-wechat.service dafeiyu-nightly.service; do
         printf '[Service]\nEnvironment=TZ=%s\n' "$tz" > "$unit_dir/$u.d/tz.conf"
     done
     # A timer counts in the machine's timezone; re-state it in hers.
     printf '[Timer]\nOnCalendar=\nOnCalendar=*-*-* 03:30:00 %s\n' "$tz" > "$unit_dir/dafeiyu-nightly.timer.d/tz.conf"
-    printf '[Timer]\nOnCalendar=\nOnCalendar=*-*-* 09:30:00 %s\n' "$tz" > "$unit_dir/dafeiyu-browse.timer.d/tz.conf"
     systemctl --user daemon-reload
-    systemctl --user enable --now dafeiyu-nightly.timer dafeiyu-browse.timer >/dev/null
+    systemctl --user enable --now dafeiyu-nightly.timer >/dev/null
     if [ -f "$DIR/data/wechat.json" ]; then
         systemctl --user enable dafeiyu-wechat.service >/dev/null 2>&1
         systemctl --user restart dafeiyu-wechat.service
@@ -202,9 +208,12 @@ EOF
 install_launchd() {
     mkdir -p "$LAUNCH_DIR" "$DIR/data/logs"
     plist com.dafeiyu.nightly nightly '<key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>30</integer></dict>'
-    plist com.dafeiyu.browse browse '<key>StartCalendarInterval</key><dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>'
     plist com.dafeiyu.wechat wechat '<key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>10</integer>'
     local l
+    for l in "${RETIRED_LABELS[@]}"; do
+        launchctl bootout "gui/$(id -u)/$l" 2>/dev/null || true
+        rm -f "$LAUNCH_DIR/$l.plist"
+    done
     for l in "${LABELS[@]}"; do
         launchctl bootout "gui/$(id -u)/$l" 2>/dev/null || true
         if [ "$l" = com.dafeiyu.wechat ] && [ ! -f "$DIR/data/wechat.json" ]; then continue; fi
@@ -230,14 +239,14 @@ uninstall_services() {
         say "跳过开机自启（DAFEIYU_SKIP_SERVICES）"
     elif [ "$OS" = Darwin ]; then
         local l
-        for l in "${LABELS[@]}"; do
+        for l in "${LABELS[@]}" "${RETIRED_LABELS[@]}"; do
             launchctl bootout "gui/$(id -u)/$l" 2>/dev/null || true
             rm -f "$LAUNCH_DIR/$l.plist"
         done
     elif systemd_ok; then
         systemctl --user disable --now dafeiyu-wechat.service dafeiyu-nightly.timer dafeiyu-browse.timer 2>/dev/null || true
         local u
-        for u in "${UNITS[@]}"; do rm -rf "$HOME/.config/systemd/user/$u" "$HOME/.config/systemd/user/$u.d"; done
+        for u in "${UNITS[@]}" "${RETIRED_UNITS[@]}"; do rm -rf "$HOME/.config/systemd/user/$u" "$HOME/.config/systemd/user/$u.d"; done
         systemctl --user daemon-reload
     fi
 }

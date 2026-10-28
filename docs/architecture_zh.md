@@ -24,12 +24,12 @@
 | 模块 | 管什么 | 人话 | 依赖谁 |
 |---|---|---|---|
 | `channels/` | 收发消息。`terminal`；`wechat`（`ilink.py` 是腾讯 ClawBot 的 HTTP 协议，决定 7） | 电话线，随便换 | `brain` |
-| `world/` | 只管"看"：RSS、B 站、维基、网页正文（决定 9；`docs/world_design_zh.md`） | 她的窗口 | 无（只用标准库） |
+| `world/` | 只管"看"：RSS、B 站、维基、维基文库、网页正文、今天是什么日子（决定 9、24；`docs/world_design_zh.md`） | 她的窗口 | 无（只用标准库） |
 | `persona/` | 读 `docs/persona_zh.md`，给大脑一段"她是谁" | 她的人设 | 无 |
 | `memory/` | 记忆的数据和数学，不调模型（§3，细节在 `memory_design_zh.md`） | 她的脑子里记着什么 | `storage` |
 | `mood/` | 四个心情值和它们怎么变（§4） | 她今天什么状态 | `storage` |
 | `brain/` | 拼提示词、调 DeepSeek、解析回复 | 真正"想"的地方 | `persona` `memory` `mood` |
-| `routines/` | 定时跑的事：夜间整理、写日记、淡化 | 她睡觉时脑子在整理 | `memory` `mood` `brain` |
+| `routines/` | 定时跑的事：夜间整理、写日记、淡化；天气（她的空闲时间不是定时的，在 `brain/leisure/`，决定 24） | 她睡觉时脑子在整理 | `memory` `mood` `brain` |
 | `storage/` | SQLite 读写，一个文件 `data/fish.db` | 所有东西存哪 | 无 |
 
 **铁律：** `brain/`、`memory/`、`mood/` 不许 import `channels/`。换电话线不动大脑。`world/` 不调模型、不认识大脑；`brain` 和 `routines` 用它。

@@ -1,8 +1,8 @@
 """`python3 -m fish [chat | nightly | browse | show | wechat [login]]`.
 
-chat          talk to her in the terminal (default). Runs the nightly and browse routines first if due.
+chat          talk to her in the terminal (default). Runs the nightly routine first if due.
 nightly       run the nightly routine now (safe to repeat: once per day).
-browse        let her browse now (once per day; this forces it even before 09:30).
+browse        make her browse now (by hand only: she browses in her free time when she likes, decision 24).
 show          print what she remembers: profile, memories, follow-ups, episodes, diary, mood.
 wechat login  show a QR code; scan it in WeChat to bind her to your account.
 wechat        answer you on WeChat until Ctrl-C.
@@ -12,14 +12,17 @@ from __future__ import annotations
 
 import argparse
 import sqlite3
-from datetime import datetime
+from collections import Counter
+from datetime import datetime, timedelta
 
 from fish.brain import Brain, DeepSeekLLM
 from fish.channels import ILinkClient, TerminalChannel, WeChatChannel, WeChatState, login
 from fish.channels.wechat import STATE_FILE
 from fish.config import REPO_ROOT, load_settings, owner_words
-from fish.memory import (Diary, EpisodeManager, MemoryStore, PhaseStore, ProspectiveStore, Relationship,
-                         TraitStore)
+from fish.brain.leisure import moment_line
+from fish.brain.leisure.book import where
+from fish.memory import (Diary, EpisodeManager, MemoryStore, Pastimes, PhaseStore, ProspectiveStore,
+                         Relationship, TraitStore)
 from fish.mood import MoodStore, stage_of
 from fish.routines import run_browse, run_nightly
 from fish.routines.outside import run_outside
@@ -73,6 +76,15 @@ def show(conn: sqlite3.Connection, now: datetime | None = None) -> None:
     for g in traits.growth_notes(2):
         print(f"  {g.month[:7]} 回头看：{g.text}  {g.changes}")
     print(f"== 关系 == {rel.stats(now)}  亲近 {rel.closeness:.0f}（{stage}）")
+    pastimes = Pastimes(conn)
+    moments = [m for m in pastimes.moments(now - timedelta(days=14)) if m.choice]
+    counts = Counter(m.choice for m in moments)
+    print(f"== 空闲（两周 {len(moments)} 段）== " + ("，".join(f"{k} {v}" for k, v in counts.most_common()) or "还没有"))
+    for m in moments[-6:]:
+        print(f"  {m.ts[:10]} {moment_line(m)}" + (f"  ——{m.why}" if m.why else ""))
+    for p in pastimes.all()[:5]:
+        status = {"on": where(p) if p.kind == "book" else "在追", "dropped": "弃了", "finished": "读完了"}[p.status]
+        print(f"  在追的：{p.title}（{status}，上次 {p.touched[:10]}）")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -102,13 +114,22 @@ def main(argv: list[str] | None = None) -> None:
         print(run_browse(conn, brain=brain, force=True))
         return
     run_outside(conn, brain=brain)
-    run_browse(conn, brain=brain)  # catch up on today's browse if the timer was missed
     if args.command == "wechat":
         if not WECHAT_STATE.exists():
             raise SystemExit("还没绑微信。先跑：.venv/bin/python -m fish wechat login")
         state = WeChatState.load(WECHAT_STATE)
         client = ILinkClient(state.bot_token, state.base_url)
-        channel = WeChatChannel(client, state, WECHAT_STATE, tick=brain.tick)
+
+        upkeep = {"last": datetime.now()}
+
+        def tick(send):
+            # today's weather and holiday table (once a day inside); hourly, so no network cannot mean a retry per poll
+            if datetime.now() - upkeep["last"] >= timedelta(hours=1):
+                upkeep["last"] = datetime.now()
+                run_outside(conn, brain=brain)
+            return brain.tick(send)
+
+        channel = WeChatChannel(client, state, WECHAT_STATE, tick=tick)
     else:
         channel = TerminalChannel()
     channel.run(lambda incoming: brain.handle(incoming, channel.name))

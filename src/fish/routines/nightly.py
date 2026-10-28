@@ -20,9 +20,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fish.brain.consolidate import Consolidator, similarity
+from fish.brain.leisure import moment_line
 from fish.config import owner_words
-from fish.memory import (Diary, EpisodeManager, Memory, MemoryStore, PhaseStore, ProspectiveStore,
-                         Relationship, TraitStore, overlap)
+from fish.memory import (Diary, EpisodeManager, Memory, MemoryStore, Pastimes, PhaseStore,
+                         ProspectiveStore, Relationship, TraitStore, overlap)
 from fish.mood import MoodStore
 from fish.routines.export import export_notebook
 from fish.routines.runs import claim_run, last_run, mark_run
@@ -191,10 +192,12 @@ def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
         yesterday = next((t for d, t in diary.recent(1) if d < day.isoformat()), "")
         seen_today = [m.text for m in store.seen_recently(now, 2)
                       if fish_day(datetime.fromisoformat(m.created)) == day]
+        leisure = [moment_line(m) for m in Pastimes(conn).moments(day_start, day_end) if m.choice]
         prev = phases.current()
         text, notes, line = thinker.diary(day.isoformat(), moods.load().describe(), threads, gists,
                                           yesterday, seen=seen_today, phase_line=prev.line,
-                                          tone_word=prev.tone_word, drive_word=prev.drive_word)
+                                          tone_word=prev.tone_word, drive_word=prev.drive_word,
+                                          leisure=leisure)
         if text:
             diary.write(day.isoformat(), text)
             for note, importance in strongest(notes, SELF_NOTES_PER_NIGHT):

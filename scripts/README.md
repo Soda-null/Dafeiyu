@@ -13,4 +13,4 @@
 | `memory_v2_trial.py` | 记忆第二版的试算（`docs/memory_v2_zh.md` §6）：给一份她记忆的 JSON 导出，问模型一次打标签，按新旧规则推算几天后清楚 / 模糊 / 想不起 | 调规则时手动跑 |
 | `../install.sh` | 一键安装（仓库根目录）：拿代码、建 `.venv`、问 key / 时区 / 他还是她写 `.env`、自检、扫码绑微信、装开机自启（Linux systemd 用户服务 / macOS launchd）；`update`、`uninstall` | 新用户；`curl … \| bash` 或 `./install.sh` |
 | `deploy_box.sh` | 把她推到寝室 Ubuntu 机：push 代码、装 venv、装服务文件和时区；`--with-data` 搬记忆（只在搬家时）、`--start` 启动、`--restart` 改完代码重启 | Mac 上，`docs/box_zh.md` |
-| `systemd/` | box 上的服务文件：`dafeiyu-wechat.service`（常驻）、`dafeiyu-nightly.service` + `.timer`（每天 03:30）、`dafeiyu-browse.service` + `.timer`（每天 09:30） | `install.sh` 和 `deploy_box.sh` 装（路径换成实际文件夹） |
+| `systemd/` | box 上的服务文件：`dafeiyu-wechat.service`（常驻）、`dafeiyu-nightly.service` + `.timer`（每天 03:30）；原来的 `dafeiyu-browse` 决定 24 撤了，两个脚本会清掉旧的 | `install.sh` 和 `deploy_box.sh` 装（路径换成实际文件夹） |

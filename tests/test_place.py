@@ -30,6 +30,8 @@ def fake_fetch(url, timeout):
                            "daily": {"temperature_2m_min": [5.2], "temperature_2m_max": [13.8],
                                      "precipitation_probability_max": [60], "weather_code": [61],
                                      "sunset": ["2026-10-27T18:05"]}})
+    if "holiday-cn" in url:
+        return json.dumps({"year": 2026, "days": [{"name": "元旦", "date": "2026-01-01", "isOffDay": True}]})
     raise AssertionError(url)
 
 
