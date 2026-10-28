@@ -74,7 +74,7 @@ def test_she_shares_what_she_saw_and_it_is_recorded_once_sent(tmp_path):
                           source="https://sspai.com/post/117180", now=NOON - timedelta(hours=1))
     sent: list[str] = []
     assert brain.tick(lambda text: sent.append(text) or True, now=NOON) is True
-    assert sent == ["看到个候鸟的视频，想起你。"]
+    assert sent == ["看到个候鸟的视频，想起你"]  # no full stop on WeChat (decision 34)
     prompt = llm.calls[0][0][-1]["content"]
     assert "见闻 #1" in prompt and "他上次找你是 3 小时前" in prompt
     turns = brain.window.recent()
@@ -145,7 +145,7 @@ def test_boredom_and_anniversary_are_triggers(tmp_path):
     mood = MoodStore(conn).load()
     mood.boredom = 80
     MoodStore(conn).save(mood)
-    assert brain.consider_reach_out(NOON).text == "无聊。"
+    assert brain.consider_reach_out(NOON).text == "无聊"  # no full stop on WeChat (decision 34)
     Relationship(conn).set("first_met", "2026-10-22")  # day 7 today
     policy = ReachPolicy(conn)
     assert policy.triggers(NOON, MoodStore(conn).load()).anniversary == 7

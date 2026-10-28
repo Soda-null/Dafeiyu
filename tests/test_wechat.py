@@ -184,3 +184,11 @@ def test_login_gives_up_after_too_many_expired_codes(tmp_path: Path):
     client = FakeLoginClient([{"status": "expired"}] * 4)
     with pytest.raises(ILinkError):
         login(client, tmp_path / "w.json", out=lambda s: None, sleep=lambda s: None, draw=lambda u: None)
+
+
+def test_her_bubbles_come_at_typing_pace():
+    """Decision 34: a short line follows quickly, a long one a little later, never past 3 s."""
+    from fish.channels.wechat import bubble_pause
+
+    assert bubble_pause("嗯") < bubble_pause("你那个报告最后交了没") < 3.0
+    assert bubble_pause("长" * 200) == 3.0

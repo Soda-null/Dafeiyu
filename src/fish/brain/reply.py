@@ -7,8 +7,8 @@ comes back.
 from __future__ import annotations
 
 from fish.brain.llm import LLM
-from fish.brain.parse import Reply, parse_reply, parse_retry
-from fish.brain.prompt import JSON_REMINDER, Situation, build_chat_messages
+from fish.brain.parse import Reply, parse_reply, parse_retry, texting
+from fish.brain.prompt import REMINDERS, Situation, build_chat_messages
 from fish.config import owner_words
 from fish.world import Searcher
 
@@ -26,7 +26,9 @@ def plain_text(messages: list[dict]) -> list[dict]:
     last = out[-1]
     reminder = owner_words(PLAIN_REMINDER)
     if isinstance(last["content"], str):
-        text = last["content"].removesuffix(f"\n{JSON_REMINDER}")
+        text = last["content"]
+        for r in REMINDERS:
+            text = text.removesuffix(f"\n{r}")
         last["content"] = f"{text}\n{reminder}"
     else:
         last["content"] = [dict(part, text=f"{part['text']}\n{reminder}") if part.get("type") == "text"
@@ -46,10 +48,11 @@ class Replier:
 
     def reply(self, sit: Situation) -> tuple[Reply, str | None]:
         """Her reply, and the address of what she looked up when she did (for the note it leaves)."""
-        reply = self.ask(build_chat_messages(sit))
+        reply, source = self.ask(build_chat_messages(sit)), None
         if reply.look and self.searcher is not None:
-            return self.look_up(sit, reply)
-        return reply, None
+            reply, source = self.look_up(sit, reply)
+        reply.say = texting(reply.say)  # what he receives, and what the chat keeps
+        return reply, source
 
     def ask(self, messages: list[dict]) -> Reply:
         """Her reply in JSON. A blank one (DeepSeek's JSON mode sometimes answers with only spaces)

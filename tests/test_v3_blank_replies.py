@@ -49,7 +49,7 @@ def test_his_text_line_carries_the_reminder_in_the_prompt_only(tmp_path):
     brain.respond("你去不去", now=T0 + timedelta(minutes=1))
     messages, json_mode = chat_calls(llm)[-1]
     assert json_mode and messages[-1] == {"role": "user", "content": f"你去不去\n{JSON_REMINDER}"}
-    assert [m["content"] for m in messages[1:-1]] == ["周末去湖边放风筝", "嗯。"]
+    assert [m["content"] for m in messages[1:-1]] == ["周末去湖边放风筝", "嗯"]  # no full stop on WeChat (decision 34)
     stored = [r[0] for r in conn.execute("SELECT text FROM messages WHERE role = 'user' ORDER BY id")]
     assert stored == ["周末去湖边放风筝", "你去不去"]
 
@@ -104,3 +104,14 @@ def test_plain_text_leaves_other_messages_and_a_line_without_the_reminder_alone(
     out = plain_text(messages)
     assert out[:3] == messages[:3] and out[3]["content"] == f"c\n{PLAIN_REMINDER}"
     assert messages[3]["content"] == "c"  # the original is not changed
+
+
+def test_with_an_album_the_reminder_shows_the_sticker_field_and_plain_text_drops_it():
+    """Decision 34: the example at the end of his line shows "sticker" when she has some (the
+    model copies it); asking again in plain text still takes the reminder off."""
+    from fish.brain.prompt import JSON_REMINDER_STICKERS
+
+    example = json.loads(JSON_REMINDER_STICKERS[JSON_REMINDER_STICKERS.index("{"):JSON_REMINDER_STICKERS.rindex("}") + 1])
+    assert example["sticker"] == 0
+    plain = plain_text([{"role": "user", "content": f"哈哈\n{JSON_REMINDER_STICKERS}"}])[-1]["content"]
+    assert JSON_REMINDER_STICKERS not in plain and plain.startswith("哈哈\n")

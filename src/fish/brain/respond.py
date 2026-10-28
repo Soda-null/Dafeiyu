@@ -236,13 +236,6 @@ class Brain:
                 stored_text += " " + user_text
         if shared_note:
             stored_text += shared_note
-        self.window.append("user", stored_text, channel, episode_id, now)
-        if reply.say.strip():  # silence is a real answer sometimes; it leaves no bubble
-            self.window.append("fish", reply.say, channel, episode_id, now)
-        self.episodes.touch(episode_id, now)
-        self.record(reply, episode_id, now, seen_source=seen_source, said=user_text)
-        if image is not None and reply.keep_sticker:
-            self.album.add(image, sniff_mime(image) or "image/jpeg", reply.keep_sticker, now=now)
         outgoing = Outgoing(reply.say)
         if reply.sticker is not None:
             try:
@@ -252,6 +245,15 @@ class Brain:
                     outgoing = Outgoing(reply.say, s.path, s.caption)
             except KeyError:
                 pass
+        self.window.append("user", stored_text, channel, episode_id, now)
+        if reply.say.strip():  # silence is a real answer sometimes; it leaves no bubble
+            self.window.append("fish", reply.say, channel, episode_id, now)
+        elif outgoing.sticker is not None:  # a sticker alone is an answer too: the chat keeps that she sent it
+            self.window.append("fish", f"[表情包：{outgoing.sticker_caption}]", channel, episode_id, now)
+        self.episodes.touch(episode_id, now)
+        self.record(reply, episode_id, now, seen_source=seen_source, said=user_text)
+        if image is not None and reply.keep_sticker:
+            self.album.add(image, sniff_mime(image) or "image/jpeg", reply.keep_sticker, now=now)
 
         last_topic = self.relationship.get("last_topic")
         base = MoodStore.after_turn(base, user_text, reply.say, reported=reply.mood,

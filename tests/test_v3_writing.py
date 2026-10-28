@@ -224,7 +224,7 @@ def test_a_broken_close_keeps_the_chat_word_for_word_and_writes_no_notes(tmp_pat
     brain.respond("今晚吃了螺蛳粉", now=T0)
     first = EpisodeManager(conn).open_episode().id
     brain.respond("我回来了", now=T0 + timedelta(hours=3))
-    assert EpisodeManager(conn).get(first).summary == "今晚吃了螺蛳粉、嗯。"
+    assert EpisodeManager(conn).get(first).summary == "今晚吃了螺蛳粉、嗯"  # no full stop on WeChat (decision 34)
     assert MemoryStore(conn).alive() == []
 
 

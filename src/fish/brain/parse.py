@@ -32,6 +32,24 @@ _FIELD_LINE = re.compile(r"^\s*[\"']?(?:say|mood|topic|notes|followups|asked|cor
 _OWN_LABEL = re.compile(r"^\s*(?:say|assistant|你)\s*[:：]\s*", re.I)
 
 
+MAX_BUBBLES = 5  # messages one reply may come in; more are joined into the last
+
+
+def texting(say: str) -> str:
+    """Her line as people text on WeChat (decision 34): one short message per line, no full stop
+    at the end of one; a full stop inside a line starts the next message. Past MAX_BUBBLES the
+    rest goes into the last. The model is asked to write this way; this catches what slips."""
+    lines: list[str] = []
+    for line in say.splitlines():
+        for part in re.split(r"(?<=。)", line):
+            part = part.strip().rstrip("。").strip()
+            if part:
+                lines.append(part)
+    if len(lines) > MAX_BUBBLES:
+        lines = lines[:MAX_BUBBLES - 1] + ["，".join(lines[MAX_BUBBLES - 1:])]
+    return "\n".join(lines)
+
+
 def cut_say(text: str) -> tuple[str, bool]:
     """Her words without what she wrote past them, and whether a made-up turn was cut (then
     anything else in the reply may answer that made-up turn). Line 1 is hers: only a label of her

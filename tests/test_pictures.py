@@ -197,3 +197,14 @@ def test_inbox_pictures_become_captioned_stickers_at_night(tmp_path):
     (s,) = StickerAlbum(conn, tmp_path / "stickers").all()
     assert s.caption == "装可怜要饭用的" and s.tags == ("要饭", "可怜") and s.source == "inbox"
     assert not (inbox / "a.png").exists() and (inbox / "notes.txt").exists()
+
+
+def test_a_sticker_alone_is_an_answer_the_chat_keeps(tmp_path):
+    """Decision 34: she may answer with a sticker and no words; the chat records that she sent it,
+    so later she does not think she ignored him."""
+    llm = FakeLLM([json.dumps({"say": "", "mood": "开心", "sticker": 1}, ensure_ascii=False)])
+    conn, brain = make_brain(tmp_path, llm)
+    brain.album.add(png((3, 3, 3)), "image/png", "打滚吐泡泡", now=T)
+    out = brain.handle(Incoming("哈哈哈你好笨"), now=T)
+    assert out.text == "" and out.sticker is not None
+    assert [t.text for t in brain.window.recent()] == ["哈哈哈你好笨", "[表情包：打滚吐泡泡]"]

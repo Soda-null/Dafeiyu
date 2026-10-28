@@ -57,7 +57,7 @@ def test_turn_records_reply_notes_and_followups(tmp_path):
         followups=[{"text": "问他演示怎么样", "due": "2026-10-31"}],
     ))
     brain, conn = make_brain(tmp_path, llm)
-    assert brain.respond("周五有机器人演示，好慌", now=T0) == "演示啊，加油。"
+    assert brain.respond("周五有机器人演示，好慌", now=T0) == "演示啊，加油"  # no full stop on WeChat (decision 34)
 
     turns = brain.window.recent()
     assert [t.role for t in turns] == ["user", "fish"]
@@ -124,7 +124,7 @@ def test_window_folds_into_the_running_summary(tmp_path):
         brain.respond(f"第{i}句", now=T0 + timedelta(minutes=i))
     ep = EpisodeManager(conn).open_episode()
     assert ep.running_summary == "折叠出来的摘要"
-    assert [t.text for t in brain.window.recent(ep.id)] == ["第1句", "嗯。", "第2句", "嗯。"]
+    assert [t.text for t in brain.window.recent(ep.id)] == ["第1句", "嗯", "第2句", "嗯"]  # no full stop on WeChat (decision 34)
     folds = [m for m, j in llm.calls if not j]
     assert len(folds) == 1 and "第0句" in folds[0][0]["content"]
     brain.respond("第3句", now=T0 + timedelta(minutes=3))
@@ -321,3 +321,15 @@ def test_close_sees_what_she_always_carries_about_him(tmp_path):
 def test_nothing_recalled_tells_her_she_does_not_remember():
     from fish.brain.prompt import render_recalled
     assert "不记得" in render_recalled([])  # not a cue to guess "好像是面"
+
+
+def test_she_texts_like_people_do_on_wechat():
+    """Decision 34: short messages one per line, no full stop at the end; a full stop inside a
+    line starts the next message; "……" and question marks stay; at most five messages."""
+    from fish.brain.parse import texting
+
+    assert texting("嗯。") == "嗯"
+    assert texting("吃了。你呢？") == "吃了\n你呢？"
+    assert texting("刚醒……\n饿死了。。") == "刚醒……\n饿死了"
+    assert texting("一。二。三。四。五。六。七") == "一\n二\n三\n四\n五，六，七"
+    assert texting("") == "" and texting("   ") == ""

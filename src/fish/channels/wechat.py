@@ -21,7 +21,13 @@ from fish.channels.ilink import (LOGIN_BASE, MSG_USER, TYPING, TYPING_CANCEL, IL
 
 STATE_FILE = Path("data/wechat.json")
 SEEN_IDS_KEPT = 200
-BUBBLE_GAP_SECONDS = 0.6
+# Between two of her bubbles, about the time it takes to type the next one (decision 34): a
+# short "嗯" comes quickly, a longer line a little later; never more than a few seconds.
+BUBBLE_PAUSE_BASE, BUBBLE_PAUSE_PER_CHAR, BUBBLE_PAUSE_MAX = 0.8, 0.15, 3.0
+
+
+def bubble_pause(bubble: str) -> float:
+    return min(BUBBLE_PAUSE_MAX, BUBBLE_PAUSE_BASE + BUBBLE_PAUSE_PER_CHAR * len(bubble))
 # People split one thought over several messages ("...麦当劳这种路上的" / "店"). After a
 # message arrives she waits a moment for the rest before answering the whole of it.
 FRAGMENT_PEEKS, FRAGMENT_PEEK_SECONDS = 2, 2.5
@@ -235,7 +241,7 @@ class WeChatChannel:
             bubbles = bubbles[:left - 1] + ["\n".join(bubbles[left - 1:])]
         for i, bubble in enumerate(bubbles):
             if i:
-                self.sleep(BUBBLE_GAP_SECONDS)
+                self.sleep(bubble_pause(bubble))
             mid = self.client.send_text(user, bubble, token)
             self._spend(token)
             self.out(f"→ {bubble[:30]}（message_id {mid or '无'}，凭证还剩 {self._left(token)}）")

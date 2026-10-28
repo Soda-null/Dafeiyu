@@ -23,6 +23,12 @@ WEEKDAYS = "一二三四五六日"
 # topic makes her bored turn after turn (mood.after_turn).
 JSON_REMINDER = ('（照"输出格式"只输出一个 json 对象，例如 {"say": "你要说的话", "mood": "你此刻的心情", '
                  '"topic": "这轮聊的事", "notes": [], "followups": [], "asked": [], "corrections": []}）')
+# With an album the example shows the sticker field too: the model copies the example at the end
+# of his line, and without the field it never sent one (10-28 trial: 0 stickers in 16 replies).
+JSON_REMINDER_STICKERS = ('（照"输出格式"只输出一个 json 对象，例如 {"say": "你要说的话", "mood": "你此刻的心情", '
+                          '"topic": "这轮聊的事", "notes": [], "followups": [], "asked": [], "corrections": [], '
+                          '"sticker": 0}；想发表情包就把 0 换成它的编号）')
+REMINDERS = (JSON_REMINDER_STICKERS, JSON_REMINDER)
 
 
 def load_template(name: str) -> str:
@@ -290,7 +296,8 @@ def build_chat_messages(ctx: Situation) -> list[dict[str, str]]:
             {"type": "image_url", "image_url": {"url": ctx.user_image}},
         ]})
     else:
-        messages.append({"role": "user", "content": f"{user_text}\n{JSON_REMINDER}"})
+        reminder = JSON_REMINDER_STICKERS if ctx.stickers else JSON_REMINDER
+        messages.append({"role": "user", "content": f"{user_text}\n{reminder}"})
     return messages
 
 
