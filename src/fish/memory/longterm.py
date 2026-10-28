@@ -27,7 +27,11 @@ SAFETY = re.compile(r"过敏|不耐(?!烦)|病|药")
 # Choosing before writing (decision 19): what `note` refuses or folds into an old memory.
 REPEAT_SIMILARITY = 0.5  # same kind, this much bigram overlap (dates removed): a repeat
 FACT_REPEAT_SIMILARITY = 0.8  # facts differ by one number when he corrects himself; stricter
-KIND_CAPS = {"insight": 20, "howto": 20}  # beyond this the least stable is pushed out
+# Her own life (memory v3 step 7, §B4, waiting for the user's approval: docs/memory_v3_zh.md §11):
+# she tells the same thread in new words each night ("数米粒" 27 ways in a year), so a looser bar,
+# and no more than KIND_CAPS["self"] of them alive.
+SELF_REPEAT_SIMILARITY = 0.35
+KIND_CAPS = {"insight": 20, "howto": 20, "self": 30}  # beyond this the least stable is pushed out
 # Notes about the chat itself (he is testing her memory) are not things about him.
 ABOUT_THE_CHAT = re.compile(r"考我|考她|记性|记不记得|试探我|试探她|测我记")
 ABOUT_HIM_KINDS = ("fact", "event", "insight", "howto")
@@ -61,6 +65,9 @@ SOURCE_LINK = 0.3  # overlap at which a follow-up is about a note from the same 
 OUTCOME_WORDS = re.compile(r"考(?!虑)|面试|述职|答辩|演示|汇报|比赛|体检|复查|看病|看房|搬家|录取|申请|结题|评审")
 OUTCOME_DAYS = 30  # how far back an event can still get its result at the close
 OUTCOMES_SHOWN = 3
+# The follow-ups she let go were written as events before memory v3 step 1; they fade within
+# weeks (stability.UNASKED_MAX_DAYS), whoever the merge made the subject.
+UNASKED = re.compile(r"一直没问成")
 
 
 def strongest_about(abouts: list[str | None]) -> str | None:
@@ -144,7 +151,15 @@ class Memory:
         return f"{text} →结果：{self.outcome}" if self.outcome else text
 
     def retrievability(self, now: datetime) -> float:
-        return st.retrievability(self.stability, days_between(self.last_recalled, now))
+        """A fact about him himself never falls below HIMSELF_R_FLOOR (memory v3 §B4): she may
+        be unsure of his hometown after a year, she does not lose it."""
+        floor = st.HIMSELF_R_FLOOR if self.kind == "fact" and self.about == "本人" else 0.0
+        return st.retrievability(self.stability, days_between(self.last_recalled, now), floor)
+
+    @property
+    def ceiling(self) -> float:
+        """The most S it can get from recall, a merge or a correction (memory v3 §B4)."""
+        return ceiling_of(self.kind, self.text, self.about)
 
     def fuzzy(self, now: datetime) -> bool:
         return self.retrievability(now) < st.FUZZY_R
@@ -152,6 +167,16 @@ class Memory:
     @property
     def alive(self) -> bool:
         return self.superseded_by is None
+
+
+def ceiling_of(kind: str, text: str, about: str | None) -> float:
+    return st.ceiling(about, unasked=kind == "event" and bool(UNASKED.search(text)))
+
+
+def capped(stability: float, ceiling: float, was: float = 0.0) -> float:
+    """stability, no higher than the ceiling; a memory already above it (written before memory
+    v3) does not grow, and is not cut either: lowering what is there is the migration's job."""
+    return min(stability, max(was, ceiling))
 
 
 def card_order(m: Memory) -> tuple:
@@ -302,7 +327,7 @@ class MemoryStore:
         same thing every Friday is one memory that happened many times. A lifelong fact (his
         birthday) said in other words is still the same one: against pinned facts the bar
         is the ordinary one, not the strict one for facts."""
-        threshold = FACT_REPEAT_SIMILARITY if kind == "fact" else REPEAT_SIMILARITY
+        threshold = {"fact": FACT_REPEAT_SIMILARITY, "self": SELF_REPEAT_SIMILARITY}.get(kind, REPEAT_SIMILARITY)
         best: tuple[float, Memory] | None = None
         for m in self.alive(kind):
             sim = max(overlap(text, m.text), overlap(text, m.pattern) if m.pattern else 0.0)
@@ -380,11 +405,14 @@ class MemoryStore:
         self.conn.commit()
         return self.get(memory_id)
 
-    def touch(self, memory_id: int, now: datetime | None = None) -> Memory:
-        """She just used this memory: it gets stronger, more so if it was nearly gone."""
+    def touch(self, memory_id: int, now: datetime | None = None, *, strengthen: bool = True) -> Memory:
+        """She just used this memory: it gets stronger, more so if it was nearly gone, up to its
+        ceiling. strengthen=False: used, so fresh again, but no stronger (a fact on her card he
+        just mentioned: it is in front of her every turn anyway, memory v3 §B4)."""
         now = now or datetime.now()
         m = self.get(memory_id)
-        new_s = st.after_recall(m.stability, m.retrievability(now))
+        new_s = st.after_recall(m.stability, m.retrievability(now)) if strengthen else m.stability
+        new_s = capped(new_s, m.ceiling, m.stability)
         self.conn.execute(
             "UPDATE memories SET stability = ?, last_recalled = ?, recall_count = recall_count + 1"
             " WHERE id = ?",
@@ -421,6 +449,7 @@ class MemoryStore:
         importance = old.importance if importance is None else importance
         fresh = st.initial_stability(importance, old.valence)
         stability = max(fresh, old.stability) if fresh != st.INFINITE else st.INFINITE
+        stability = capped(stability, ceiling_of(old.kind, text, old.about), old.stability)
         new = self.add(
             old.kind, text, importance=importance, valence=old.valence, arousal=old.arousal,
             source_episode=old.source_episode, tags=old.tags, pinned=old.pinned,
@@ -434,7 +463,7 @@ class MemoryStore:
         return self.get(new.id)
 
     def merge(self, ids: list[int], text: str, *, now: datetime | None = None) -> Memory:
-        """Nightly: several near-duplicates become one, more stable, with its sources noted.
+        """Nightly: several near-duplicates become one, more stable (up to its ceiling), with its sources noted.
         What it is about, whether it is pinned, the pact (still open if any source was), the latest
         outcome and the day it last happened carry over; so does
         the day it happened (the latest of its sources), unless the merged words write a date."""
@@ -448,6 +477,8 @@ class MemoryStore:
         tags: list[str] = []
         for o in olds:
             tags += [t for t in o.tags if t not in tags]
+        about = strongest_about([o.about for o in olds])
+        strongest = max(o.stability for o in olds)
         new = self.add(
             olds[0].kind, text,
             importance=max(o.importance for o in olds),
@@ -455,7 +486,8 @@ class MemoryStore:
             arousal=max(o.arousal for o in olds),
             source_episode=olds[0].source_episode, tags=tags,
             pinned=any(o.pinned for o in olds),
-            stability=st.after_merge(*(o.stability for o in olds)),
+            stability=capped(st.after_merge(*(o.stability for o in olds)),
+                             ceiling_of(olds[0].kind, text, about), strongest),
             merged_from=ids, now=now,
             happened_on=(d.isoformat() if (d := written_day(text, latest.date()))
                          else max((o.happened_on for o in olds if o.happened_on), default=None)),
@@ -470,7 +502,7 @@ class MemoryStore:
         outcome = next((o.outcome for o in sorted(olds, key=lambda o: o.created, reverse=True) if o.outcome), None)
         self.conn.execute("UPDATE memories SET times = ?, about = ?, last_time = ?, pact = ?, pact_state = ?,"
                           " outcome = ? WHERE id = ?",
-                          (times, strongest_about([o.about for o in olds]), last, pact,
+                          (times, about, last, pact,
                            "open" if "open" in states else next(iter(states), None), outcome, new.id))
         self.conn.commit()
         return self.get(new.id)

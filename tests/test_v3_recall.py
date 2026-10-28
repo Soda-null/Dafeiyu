@@ -81,7 +81,7 @@ def test_the_card_takes_none_of_the_places_and_is_marked_where_he_touches_it(tmp
                         now=T0 - timedelta(days=30))
     dinners = [store.add("event", f"他第{i}次在食堂吃宫保鸡丁", importance=4, tags=["宫保鸡丁"],
                          now=T0 - timedelta(days=i + 1)) for i in range(6)]
-    before = store.get(allergy.id).recall_count
+    before = store.get(allergy.id)
 
     brain.respond("今晚食堂有宫保鸡丁，吃不吃", now=T0)
     system = llm.calls[-1][0][0]["content"]
@@ -90,7 +90,9 @@ def test_the_card_takes_none_of_the_places_and_is_marked_where_he_touches_it(tmp
     assert f"[#{sister.id}] 他有个妹妹叫小雨\n" in card + "\n"  # not touched, not marked
     assert all(f"[#{d.id}]" in shown for d in dinners)  # all six places for the rest
     assert f"[#{allergy.id}]" not in shown
-    assert store.get(allergy.id).recall_count == before + 1  # touched, as recall would
+    after = store.get(allergy.id)
+    assert after.recall_count == before.recall_count + 1 and after.last_recalled == T0.isoformat()  # used
+    assert after.stability == before.stability  # ... but no stronger: it is on the card anyway (§B4)
     assert store.get(sister.id).recall_count == 0
 
 

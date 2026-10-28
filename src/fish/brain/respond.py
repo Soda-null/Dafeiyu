@@ -128,11 +128,12 @@ class Brain:
         window = self.window.recent(ep.id)
         last_fish = next((t.text for t in reversed(window) if t.role == "fish"), "")
         # Her card is in front of her anyway: it takes none of the places of what his line brings
-        # back, and a card fact his line touches is marked and used (memory v3 §B3).
+        # back, and a card fact his line touches is marked and used, but grows no stronger: being
+        # on the card every turn is not a reason to hold it harder (memory v3 §B3, §B4).
         profile = self.store.profile()
         touched = mentioned(user_text, profile)
         for m in touched:
-            self.store.touch(m.id, now)
+            self.store.touch(m.id, now, strengthen=False)
         formers = {m.id: f.text for m in profile if (f := self.store.former(m.id)) is not None}
         # The promises still open are always in front of her too; one whose trigger his line
         # says ("驾照") is starred (memory v3 §B3).

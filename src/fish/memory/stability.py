@@ -34,6 +34,15 @@ AROUSAL_GAIN = 3.0
 UNCONFIRMED_DAYS = 7.0  # an insight or a howto rule before it has three days of evidence
 WEAKENED_DAYS = 3.0  # an insight she sees is no longer true fades within days
 
+# Memory v3 step 7 (§B4, waiting for the user's approval: docs/memory_v3_zh.md §11). How
+# strong a memory may get, and how far a fact about him may fade. A ceiling is never passed,
+# however often it comes back: recall, a merge or a correction stop there.
+PASSING_MAX_DAYS = 14.0  # 路过: a small thing of one day is gone in about a month
+UNCONFIRMED_MAX_DAYS = 21.0  # 待印证: a rule before its third day of evidence
+UNASKED_MAX_DAYS = 14.0  # the old "我一直没问成他：……" events (no longer written since v3 step 1)
+HIMSELF_R_FLOOR = 0.12  # 本人 facts: she may grow unsure (R < FUZZY_R), never lose them
+# (below CUED_RECALL_R a memory is out of recall altogether; it is kept, never deleted)
+
 
 def clamp_importance(importance: int) -> int:
     return max(1, min(PINNED_IMPORTANCE, int(importance)))
@@ -53,7 +62,16 @@ def stability_from(about: str, arousal: float) -> float:
     if about == "一辈子":
         return INFINITE
     arousal = max(0.0, min(1.0, arousal))
-    return BASE_DAYS * (1 + AROUSAL_GAIN * arousal) * ABOUT_MULTIPLIER.get(about, ABOUT_MULTIPLIER["日常"])
+    s = BASE_DAYS * (1 + AROUSAL_GAIN * arousal) * ABOUT_MULTIPLIER.get(about, ABOUT_MULTIPLIER["日常"])
+    return min(s, ceiling(about))
+
+
+def ceiling(about: str | None, *, unasked: bool = False) -> float:
+    """The most S a memory with this about can have (memory v3 §B4); unasked: an old
+    "我一直没问成他" event."""
+    if unasked:
+        return UNASKED_MAX_DAYS
+    return {"路过": PASSING_MAX_DAYS, "待印证": UNCONFIRMED_MAX_DAYS}.get(about or "", INFINITE)
 
 
 def importance_of(stability: float) -> int:
@@ -63,12 +81,13 @@ def importance_of(stability: float) -> int:
     return max(1, min(PINNED_IMPORTANCE - 1, round(math.log(max(stability, 1.0)) / math.log(BASE))))
 
 
-def retrievability(stability: float, days: float) -> float:
+def retrievability(stability: float, days: float, floor: float = 0.0) -> float:
+    """floor: what it never falls below (HIMSELF_R_FLOOR for a fact about him himself)."""
     if stability == INFINITE:
         return 1.0
     if stability <= 0:
-        return 0.0
-    return math.exp(-max(0.0, days) / stability)
+        return floor
+    return max(floor, math.exp(-max(0.0, days) / stability))
 
 
 def after_recall(stability: float, r: float) -> float:

@@ -3,7 +3,9 @@
 Two gates, then a score. A memory must first be retrievable: R >= FREE_RECALL_R on its own,
 or R >= CUED_RECALL_R when the cue is strong (recognition beats recall). Survivors are
 scored relevance x recency x importance, the Generative Agents triple, and the top few
-within a character budget are returned and touched (recall makes memories stronger).
+within a character budget are returned. Only the ones that really have to do with the line
+(TOUCH_RELEVANCE, or from the days it names) are touched (recall makes memories stronger); the
+rest she only glanced at, and a glance changes nothing (memory v3 §B4).
 What is already in front of her every turn (her card of facts about him) is passed as `skip`
 and takes none of the few places (memory v3 §B3).
 
@@ -30,6 +32,10 @@ W_RELEVANCE, W_RECENCY, W_IMPORTANCE = 0.5, 0.2, 0.3
 RECENCY_DECAY_PER_HOUR = 0.995
 STRONG_CUE = 0.6  # relevance at or above this can wake a memory she could not recall alone
 DEFAULT_K = 6
+# Memory v3 step 7 (§B4, waiting for the user's approval: docs/memory_v3_zh.md §11). Below this
+# a memory was shown for a word or two in common, not brought back: in the 小周 replay 73% of the
+# places went to such matches, and each one made a passing thing stronger (麻辣烫 S 5 -> 128 days).
+TOUCH_RELEVANCE = 0.3
 DEFAULT_BUDGET_CHARS = 400
 # His line is too short to search with when, without these, fewer than SHORT_CUE characters
 # are left ("对就那个", "然后呢"): then her previous line is what he is answering. Particles
@@ -146,6 +152,14 @@ def recall(
         if chosen and used + len(m.text) > budget_chars:
             break
         used += len(m.text)
-        touched = store.touch(m.id, now)
-        chosen.append(Recalled(touched, r, rel, score, cued, r < st.FUZZY_R, store.former(m.id)))
+        if really_about(embedder, cue, m, rel):
+            m = store.touch(m.id, now)
+        chosen.append(Recalled(m, r, rel, score, cued, r < st.FUZZY_R, store.former(m.id)))
     return chosen
+
+
+def really_about(embedder: Embedder, cue: str, memory: Memory, rel: float) -> bool:
+    """A recall that counts (memory v3 §B4): enough in common with the line, or from the days
+    it names (when the embedder knows about time: when.TimeCued)."""
+    named = getattr(embedder, "on_named_day", None)
+    return rel >= TOUCH_RELEVANCE or bool(named and named(cue, memory))
