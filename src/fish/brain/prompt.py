@@ -158,7 +158,11 @@ def render_profile(profile: list[Memory], mentioned: set[int] = frozenset(),
 
 # Checkup round two (memory v3 §14): asked "我新家有啥毛病来着" with nothing recalled, she went along
 # with the question and named two faults he never had; the close then wrote them down as his.
-NOTHING_FOUND = ("（这件你好像什么也没想起来：上面“你一直记得的”“这句话让你想起的”和这次聊天里都没有的话，"
+# 10-28 runs v3e/v3f: the first wording ("这件你好像什么也没想起来") made her say she forgot things on
+# her card and in her promises when a year later he asked in other words than she wrote them down
+# (her nickname, his promise): it is only his words that matched nothing, so it sends her there first.
+NOTHING_FOUND = ("（他这句话的字眼让你什么也没想起来，可他可能换了个说法问：先看看上面“你一直记得的”和"
+                 "“你们之间的约定”，意思对得上的就照那里说。那里、“这句话让你想起的”和这次聊天里都真没有，"
                  "就直说忘了、让他提醒你；别说任何具体的东西，也别顺着他问法里的说法往下编）")
 
 PACT_SAYS = {"him": "他答应过你", "her": "你答应过他", "both": "你们说好的"}
