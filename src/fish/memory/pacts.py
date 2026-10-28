@@ -48,7 +48,9 @@ THIRD = (r"室友|舍友|同学|朋友|同事|老板|领导|组长|老师|导师
 TO_SOMEONE_ELSE = re.compile(rf"(?:{PROMISE.pattern})(?:了|过)?(?:要)?(?:[他她]的?)?(?:{THIRD})")
 WITH_SOMEONE_ELSE = re.compile(rf"(?:跟|和|对|向|与)(?:[他她]的?)?(?:{THIRD})[^，。！？；我你]{{0,3}}$")
 # "说好了等他……那天我写首诗": she is the one who does it, not 给我 / 带我 / 陪我 (his doing)
-HERS = re.compile(r"我答应|我保证|我发誓|我承诺|让我答应|我(?:要|会|就|来)?[给帮陪带]他"
+# "他跟我保证……让我监督" is his: 我保证 right after 跟 / 和 / 对 / 向 / 给 is him promising her (the
+# 10-28 checkups filed 小吴's "月底戒烟" as hers, kept, out of sight)
+HERS = re.compile(r"(?<![跟和对向给])我(?:答应|保证|发誓|承诺)|让我答应|我(?:要|会|就|来)?[给帮陪带]他"
                   r"|(?:说好|说定)了?[^，。！？；]{0,16}?(?<![给带陪跟和对向])我(?!们)")
 TOGETHER = re.compile(r"咱俩|我俩|我们俩|约好|拉钩|一言为定|说好一起")
 # "他给我起的外号是胖鱼", "他管我叫胖鱼". Not a bare 叫我 ("他叫我别熬夜"), not 喊我 unless a

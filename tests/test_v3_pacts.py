@@ -209,8 +209,9 @@ def test_the_close_settles_only_a_promise_it_was_shown(tmp_path):
     # kept: off the block and never on her card; pinned, it comes back when he brings it up
     assert sea.id not in {m.id for m in store.profile()}
     brain.respond("还记得我拍的海边吗", now=T0 + timedelta(days=20, hours=3, minutes=5))
-    recalled = section(llm.calls[-1][0][0]["content"], "这句话让你想起的")
-    assert f"{SEA}（兑现了）" in recalled
+    # he asks her to remember: kept promises are in the promise block, in front of her (10-28)
+    shown = section(llm.calls[-1][0][0]["content"], "你们之间的约定")
+    assert f"{SEA}（兑现了）" in shown
 
 
 def test_kept_promises_never_crowd_his_allergy_off_her_card(tmp_path):
@@ -240,3 +241,11 @@ def test_a_pact_carries_through_merge_and_correction_and_no_update_replaces_it(t
     newer = store.add("fact", "他说每周给我讲一个冷笑话太难了", importance=5, now=T0 + timedelta(days=4))
     groups = _update_groups([newer], store.alive(), set())
     assert all(promised.id not in [o.id for o in olds] for _, olds in groups)
+
+
+def test_his_promise_to_her_is_his_even_when_it_says_wo_baozheng():
+    """10-28 checkups: "他跟我保证5月底之前把烟戒了" was filed as hers, kept, out of sight."""
+    from fish.memory.pacts import HERS
+    assert not HERS.search("他跟我保证5月底之前把烟戒了，让我监督他")
+    assert not HERS.search("他和我承诺下次带我去看海")
+    assert HERS.search("我答应他每天提醒他喝水") and HERS.search("他让我答应：他说要辞职我先拦着")

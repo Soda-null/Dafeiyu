@@ -220,7 +220,9 @@ class Brain:
         # The promises still open are always in front of her too; one whose trigger his line
         # says ("驾照") is starred (memory v3 §B3). When he asks what was promised, the ones kept
         # or called off are there as well (§14).
-        pacts = self.store.pacts(settled=asks_pact(user_text))
+        # he asks her to remember something: the promises kept or called off are shown too, since
+        # "我跟你立过一个flag" names none of the promise words (10-28 checkups)
+        pacts = self.store.pacts(settled=asks_pact(user_text) or asks_recall(user_text))
         stars = triggered(user_text, [p for p in pacts if p.pact_state == "open"])
         cue = cue_for(user_text, last_fish)
         recalled = recall(self.store, cue, now, embedder=TimeCued(BigramEmbedder(), now),
