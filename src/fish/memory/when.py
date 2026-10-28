@@ -300,7 +300,9 @@ def agree_with_line(text: str, said: str, today: date, told: date | None = None)
     """A note's written-out dates ("2028-05-08") that miss the one day his line names by a few
     days become that day, with a weekday written right next to it. Untouched: a note his line does
     not date (no shared word with the part that names the day), one that already has the right
-    day, a date far off (another thing), the day he said it (`told`, default `today`)."""
+    day, a date far off (another thing), the day he said it (`told`, default `today`), a date on
+    the other side of that day ("明天又考" does not move "上次考试是2028-05-03": the past is not a
+    miscounted future), and a note with two dates near it ("2028-05-06到2028-05-08")."""
     day = line_day(said, today)
     if day is None or not _about_the_note(said, text):
         return text
@@ -308,10 +310,14 @@ def agree_with_line(text: str, said: str, today: date, told: date | None = None)
     if any(d == day for _, _, d in isos):
         return text
     said_on = {today, told or today}  # "他2028-05-04说……": the day he said it, by either clock
+    lo, hi = min(said_on), max(said_on)
+    near = [(a, b, d) for a, b, d in isos
+            if d not in said_on and 0 < abs((d - day).days) <= NEAR_DAYS
+            and not (day > hi and d < lo) and not (day < lo and d > hi)]  # gone vs coming: not a miss
+    if len({d for _, _, d in near}) != 1:
+        return text  # "2028-05-06到2028-05-08": one day in his line, which of them it is is not known
     out = text
-    for a, b, d in reversed(isos):
-        if d in said_on or not 0 < abs((d - day).days) <= NEAR_DAYS:
-            continue
+    for a, b, d in reversed(near):
         tail = out[b:]
         if w := re.match(rf"\s*[（(]?\s*{WEEK}([一二三四五六日天])", tail):
             tail = tail[:w.start(1)] + WEEKDAYS_CN[day.weekday()] + tail[w.end(1):]

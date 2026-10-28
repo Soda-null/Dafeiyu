@@ -69,6 +69,15 @@ def test_only_a_near_miss_on_a_note_his_line_dates_is_moved():
     assert agree_with_line("他2027-12-30说要回家，2028-01-03到", said, today) == "他2027-12-30说要回家，2028-01-02到"
     assert agree_with_line("他2028-01-09回家", said, today) == "他2028-01-09回家"  # a week off: another thing
     assert agree_with_line("他2027-01-02回家", said, today) == "他2027-01-02回家"  # a year off: not counting
+    # a day already gone is not a miscount of the coming day his line names, nor the other way round
+    assert (agree_with_line("他上次考试是2028-05-03，明天又考", "明天考试", date(2028, 5, 4))
+            == "他上次考试是2028-05-03，明天又考")
+    assert agree_with_line("他2028-05-05还要考试", "昨天考试了", date(2028, 5, 4)) == "他2028-05-05还要考试"
+    assert agree_with_line("他2028-05-02考试", "昨天考试了", date(2028, 5, 4)) == "他2028-05-03考试"
+    # two near dates: which one his day is is not known, so neither moves (a range does not collapse)
+    assert (agree_with_line("他2028-05-06到2028-05-08出差", "明天出差", date(2028, 5, 4))
+            == "他2028-05-06到2028-05-08出差")
+    assert agree_with_line("他2028-05-06出差，2028-05-06出发", "明天出差", date(2028, 5, 4)).count("2028-05-05") == 2
     # his line does not date this note: no word shared with the part that names the day
     assert agree_with_line("他奶奶的生日是2028-01-01", "大后天回家", today) == "他奶奶的生日是2028-01-01"
     # several days or none: untouched
