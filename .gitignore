@@ -24,3 +24,4 @@ venv/
 
 # The fish's memory: private chat data, never committed
 data/
+backups/
