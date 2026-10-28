@@ -179,3 +179,57 @@ def test_the_same_thing_bought_twice_reads_as_one(tmp_path):
     room.sink = ["锅", "锅", "电饭煲内胆"]
     lines = c.lines(room)
     assert lines["food"].startswith("冰箱里有鸡蛋（够 6 顿）、青菜") and lines["sink"] == "水槽里有两个锅、电饭煲内胆没洗"
+
+
+def test_one_life_not_two(tmp_path):
+    """With a room, what she did is the room's record; her own notes keep thoughts, and the
+    diary reads the room (decision 26, 10-28: merge her invented life with the real one)."""
+    from fish.brain.consolidate import Consolidator
+    from fish.brain.leisure import NOTHING_AT_HOME, away
+    from fish.cottage import invented_act
+    from fish.routines import run_nightly
+
+    assert invented_act("煮了碗面") and invented_act("去菜店买了盆花") and invented_act("薄荷养着呢")
+    assert not invented_act("想养盆薄荷") and not invented_act("打算明天做饭") and not invented_act("琢磨西游记的结局")
+
+    conn = connect(tmp_path / "fish.db")
+    s = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db", cottage=True)
+    calls = []
+
+    def respond(messages, json_mode):
+        content = messages[-1]["content"]
+        calls.append("\n".join(m["content"] for m in messages))  # the system prompt too
+        if "你这会儿有空" in content:
+            n = next(line.split(".")[0] for line in content.splitlines() if line.endswith(". 叠被子"))
+            return json.dumps({"pick": int(n), "why": "乱"}, ensure_ascii=False)
+        if "你在写日记" in content:
+            return json.dumps({"diary": "叠了被子，想养盆薄荷。", "phase_line": "",
+                               "self_notes": [{"text": "煮了碗面", "importance": 4},
+                                              {"text": "想养盆薄荷", "importance": 4}]}, ensure_ascii=False)
+        return json.dumps({"say": "嗯", "mood": "平静", "notes": [
+            {"text": "我今天做了红烧肉", "kind": "self", "about": "日常"},
+            {"text": "我想学做红烧肉", "kind": "self", "about": "日常"}]}, ensure_ascii=False)
+
+    brain = Brain(conn, s, FakeLLM(respond), persona_text="你是大肥鱼。")
+    room = brain.cottage.load(MON)
+    room.bed = "乱"
+    brain.cottage.save(room)
+    brain.leisure = Leisure(brain, [CottageActivity(brain.cottage)], rng=random.Random(0), sources=[])
+    assert NOTHING_AT_HOME in brain.leisure.menu(brain.leisure.kit(MON))
+    moment = brain.free_time(datetime(2026, 11, 2, 15, 0))
+    assert moment.result == "叠了被子" and not away(moment)
+
+    brain.respond("今天干嘛了", now=datetime(2026, 11, 2, 16, 0))
+    system = calls[-1]
+    assert "你今天空闲时" not in system  # the bed is in the room's record, not listed twice
+    assert "15:00 叠了被子" in system
+    mine = [m.text for m in brain.store.alive("self")]
+    assert mine == ["我想学做红烧肉"]  # a cooked dish she never cooked is not hers to note
+
+    report = run_nightly(conn, datetime(2026, 11, 3, 3, 30), brain=brain)
+    diary_prompt = next(c for c in calls if "你在写日记" in c)
+    assert "## 今天在家（屋里真发生的，照这个写）" in diary_prompt and "15:00 叠了被子" in diary_prompt
+    assert "今天空闲时你干了什么（一段一行）\n（没记下）" in diary_prompt
+    assert report["diary"]
+    mine = [m.text for m in brain.store.alive("self")]
+    assert "想养盆薄荷" in mine and "煮了碗面" not in mine

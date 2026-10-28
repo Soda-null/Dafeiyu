@@ -21,7 +21,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fish.brain.consolidate import Consolidator, similarity
-from fish.brain.leisure import moment_line
+from fish.brain.leisure import away, moment_line
+from fish.cottage import invented_act
 from fish.memory import (Diary, EpisodeManager, Memory, MemoryStore, Pastimes, PhaseStore,
                          ProspectiveStore, Relationship, TraitStore, count_patterns, overlap)
 from fish.mood import MoodStore
@@ -212,19 +213,22 @@ def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
         yesterday = next((t for d, t in diary.recent(1) if d < day.isoformat()), "")
         seen_today = [m.text for m in store.seen_recently(now, 2)
                       if fish_day(datetime.fromisoformat(m.created)) == day]
-        leisure = [moment_line(m) for m in Pastimes(conn).moments(day_start, day_end) if m.choice]
-        if brain.cottage is not None:  # meals, sleep, food gone off: her day at home (decision 26)
+        leisure = [moment_line(m) for m in Pastimes(conn).moments(day_start, day_end) if away(m)]
+        home: list[str] | None = None
+        if brain.cottage is not None:  # what she did at home, meals, food gone off (decision 26)
             try:
-                leisure += brain.cottage.between(day_start, day_end)
+                home = brain.cottage.between(day_start, day_end)
             except ValueError:
-                pass
+                home = []
         prev = phases.current()
         text, notes, line = thinker.diary(day.isoformat(), moods.load().describe(), threads, gists,
                                           yesterday, seen=seen_today, phase_line=prev.line,
                                           tone_word=prev.tone_word, drive_word=prev.drive_word,
-                                          leisure=leisure)
+                                          leisure=leisure, home=home)
         if text:
             diary.write(day.isoformat(), text)
+            if home is not None:  # with a room, what she did is in it; her notes keep thoughts
+                notes = [n for n in notes if not invented_act(n[0])]
             for note, importance in strongest(notes, SELF_NOTES_PER_NIGHT):
                 store.note("self", note, importance=importance, now=now)
             report["diary"] = True

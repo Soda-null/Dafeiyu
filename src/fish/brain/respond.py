@@ -11,14 +11,14 @@ from pathlib import Path
 
 from typing import Callable
 
-from fish.brain.leisure import Leisure, default_activities, moment_line, pastimes_line
+from fish.brain.leisure import Leisure, away, default_activities, moment_line, pastimes_line
 from fish.brain.llm import LLM
 from fish.brain.parse import Reply, parse_episode_close, parse_reply, parse_retry
 from fish.brain.prompt import (JSON_REMINDER, PromptContext, build_chat_messages, build_close_messages,
                                build_fold_messages)
 from fish.brain.reach import Reacher, ReachOut, ReachPolicy, recent_lines
 from fish.config import Settings, owner_words
-from fish.cottage import Cottage
+from fish.cottage import Cottage, invented_act
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
 from fish.memory import (ABOUT_HIM_KINDS, BigramEmbedder, Diary, Episode, EpisodeManager, Memory, MemoryStore,
                          Moment, Pastimes, PhaseStore, ProspectiveStore, Relationship, StickerAlbum, TimeCued,
@@ -151,7 +151,7 @@ class Brain:
     def day_fields(self, now: datetime) -> dict[str, str]:
         """What day it is, what she is following, what she did with her free time today (decision 24)."""
         today = datetime.combine(now.date(), datetime.min.time())
-        done = [moment_line(m) for m in self.pastimes.moments(today, now) if m.choice][-3:]
+        done = [moment_line(m) for m in self.pastimes.moments(today, now) if away(m)][-3:]
         return {"day_line": day_line(now.date(), self.album.folder.parent / "home"),
                 "pastimes_line": pastimes_line(self.pastimes, now),
                 "today_line": "你今天空闲时：" + "；".join(done) + "。" if done else ""}
@@ -359,6 +359,8 @@ class Brain:
         for n in reply.notes:
             if checked and echoed(n.kind, n.text, his, hers):
                 continue
+            if self.cottage is not None and n.kind == "self" and invented_act(n.text):
+                continue  # what she does to her room goes through its rules (decision 26)
             m = self.store.note(n.kind, n.text, importance=n.importance, valence=n.valence,
                                 arousal=n.arousal, about=n.about, source_episode=episode_id, tags=n.tags,
                                 now=now, said=said, heard="chat")
@@ -507,6 +509,8 @@ class Brain:
         for n in closed.notes:
             if checked and echoed(n.kind, n.text, his, hers):
                 continue  # what she guessed or made up in the chat, not what he said
+            if self.cottage is not None and n.kind == "self" and invented_act(n.text):
+                continue
             self.store.note(n.kind, n.text, importance=n.importance, valence=n.valence,
                             arousal=n.arousal, about=n.about, source_episode=ep.id, tags=n.tags, now=at,
                             heard="close")

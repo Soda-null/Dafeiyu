@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING
 
 from fish.brain.ask import ask_json
 from fish.brain.leisure.base import Activity, Choice, Kit, Material
+from fish.brain.leisure.cottage import KEY as COTTAGE_KEY
+from fish.cottage import invented_act
 from fish.brain.prompt import WEEKDAYS
 from fish.brain.world import Browser
 from fish.memory import MemoryStore, Moment, Pastimes
@@ -29,6 +31,7 @@ DAY_START, DAY_END = time(9, 0), time(23, 0)
 AFTER_HIS_MESSAGE = timedelta(minutes=30)
 MIN_GAP = timedelta(hours=3)
 NOTHING = Choice("nothing", "什么都不干（发呆、打盹、数米粒）")
+NOTHING_AT_HOME = Choice("nothing", "什么都不干（发呆、躺一会儿、看看湖）")  # with her cottage (decision 26)
 SELF_NOTES_PER_DAY = 1  # decision 19: her life threads grow slowly
 BOREDOM_AFTER_DOING, ENERGY_AFTER_NOTHING = -15, 5
 
@@ -87,7 +90,7 @@ class Leisure:
                    self.sources if self.sources is not None else load_sources())
 
     def menu(self, kit: Kit) -> list[Choice]:
-        choices = [NOTHING]
+        choices = [NOTHING_AT_HOME if self.brain.cottage is not None else NOTHING]
         for a in self.activities.values():
             try:
                 choices += a.offer(kit)
@@ -142,6 +145,8 @@ class Leisure:
                                tags=tuple(s.tags) + (item.source,), source=item.url, now=kit.now)
             if m is not None:
                 ids.append(m.id)
+        if self.brain.cottage is not None:  # what she does to her room goes through its rules
+            self_notes = [n for n in self_notes if not invented_act(n[0])]
         if self_notes and self.self_notes_today(kit) < SELF_NOTES_PER_DAY:
             text, importance = max(self_notes, key=lambda n: n[1])
             m = kit.store.note("self", text, importance=importance, now=kit.now)
@@ -190,6 +195,12 @@ class Leisure:
         today = datetime.combine(now.date(), time(0))
         lines = [moment_line(m) for m in kit.pastimes.moments(today, now) if m.choice]
         return "\n".join(f"- {line}" for line in lines) or "（今天还没有）"
+
+
+def away(m: Moment) -> bool:
+    """A free moment that is not one of the things she did to her room: those are in the
+    room's own record (decision 26), so they are not listed twice."""
+    return bool(m.choice) and m.choice != COTTAGE_KEY
 
 
 def moment_line(m: Moment) -> str:

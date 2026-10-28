@@ -22,10 +22,19 @@ from fish.cottage.rules import (ACTIONS, ATE_RECENTLY_HOURS, CARRY, FRIDGE_SLOTS
                                 asleep_hours, in_stock, mealtime, shop_open)
 
 KEEP_EVENTS = timedelta(days=2)
+# What she may not write about herself once she has a room: things done to it. Doing, buying
+# and eating happen through the rules and are in `events`; her own notes keep thoughts and
+# plans. Wanting to ("想做饭", "打算去买") is a thought and passes.
+INVENTED_ACT = re.compile(r"(?<![想要打算准备])(做|煮|炒|烧|吃|买|洗|叠|收拾|打扫|种|养|睡|躺|煎|炖|蒸)(了|过|完|着|好)")
 KEEP_MEALS = 6
 COUNT_WORDS = {2: "两", 3: "三", 4: "四", 5: "五"}
 BED_WORDS = {"叠好": "被子叠好了", "乱": "被子没叠", "在睡": "你在床上"}
 SPLIT = re.compile(r"[、，,；;\s]+|和")
+
+
+def invented_act(text: str) -> bool:
+    """True when a note of hers says she did something to the room ("煮了面", "买了盆花")."""
+    return INVENTED_ACT.search(text) is not None
 
 
 def _iso(t: datetime) -> str:

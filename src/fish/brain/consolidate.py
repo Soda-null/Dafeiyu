@@ -156,9 +156,12 @@ class Consolidator:
     def diary(self, day: str, mood: str, threads: list[str], gists: list[str],
               yesterday: str, seen: list[str] | None = None, *, phase_line: str = "",
               tone_word: str = "一般", drive_word: str = "还行",
-              leisure: list[str] | None = None) -> tuple[str, list[tuple[str, int]], str]:
-        """Returns (diary text, new life threads, the phase line: how she has been lately)."""
-        data = self._ask("diary", persona=self.persona, day=day, mood=mood,
+              leisure: list[str] | None = None,
+              home: list[str] | None = None) -> tuple[str, list[tuple[str, int]], str]:
+        """Returns (diary text, new life threads, the phase line: how she has been lately).
+        home: what happened in her cottage today (decision 26); None when she has none."""
+        at_home = "## 今天在家（屋里真发生的，照这个写）\n" + _lines(home, "（没什么事）") + "\n\n" if home is not None else ""
+        data = self._ask("diary", persona=self.persona, day=day, mood=mood, home=at_home,
                          threads=_lines(threads, "（还没有，可以开始一件）"),
                          gists=_lines(gists, "（今天没聊）"), yesterday=yesterday or "（没写）",
                          seen=_lines(seen or [], "（今天没逛）"), leisure=_lines(leisure or [], "（没记下）"),
