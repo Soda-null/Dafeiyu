@@ -30,7 +30,12 @@ def test_a_folder_is_copied_flat_into_the_inbox(tmp_path):
     (src / "说明.txt").write_text("不是图")
     inbox = tmp_path / "inbox"
     assert import_folder(src, inbox) == 2
-    assert sorted(p.name for p in inbox.iterdir()) == ["a-1.PNG", "a.png"]
+    # two pictures, neither lost: on the Mac a.PNG lands on a.png and is renamed; on the box
+    # (Linux tells the cases apart) both names are free
+    probe = tmp_path / "probe.png"
+    probe.write_bytes(b"")
+    case_blind = (tmp_path / "PROBE.PNG").exists()
+    assert sorted(p.name for p in inbox.iterdir()) == (["a-1.PNG", "a.png"] if case_blind else ["a.PNG", "a.png"])
     assert (src / "a.png").exists()  # copied, not moved
 
 
