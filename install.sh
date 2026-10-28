@@ -139,7 +139,7 @@ EOF
 
 wechat_login() {
     if [ -f "$DIR/data/wechat.json" ]; then
-        say "微信已经绑过了（要换号：.venv/bin/python -m fish wechat login）"
+        say "微信已经绑过了（要换号：cd $DIR && ./fish wechat login）"
         return 0
     fi
     echo
@@ -262,10 +262,11 @@ finish() {
     if [ -f "$DIR/data/wechat.json" ]; then
         echo "   去微信给她发一句话吧。第一次她会有点认生，聊多了就熟了。"
     else
-        echo "   在终端里和她聊：cd $DIR && .venv/bin/python -m fish"
+        echo "   在终端里和她聊：cd $DIR && ./fish"
     fi
     cat <<EOF
-   看她记了什么：  cd $DIR && .venv/bin/python -m fish show
+   看她今天怎么样：cd $DIR && ./fish life
+   看她记了什么：  cd $DIR && ./fish show
    更新 / 重启：   bash $DIR/install.sh update
    停掉她：        bash $DIR/install.sh uninstall   （记忆留在 $DIR/data/）
 EOF

@@ -49,7 +49,7 @@ jobs:
         shell: pwsh
         env:
           PYTHONUTF8: "1"
-        run: .venv\Scripts\python.exe -m pytest -q
+        run: .venv\Scripts\python.exe -m pytest -q --durations=5
       - name: short command and the hidden runner
         shell: pwsh
         run: |
