@@ -1,4 +1,5 @@
-"""The routine_runs table: which fish day each routine last handled.
+"""The routine_runs table: which fish day each routine last handled (and, as `reflect_at`,
+the time of the last look back).
 
 `claim_run` is atomic: when the WeChat service starts up at the same moment a manual
 `fish browse` runs (it happened on 2026-10-26), only one of them gets the day.

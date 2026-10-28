@@ -161,12 +161,16 @@ def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
             facts = store.profile() + [m for m in store.alive("fact") if m not in store.profile()][:20]
             old = store.alive("insight")  # all of them (at most 20): she may see some are outdated
             old_howto = store.alive("howto")
-            # rules written during (or after) the chats she now looks back on are that evidence
-            # itself: she can neither call them outdated nor see them "again" (memory v3 step 1)
-            looked_back = (date.fromisoformat(last_reflect) if last_reflect else
-                           min(fish_day(datetime.fromisoformat(e.started)) for e in since) - timedelta(days=1))
+            # rules written during the chats she now looks back on are that evidence itself: she
+            # can neither call them outdated nor see them "again" (memory v3 step 1). The last
+            # look back's own rules came before these chats, so these chats are new evidence for
+            # them; tonight's merges (created now) are not evidence either way. Before the run
+            # time was kept, the first of these chats marks the start.
+            at = last_run(conn, "reflect_at")
+            start = (datetime.fromisoformat(at) if at else
+                     min(datetime.fromisoformat(e.started) for e in since))
             newer = {m.id for m in old + old_howto
-                     if fish_day(datetime.fromisoformat(m.created)) > looked_back}
+                     if start < datetime.fromisoformat(m.created) < now}
             insights, howtos, outdated, confirms = thinker.reflect(gists, facts, old, old_howto, newer=newer)
             for memory_id in outdated:
                 store.weaken(memory_id, now)
@@ -179,6 +183,7 @@ def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
             for text, importance in howtos:
                 store.note("howto", text, importance=importance, now=now)
             mark_run(conn, "reflect", day.isoformat())
+            mark_run(conn, "reflect_at", now.isoformat())  # the time, not the day: see `newer`
             report["insights"] = len(insights)
             report["howto"] = len(howtos)
 

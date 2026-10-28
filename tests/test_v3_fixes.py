@@ -191,29 +191,50 @@ def test_reflection_cannot_outdate_a_rule_from_the_chats_it_reads_and_can_confir
     run_nightly(conn, night_one, brain=brain)  # the first look back; it closes 01-10
     new_rule = next(m for m in store.alive("insight") if "白天" in m.text)
 
-    # the next look back reads the chats since 01-10. The daytime rule was written by the last
-    # look back and the lunch rule during these chats: both are this evidence, not older than it
-    # (the bug: a new rule was called outdated the next time). An old rule seen again in other
-    # words is confirmed; the old howto rule is outdated.
+    # the next look back reads the chats since 01-10. The lunch rule was written during these
+    # chats: it is this evidence, so it is neither outdated nor confirmed. The daytime rule was
+    # written by the last look back, before these chats: they are new evidence for it, so it can
+    # be confirmed (step 1 first barred it too, and a fresh rule could gain nothing for a week).
+    # An old rule seen again in other words is confirmed; the old howto rule is outdated.
     reflect_chats(em, datetime(2027, 1, 12, 12, 0), "第二批")
     chat_rule = store.note("insight", "他中午爱问吃啥", importance=7, now=datetime(2027, 1, 12, 13, 0))
     assert old_howto.id in [m.id for m in store.howto_card()]
     answer.clear()
-    answer.update(outdated=[old_howto.id, new_rule.id, chat_rule.id],
+    answer.update(outdated=[old_howto.id, chat_rule.id],
                   confirms=[old_rule.id, new_rule.id, chat_rule.id])
     report = run_nightly(conn, datetime(2027, 1, 13, 3, 30), brain=brain)
     prompt = prompts[-1]
     assert f"[#{chat_rule.id}] 他中午爱问吃啥（还说不准）（新记的）" in prompt
-    assert f"[#{new_rule.id}] 他最近白天也来找我了（还说不准）（新记的）" in prompt
+    assert f"[#{new_rule.id}] 他最近白天也来找我了（还说不准）\n" in prompt
     assert f"[#{old_rule.id}] 他老是半夜才来找我（还说不准）\n" in prompt
     assert "confirms" in prompt and "相处方式也会过时" in prompt
 
-    assert report["outdated"] == 1 and report["confirmed"] == 1
+    assert report["outdated"] == 1 and report["confirmed"] == 2
     assert store.get(old_howto.id).stability == st.WEAKENED_DAYS
     assert old_howto.id not in [m.id for m in store.howto_card()]  # an outdated rule leaves the card
-    for rule in (new_rule, chat_rule):  # neither outdated nor confirmed
-        assert store.get(rule.id).stability == st.UNCONFIRMED_DAYS and store.get(rule.id).times == 1
-    assert store.get(old_rule.id).times == 2
+    assert store.get(chat_rule.id).stability == st.UNCONFIRMED_DAYS and store.get(chat_rule.id).times == 1
+    assert store.get(new_rule.id).times == 2 and store.get(old_rule.id).times == 2
+
+
+def test_the_last_look_backs_rules_can_be_outdated_by_the_next_chats(tmp_path):
+    answer: dict = {"insights": [{"text": "他最近白天也来找我了", "importance": 7}]}
+
+    def respond(messages, json_mode):
+        if "想看出点规律" in messages[-1]["content"]:
+            return json.dumps(answer, ensure_ascii=False)
+        return "{}"
+
+    conn, brain = brain_with(tmp_path, respond)
+    store = MemoryStore(conn)
+    em = EpisodeManager(conn)
+    reflect_chats(em, datetime(2027, 1, 9, 12, 0), "第一批")
+    run_nightly(conn, datetime(2027, 1, 11, 3, 30), brain=brain)
+    rule = next(m for m in store.alive("insight") if "白天" in m.text)
+    reflect_chats(em, datetime(2027, 1, 12, 12, 0), "第二批")
+    answer.clear()
+    answer.update(outdated=[rule.id])
+    assert run_nightly(conn, datetime(2027, 1, 13, 3, 30), brain=brain)["outdated"] == 1
+    assert store.get(rule.id).stability == st.WEAKENED_DAYS
 
 
 def test_the_first_look_back_can_outdate_what_came_before_its_chats(tmp_path):
