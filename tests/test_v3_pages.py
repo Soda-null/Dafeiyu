@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from fish.brain import Brain, FakeLLM
+from fish.brain.prompt import JSON_REMINDER
 from fish.config import Settings
 from fish.memory import EpisodeManager, MemoryStore, Window, keys_of, turn_back
 from fish.memory.pages import PAGE_CHARS, PAGE_MIN, answered, asked_about, opens, relevance
@@ -32,7 +33,8 @@ def make_brain(tmp_path: Path, chat=None, close=None, pages=True):
         content = messages[0]["content"]
         if "这次和他的聊天结束了" in content:
             return close(content) if callable(close) else close
-        return chat(messages[-1]["content"]) if callable(chat) else (chat or chat_json())
+        his = messages[-1]["content"].removesuffix(f"\n{JSON_REMINDER}")
+        return chat(his) if callable(chat) else (chat or chat_json())
 
     conn = connect(tmp_path / "fish.db")
     settings = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db", pages=pages)

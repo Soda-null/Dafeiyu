@@ -14,6 +14,12 @@ from fish.mood import Mood
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 WEEKDAYS = "一二三四五六日"
+# Said at the end of his text line. With her earlier replies in the history as plain text, DeepSeek's
+# JSON mode often answered with only spaces: the model wants to start in prose, JSON mode allows only
+# "{" or whitespace. A reminder with a one-line example right at his line fixed it; the same words in
+# the system prompt did not (docs/memory_v3_zh.md §15). Only in the prompt, never in what is stored.
+JSON_REMINDER = ('（照"输出格式"只输出一个 json 对象，例如 {"say": "嗯，我在呢", "mood": "平静", '
+                 '"topic": "闲聊", "notes": [], "followups": [], "asked": [], "corrections": []}）')
 
 
 def load_template(name: str) -> str:
@@ -247,7 +253,7 @@ def build_chat_messages(ctx: PromptContext) -> list[dict[str, str]]:
             {"type": "image_url", "image_url": {"url": ctx.user_image}},
         ]})
     else:
-        messages.append({"role": "user", "content": user_text})
+        messages.append({"role": "user", "content": f"{user_text}\n{JSON_REMINDER}"})
     return messages
 
 

@@ -14,7 +14,7 @@ from typing import Callable
 from fish.brain.leisure import Leisure, default_activities, moment_line, pastimes_line
 from fish.brain.llm import LLM
 from fish.brain.parse import Reply, parse_episode_close, parse_reply, parse_retry
-from fish.brain.prompt import (PromptContext, build_chat_messages, build_close_messages,
+from fish.brain.prompt import (JSON_REMINDER, PromptContext, build_chat_messages, build_close_messages,
                                build_fold_messages)
 from fish.brain.reach import Reacher, ReachOut, ReachPolicy, recent_lines
 from fish.config import Settings, owner_words
@@ -62,12 +62,14 @@ def echo_checked(his_lines: list[str]) -> bool:
 
 
 def plain_text(messages: list[dict]) -> list[dict]:
-    """The same messages, his last one carrying PLAIN_REMINDER (a picture's text part too)."""
+    """The same messages, his last one carrying PLAIN_REMINDER (a picture's text part too) in place
+    of JSON_REMINDER: "only JSON" and "no JSON" side by side would only confuse it."""
     out = [dict(m) for m in messages]
     last = out[-1]
     reminder = owner_words(PLAIN_REMINDER)
     if isinstance(last["content"], str):
-        last["content"] = f"{last['content']}\n{reminder}"
+        text = last["content"].removesuffix(f"\n{JSON_REMINDER}")
+        last["content"] = f"{text}\n{reminder}"
     else:
         last["content"] = [dict(part, text=f"{part['text']}\n{reminder}") if part.get("type") == "text"
                            else part for part in last["content"]]
@@ -100,9 +102,11 @@ class Brain:
         self.traits = TraitStore(conn)
         self.pastimes = Pastimes(conn)
         self.leisure: Leisure | None = None  # built on the first free moment; tests set their own
-        # first replies that gave nothing usable, with why the model stopped when it says: the
-        # checkup counts and writes them (memory v3 §14); nothing is stored
+        # turns whose JSON replies gave nothing usable, so she was asked in plain text, with why the
+        # model stopped when it says: the checkup counts and writes them (memory v3 §14); nothing is stored
         self.fallbacks: list[dict] = []
+        # first JSON replies that came back blank (asked once more in JSON before any plain text, §15)
+        self.empty_firsts = 0
 
     def stage(self) -> str:
         return stage_of(self.relationship.closeness)
@@ -278,11 +282,22 @@ class Brain:
                 f"（链接：{title}）" if title else "")
 
     def ask(self, messages: list[dict]) -> Reply:
+        """Her reply in JSON. A blank one (DeepSeek's JSON mode sometimes answers with only spaces)
+        is asked once more in JSON: the tries are independent and only JSON brings the notes, so
+        what he said this turn is still remembered. Plain text is the last resort (memory v3 §15)."""
         raw = self.llm.chat(messages, json_mode=True, temperature=1.0)
         reply = parse_reply(raw)
         if reply.parsed or reply.say:
             return reply  # a parsed reply with an empty say is her choosing not to answer
-        self.fallbacks.append({"raw": raw[:FALLBACK_KEPT], "finish": getattr(self.llm, "last_finish", None)})
+        retried = not raw.strip()
+        if retried:
+            self.empty_firsts += 1
+            raw = self.llm.chat(messages, json_mode=True, temperature=1.0)
+            reply = parse_reply(raw)
+            if reply.parsed or reply.say:
+                return reply
+        self.fallbacks.append({"raw": raw[:FALLBACK_KEPT], "finish": getattr(self.llm, "last_finish", None),
+                               "retried": retried})
         reply = parse_retry(self.llm.chat(plain_text(messages), json_mode=False, temperature=1.0))
         reply.say = reply.say or FALLBACK_SAY
         return reply

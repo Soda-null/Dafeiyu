@@ -116,7 +116,8 @@ def test_when_the_json_reply_gives_nothing_the_plain_retry_is_cleaned_before_it_
 
     brain, conn, llm = make_brain(tmp_path, answer)
     assert brain.respond("我房租多少你记得不", now=T0) == "你自己猜嘛"
-    retry, plain = llm.calls[1]
+    assert [j for _, j in llm.calls[:3]] == [True, True, False]  # blank, once more in JSON, then plain
+    retry, plain = llm.calls[2]
     assert not plain and PLAIN_REMINDER in retry[-1]["content"]
     assert [r["text"] for r in conn.execute("SELECT text FROM messages WHERE role = 'fish'")] == ["你自己猜嘛"]
     assert MemoryStore(conn).alive() == [] and len(brain.fallbacks) == 1

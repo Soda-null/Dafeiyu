@@ -165,3 +165,13 @@ def test_counting_llm_counts():
     llm.chat([{"role": "user", "content": "你好"}], json_mode=False)
     llm.chat([{"role": "user", "content": [{"type": "text", "text": "看图"}, {"type": "image_url", "image_url": {"url": "x"}}]}])
     assert (llm.calls, llm.chars_in, llm.chars_out) == (2, 4, 4)
+
+
+def test_the_report_counts_blank_first_replies_apart_from_plain_text_fallbacks():
+    """memory v3 §15: a blank first reply is asked again in JSON; only what still fails goes to
+    plain text and loses that turn's notes."""
+    s = checkup.summary_of([], {}, calls=10, chars_in=100, chars_out=10, fallbacks=1, empty_firsts=4)
+    report = checkup.render_from("t", s, [], label="t", version="0", days=1, final_day=None,
+                                 elapsed_s=0, remembers="…")
+    assert "第一次回复是空的、再用 JSON 问一次：4 次" in report
+    assert "改用纯文字再问（这一轮多半记不下笔记）：1 次" in report

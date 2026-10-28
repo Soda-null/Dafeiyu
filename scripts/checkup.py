@@ -290,7 +290,8 @@ def summary(cu: Checkup) -> dict:
                       calls=cu.llm.calls + cu.judge_llm.calls,
                       chars_in=cu.llm.chars_in + cu.judge_llm.chars_in,
                       chars_out=cu.llm.chars_out + cu.judge_llm.chars_out,
-                      kinds=kinds(cu.conn), fallbacks=len(cu.brain.fallbacks))
+                      kinds=kinds(cu.conn), fallbacks=len(cu.brain.fallbacks),
+                      empty_firsts=cu.brain.empty_firsts)
 
 
 def rejudge(result: dict, judge_llm: LLM, start: date, *, only_broken: bool = False) -> dict:
@@ -342,8 +343,11 @@ def render_from(name: str, s: dict, graded: list[dict], *, label: str, version: 
            f"- 顺带想起（软指标）：{s['soft_ok']} / {s['soft']}",
            "- 各档：" + "、".join(f"{k} {v}" for k, v in s["labels"].items()),
            ]
-    if "fallbacks" in s:  # first replies that gave nothing, so she was asked again in plain text
-        out.append(f"- 第一次回复读不出、改用纯文字再问：{s['fallbacks']} 次（原样留在临时目录 fallbacks.json）")
+    if "empty_firsts" in s:  # first JSON replies that came back blank, asked once more in JSON
+        out.append(f"- 第一次回复是空的、再用 JSON 问一次：{s['empty_firsts']} 次")
+    if "fallbacks" in s:  # JSON replies that gave nothing in the end, so she was asked in plain text
+        out.append(f"- JSON 回复最后还是读不出、改用纯文字再问（这一轮多半记不下笔记）：{s['fallbacks']} 次"
+                   "（原样留在临时目录 fallbacks.json）")
     if s.get("kinds"):
         k = s["kinds"]
         out.append("- 她写了多少（写过 / 还活着）：" + "、".join(

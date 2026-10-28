@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from fish.brain import Brain, FakeLLM
+from fish.brain.prompt import JSON_REMINDER
 from fish.brain.parse import parse_reply
 from fish.config import Settings
 from fish.memory import EpisodeManager, MemoryStore, ProspectiveStore
@@ -82,7 +83,7 @@ def test_prompt_carries_profile_recalled_followups_and_state(tmp_path):
     assert f"[#{demo.id}] 他上周有个机器人演示" in system  # no day named: none made up
     assert f"[#{due.id}] 问他演示怎么样" in system
     assert "现在是 2026-10-26 周一 20:00" in system and "你们认识第 1 天" in system
-    assert llm.calls[-1][0][-1] == {"role": "user", "content": "演示过去了，松口气"}
+    assert llm.calls[-1][0][-1] == {"role": "user", "content": f"演示过去了，松口气\n{JSON_REMINDER}"}
     assert store.get(demo.id).recall_count == 1
 
 
@@ -108,11 +109,12 @@ def test_bad_json_is_said_as_is_and_records_nothing(tmp_path):
     assert [t.text for t in brain.window.recent()] == ["在吗", "这不是 json"]
 
 
-def test_empty_reply_is_retried_in_plain_mode(tmp_path):
-    llm = FakeLLM(["", "嗯？"])
+def test_empty_reply_is_retried_in_json_then_in_plain_mode(tmp_path):
+    llm = FakeLLM(["", "", "嗯？"])
     brain, _ = make_brain(tmp_path, llm)
     assert brain.respond("在吗", now=T0) == "嗯？"
-    assert [j for _, j in llm.calls] == [True, False]
+    assert [j for _, j in llm.calls] == [True, True, False]
+    assert brain.empty_firsts == 1 and len(brain.fallbacks) == 1
 
 
 def test_window_folds_into_the_running_summary(tmp_path):
