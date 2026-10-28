@@ -24,7 +24,7 @@ class Settings:
     window_size: int = 20
     prompt_chars: int = 6000  # docs/memory_design_zh.md §2
     reach_out: bool = True  # may she message first (decision 10)
-    reach_max_per_day: int = 2
+    reach_max_per_day: int = 0  # 0: no daily cap, she sends when she wants (decision 30)
     leisure: bool = True  # free moments where she may do something or nothing (decision 24)
     leisure_max_per_day: int = 3
     home_at: str = ""  # "lat,lon" where she lives, when not the machine's own city (decision 15)
@@ -77,7 +77,7 @@ def load_settings(env_file: Path | None = None) -> Settings:
         window_size=int(os.environ.get("FISH_WINDOW_SIZE", "20")),
         prompt_chars=int(os.environ.get("FISH_PROMPT_CHARS", "6000")),
         reach_out=os.environ.get("FISH_REACH_OUT", "1") not in ("0", "false", "no", ""),
-        reach_max_per_day=int(os.environ.get("FISH_REACH_MAX", "2")),
+        reach_max_per_day=int(os.environ.get("FISH_REACH_MAX", "0")),
         leisure=os.environ.get("FISH_LEISURE", "1") not in ("0", "false", "no", ""),
         leisure_max_per_day=int(os.environ.get("FISH_LEISURE_MAX", "3")),
         home_at=os.environ.get("FISH_HOME", "").replace(" ", ""),

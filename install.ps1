@@ -151,9 +151,9 @@ DEEPSEEK_API_KEY=$key
 # 她的白天黑夜跟这台电脑的时钟走（Windows 上不用写 TZ）
 # 她称呼你用 他 还是 她
 FISH_OWNER=$owner
-# 她能不能先找你（1 = 能，0 = 不能），一天最多几次
+# 她能不能先找你（1 = 能，0 = 不能）；一天最多几次，0 = 不限，她想发就发
 FISH_REACH_OUT=1
-FISH_REACH_MAX=2
+FISH_REACH_MAX=0
 # 她住哪：默认是这台电脑网络所在的城市。想让她住在别处，填那里的"纬度,经度"
 # （只精确到约一公里，不会记门牌）。例：FISH_HOME=31.23,121.47
 # FISH_HOME=

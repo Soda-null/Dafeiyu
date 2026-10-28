@@ -29,7 +29,7 @@
 | 导出她的记忆给试算脚本（`scripts/memory_v2_trial.py`，只读） | 在 box 上 `cd Dafeiyu && .venv/bin/python -c "import json; from dataclasses import asdict; from fish.config import load_settings; from fish.storage import connect; from fish.memory import MemoryStore; c = connect(load_settings().db_path); print(json.dumps({'memories': [asdict(m) for m in MemoryStore(c).alive()], 'episodes': [dict(r) for r in c.execute('SELECT id, started, ended, gist, importance, valence FROM episodes')]}, ensure_ascii=False))" > her_memories.json`，再 scp 到 Mac |
 | 备份她的记忆到 Mac | `rsync -az box:Dafeiyu/data/ ~/Dafeiyu/backups/$(date +%F)/` |
 | 停掉她 | `ssh box systemctl --user stop dafeiyu-wechat` |
-| 不让她先开口 / 改每天上限 | box 的 `~/Dafeiyu/.env` 里加 `FISH_REACH_OUT=0` 或 `FISH_REACH_MAX=1`，然后 `systemctl --user restart dafeiyu-wechat` |
+| 不让她先开口 / 给每天加上限 | box 的 `~/Dafeiyu/.env` 里加 `FISH_REACH_OUT=0` 或 `FISH_REACH_MAX=2`（默认 0 = 不限，决定 30），然后 `systemctl --user restart dafeiyu-wechat` |
 | 送她表情包 | 攒进 Mac 上一个文件夹，`scripts/fish.sh stickers ~/某个文件夹`：只传图片，她当场一张张看、起叫法收进相册，相册里已有的同一张不重复收；一张问一次模型。也可以 `scp` 进 `Dafeiyu/data/stickers/inbox/` 等她夜里看（一晚最多 10 张），或者直接在微信里发给她，她觉得好玩会自己留 |
 | 看她的相册 | `ssh box 'cd Dafeiyu && .venv/bin/python -c "from fish.storage import connect; from fish.memory import StickerAlbum; from pathlib import Path; [print(s.id, s.caption, s.uses) for s in StickerAlbum(connect(Path(\"data/fish.db\")), Path(\"data/stickers\")).all()]"'` |
 

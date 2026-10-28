@@ -15,7 +15,7 @@ This project makes her a **friend**, not an assistant:
 - **She remembers you, and she forgets.** Big things stick. Small things fade after a few weeks, until you bring them up: "oh right, you told me." If she gets something wrong and you correct her, she remembers the correction.
 - **She has a life of her own.** Every night she writes a diary and tidies her memories. In her free time she reads the news, scrolls Bilibili, reads an old book, or just does nothing. Her cottage is real in the program: she cooks at mealtimes, the fridge runs empty, dishes pile up in the sink, and the vegetable shop is closed on Tuesdays. She can't make up what happens at home.
 - **She has moods.** She gets sleepy, hungry and bored. She is quiet when you first meet; once you are close she teases you and brings up old stories. Her personality drifts a little over months, but she never turns into someone else.
-- **She chats with you on WeChat.** She understands the pictures you send and sends stickers back. She texts first at most twice a day.
+- **She chats with you on WeChat.** She understands the pictures you send and sends stickers back. She texts you first whenever she feels like it; there is no daily limit.
 
 Her brain is the DeepSeek API (your own key, pay as you go). All her memories stay in one file on your own machine.
 

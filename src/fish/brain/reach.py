@@ -1,11 +1,12 @@
 """She speaks first (decision 10).
 
-Two layers. The rules gate costs nothing and runs every poll: on, daytime, at most
-MAX_PER_DAY a day, hours apart, not right after he wrote, not re-asked within hours of a
-"no". Then a trigger must exist: something she saw today worth sharing, a follow-up that
-came due, a long silence, an anniversary, something that happened at home (decision 26),
-or plain boredom. Only then is the model asked
-once whether she feels like saying something, and what. Not saying anything is her call.
+Two layers. The rules gate costs nothing and runs every poll: on, daytime, an hour apart,
+not right after he wrote, not re-asked within the hour after a "no", and no daily cap unless
+FISH_REACH_MAX sets one (decision 30: she sends when she wants to). Then a trigger must
+exist: something she saw today worth sharing, a follow-up that came due, a long silence, an
+anniversary, something that happened at home (decision 26), or plain boredom. Only then is
+the model asked once whether she feels like saying something, and what, told how many of her
+messages he has not answered yet. Not saying anything is her call.
 """
 
 from __future__ import annotations
@@ -26,9 +27,9 @@ from fish.memory.prospective import DUE_SHOWN
 from fish.mood import Mood
 
 DAY_START, DAY_END = time(9, 0), time(22, 30)
-MIN_GAP = timedelta(hours=6)
+MIN_GAP = timedelta(hours=1)
 AFTER_HIS_MESSAGE = timedelta(minutes=60)
-RECONSIDER_AFTER = timedelta(hours=3)
+RECONSIDER_AFTER = timedelta(hours=1)
 SILENCE_TRIGGER_HOURS = 18
 # WeChat drops bot messages to someone silent for 24 h without telling us (community docs),
 # so after this long she cannot reach him and waits.
@@ -46,6 +47,7 @@ class Triggers:
     anniversary: int | None = None
     bored: bool = False
     home: list[str] = field(default_factory=list)  # what happened in her cottage lately
+    unanswered: int = 0  # her own first messages since he last wrote
 
     @property
     def any(self) -> bool:
@@ -63,7 +65,8 @@ class ReachOut:
 class ReachPolicy:
     """The rules, with their little state kept in the relationship ledger (reach_* keys)."""
 
-    def __init__(self, conn: sqlite3.Connection, *, enabled: bool = True, max_per_day: int = 2) -> None:
+    def __init__(self, conn: sqlite3.Connection, *, enabled: bool = True, max_per_day: int = 0) -> None:
+        """max_per_day 0 means no cap: whether to send is hers (decision 30)."""
         self.conn = conn
         self.enabled = enabled
         self.max_per_day = max_per_day
@@ -84,9 +87,17 @@ class ReachPolicy:
     def record_considered(self, now: datetime) -> None:
         self.kv.set("reach_last_considered", iso(now), now)
 
+    def unanswered(self) -> int:
+        """How many of her first messages are still waiting for his reply."""
+        last_sent, his = self._dt("reach_last_sent"), self.last_his_message()
+        if last_sent is None or (his is not None and his > last_sent):
+            return 0
+        return int(self.kv.get("reach_unanswered", "0") or 0)
+
     def record_sent(self, now: datetime, ro: ReachOut) -> None:
         day = now.date().isoformat()
         count = self.count_today(now) + 1
+        self.kv.set("reach_unanswered", str(self.unanswered() + 1), now)
         self.kv.set("reach_day", day, now)
         self.kv.set("reach_count", str(count), now)
         self.kv.set("reach_last_sent", iso(now), now)
@@ -105,7 +116,7 @@ class ReachPolicy:
             return "off"
         if not DAY_START <= now.time() <= DAY_END:
             return "night"
-        if self.count_today(now) >= self.max_per_day:
+        if self.max_per_day and self.count_today(now) >= self.max_per_day:
             return "enough today"
         last_sent = self._dt("reach_last_sent")
         if last_sent and now - last_sent < MIN_GAP:
@@ -134,7 +145,7 @@ class ReachPolicy:
         known = self.kv.days_known(now)
         anniversary = known if known in ANNIVERSARIES or (known > 0 and known % 100 == 0) else None
         bored = mood.boredom >= BORED_LEVEL and silence >= BORED_SILENCE_HOURS
-        return Triggers(seen, due, silence, anniversary, bored, list(home or []))
+        return Triggers(seen, due, silence, anniversary, bored, list(home or []), self.unanswered())
 
 
 class Reacher:
@@ -162,6 +173,8 @@ class Reacher:
             since = owner_words(f"他上次找你是 {int(trig.silence_hours)} 小时前。")
         else:
             since = "你们刚聊过。"
+        if trig.unanswered:
+            since += owner_words(f"你前面主动发的 {trig.unanswered} 条他还没回。")
         when = f"{now.strftime('%Y-%m-%d')} 周{WEEKDAYS[now.weekday()]} {now.strftime('%H:%M')}"
         data = ask_json(self.llm, "reach_out", persona=self.persona, now=when, since=since,
                         mood=mood.describe(), reasons="\n".join(reasons) or "（没什么特别的）",

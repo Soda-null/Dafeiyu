@@ -41,7 +41,7 @@ def deciding(say="看到个候鸟的视频，想起你。", asked=(), shared=())
 
 def test_gate_refuses_for_the_right_reasons(tmp_path):
     conn, brain = make(tmp_path, deciding())
-    policy = ReachPolicy(conn, max_per_day=2)
+    policy = ReachPolicy(conn)
     assert policy.refused(NOON) == "never met"
     he_wrote(brain, NOON - timedelta(hours=3))
     assert policy.refused(NOON) is None
@@ -49,12 +49,13 @@ def test_gate_refuses_for_the_right_reasons(tmp_path):
     assert policy.refused(NOON - timedelta(hours=2, minutes=30)) == "just talked"
     assert ReachPolicy(conn, enabled=False).refused(NOON) == "off"
     policy.record_considered(NOON)
-    assert policy.refused(NOON + timedelta(hours=1)) == "decided recently"
-    assert policy.refused(NOON + timedelta(hours=4)) is None
-    policy.record_sent(NOON + timedelta(hours=4), ReachOut("x"))
-    assert policy.refused(NOON + timedelta(hours=5)) == "too soon"
-    policy.record_sent(NOON + timedelta(hours=10), ReachOut("y"))
-    assert policy.refused(NOON + timedelta(hours=10, minutes=1)) == "enough today"
+    assert policy.refused(NOON + timedelta(minutes=30)) == "decided recently"
+    assert policy.refused(NOON + timedelta(hours=1)) is None
+    policy.record_sent(NOON + timedelta(hours=1), ReachOut("x"))
+    assert policy.refused(NOON + timedelta(hours=1, minutes=30)) == "too soon"
+    policy.record_sent(NOON + timedelta(hours=2), ReachOut("y"))
+    assert policy.refused(NOON + timedelta(hours=3)) is None  # no daily cap (decision 30)
+    assert ReachPolicy(conn, max_per_day=2).refused(NOON + timedelta(hours=3)) == "enough today"
 
 
 def test_nothing_to_say_means_no_model_call(tmp_path):
@@ -80,7 +81,7 @@ def test_she_shares_what_she_saw_and_it_is_recorded_once_sent(tmp_path):
     assert [t.role for t in turns] == ["user", "fish"] and turns[-1].text == sent[0]
     policy = ReachPolicy(conn)
     assert policy.count_today(NOON) == 1 and policy.shared_ids() == {1}
-    # the same 见闻 is not offered again, and the daily cap holds after a second one
+    # the same 见闻 is not offered again
     assert brain.consider_reach_out(NOON + timedelta(hours=7)) is None
 
 
@@ -108,7 +109,7 @@ def test_she_may_decide_not_to(tmp_path):
     he_wrote(brain, NOON - timedelta(hours=20))
     assert brain.consider_reach_out(NOON) is None
     assert len(llm.calls) == 1 and "20 个小时没来找你" in llm.calls[0][0][-1]["content"]
-    assert brain.consider_reach_out(NOON + timedelta(hours=1)) is None and len(llm.calls) == 1
+    assert brain.consider_reach_out(NOON + timedelta(minutes=30)) is None and len(llm.calls) == 1
 
 
 def test_no_reach_out_once_wechat_would_drop_it(tmp_path):
@@ -179,3 +180,19 @@ def test_wechat_channel_pushes_between_polls(tmp_path):
     assert ch.push("x") is True
     state.context_tokens.clear()
     assert ch.push("x") is False
+
+
+def test_no_daily_cap_but_she_knows_he_has_not_answered(tmp_path):
+    """Decision 30: she sends when she wants to, as often as she wants; each time she is told
+    how many of her messages he has not answered yet, and that count clears when he writes."""
+    llm = deciding(say="在干嘛")
+    conn, brain = make(tmp_path, llm)
+    he_wrote(brain, NOON - timedelta(hours=20))
+    sent: list[str] = []
+    for h in range(4):  # four in one afternoon: more than the old cap of two
+        assert brain.tick(lambda text: sent.append(text) or True, now=NOON + timedelta(hours=h)) is True
+    assert len(sent) == 4
+    prompts = [c[0][-1]["content"] for c in llm.calls if "要不要先给他发条消息" in c[0][-1]["content"]]
+    assert "他还没回" not in prompts[0] and "你前面主动发的 3 条他还没回" in prompts[3]
+    he_wrote(brain, NOON + timedelta(hours=4))
+    assert ReachPolicy(conn).unanswered() == 0
