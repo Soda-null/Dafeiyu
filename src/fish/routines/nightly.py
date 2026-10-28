@@ -102,6 +102,30 @@ def _update_groups(new: list[Memory], alive: list[Memory],
     return groups[:MAX_PAIRS]
 
 
+def _change_groups(new: list[Memory], alive: list[Memory],
+                   merged_away: set[int]) -> list[tuple[Memory, list[Memory]]]:
+    """Each new event of his with the older facts it might make untrue (memory v3 §11 item 7,
+    approved 10-28): "他说又喝回原来那个了" was kept as a fading event while the fact on her
+    card still said he had switched. Same candidates as `_update_groups`, from events."""
+    groups = []
+    for n in new:
+        if n.kind != "event" or n.id in merged_away or n.text.lstrip().startswith("我"):
+            continue
+        olds = []
+        for o in alive:
+            if (o.kind != "fact" or o.id in merged_away or o.created >= n.created
+                    or o.pact_state == "open"):
+                continue
+            shared_tag = bool(set(n.tags) & set(o.tags))
+            sim = overlap(n.text.translate(_NUMERALS), o.text.translate(_NUMERALS))
+            if shared_tag or sim > 0:
+                olds.append(((shared_tag, sim), o))
+        if olds:
+            olds.sort(key=lambda s: s[0], reverse=True)
+            groups.append((n, [o for _, o in olds[:MAX_CANDIDATES]]))
+    return groups[:MAX_PAIRS]
+
+
 def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
                 brain: "Brain | None" = None, export_path: Path | None = None) -> dict:
     now = now or datetime.now()
@@ -144,6 +168,13 @@ def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
                 store.supersede(u.old_id, u.new_id, why="update")
                 done += 1
         report["updated"] = done
+        # 3a. a new event of his that makes an old fact untrue: the fact is rewritten as it is now
+        rewritten = 0
+        for old_id, text in thinker.rewrite_facts(_change_groups(new, store.alive(), merged_away)):
+            if store.get(old_id).alive:
+                store.correct(old_id, text, now=now)
+                rewritten += 1
+        report["rewritten"] = rewritten
 
     # 3b. things that kept happening -> one gist each, without one-off details (decision 20)
     if thinker:

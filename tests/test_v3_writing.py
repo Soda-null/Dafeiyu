@@ -236,7 +236,7 @@ def test_the_prompts_ask_for_results_named_things_people_and_what_she_said_she_w
     for words in ("事情的**结果**", "**带名字的小事**", "名字＋跟他什么关系", "名字像的人分开写",
                   "notes 里就必须有", "芒果过敏放杨枝甘露"):
         assert words in chat
-    for words in ("事情的结果和分数", "带名字的小事", "名字＋跟他什么关系", "以前 X，现在 Y",
+    for words in ("事情的结果和分数", "带名字的小事", "名字＋跟他什么关系", "现在 Y（以前 X）",
                   '"outcomes"', "等结果的事", "这次你问过他的", "他让你帮他记着也不写", "gist 里留着专名"):
         assert words in close
     # the first paid checkups (memory v3 §13): a friend's pet was split off into a 14-day

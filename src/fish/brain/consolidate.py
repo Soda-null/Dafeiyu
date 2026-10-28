@@ -116,6 +116,23 @@ class Consolidator:
                 updates.append(Update(item["old_id"], item["new_id"]))
         return updates
 
+    def rewrite_facts(self, groups: list[tuple[Memory, list[Memory]]]) -> list[tuple[int, str]]:
+        """groups: (a new event of his, older facts it might make untrue). Returns (old fact id,
+        the fact rewritten as it is now), only for pairs that were offered."""
+        if not groups:
+            return []
+        text = "\n\n".join(
+            f"新情况：[#{new.id}] {new.text}\n以前记的事实：\n" + "\n".join(f"- [#{o.id}] {o.text}" for o in olds)
+            for new, olds in groups)
+        data = self._ask("rewrite_facts", groups=text)
+        allowed = {(o.id, new.id) for new, olds in groups for o in olds}
+        out: list[tuple[int, str]] = []
+        for item in (data or {}).get("rewrites") or []:
+            if (isinstance(item, dict) and (item.get("old_id"), item.get("new_id")) in allowed
+                    and str(item.get("text") or "").strip()):
+                out.append((item["old_id"], str(item["text"]).strip()[:200]))
+        return out
+
     def reflect(self, gists: list[str], facts: list[Memory], old_insights: list[Memory],
                 old_howto: list[Memory] | None = None, *, newer: set[int] | frozenset[int] = frozenset()
                 ) -> tuple[list[tuple[str, int]], list[tuple[str, int]], list[int], list[int]]:

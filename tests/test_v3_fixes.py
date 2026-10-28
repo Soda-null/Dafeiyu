@@ -291,3 +291,40 @@ def test_a_chat_is_closed_as_of_its_last_message_and_with_all_its_turns(tmp_path
     assert note.created == "2027-01-04T20:07:00" and note.last_time == "2027-01-04"
     (f,) = ProspectiveStore(conn).open()
     assert f.created == "2027-01-04T20:07:00"
+
+
+def test_an_event_of_his_rewrites_the_fact_it_makes_untrue(tmp_path):
+    """10-28 checkups (memory v3 §16, §11 item 7): "他说又换回原来的了" was kept as a fading event
+    while the fact on her card still said he had switched; now the night rewrites the fact,
+    present first."""
+    from fish.brain import Brain, FakeLLM
+    from fish.config import Settings
+    from fish.routines import run_nightly
+    from fish.storage import connect
+
+    conn = connect(tmp_path / "fish.db")
+    store = MemoryStore(conn)
+    fact = store.note("fact", "他每天晚上十二点后才睡，2027-01-03起改成十点就睡", importance=6, about="本人",
+                      tags=["睡觉"], now=datetime(2027, 1, 3, 20, 0))
+    event = store.note("event", "他2027-01-10说早睡坚持不下去，又回到十二点以后睡了", importance=5, about="日常",
+                       tags=["睡觉"], now=datetime(2027, 1, 10, 22, 0))
+    asked = []
+
+    def respond(messages, json_mode):
+        content = messages[-1]["content"]
+        if "今天他说了几件新情况" in content:
+            asked.append(content)
+            return json.dumps({"rewrites": [
+                {"old_id": fact.id, "new_id": event.id, "text": "他现在十二点后才睡（1月3日起早睡过一阵，1月10日又回去了）"},
+                {"old_id": 999, "new_id": event.id, "text": "不该改的"}]}, ensure_ascii=False)
+        return json.dumps({})
+
+    s = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db")
+    brain = Brain(conn, s, FakeLLM(respond), persona_text="你是大肥鱼。")
+    report = run_nightly(conn, datetime(2027, 1, 11, 3, 30), brain=brain)
+    assert asked and f"新情况：[#{event.id}]" in asked[0] and f"- [#{fact.id}]" in asked[0]
+    assert report["rewritten"] == 1
+    now = next(m for m in store.alive("fact"))
+    assert now.text.startswith("他现在十二点后才睡") and now.about == "本人"
+    assert store.former(now.id).text == fact.text  # the old one stays as what she used to think
+    assert store.get(event.id).alive  # the event itself is left as it was
