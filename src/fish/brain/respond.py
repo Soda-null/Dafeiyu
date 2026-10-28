@@ -16,7 +16,7 @@ from fish.brain.llm import LLM
 from fish.brain.parse import Reply, parse_episode_close, parse_reply, parse_retry
 from fish.brain.prompt import (JSON_REMINDER, PromptContext, build_chat_messages, build_close_messages,
                                build_fold_messages)
-from fish.brain.reach import RECONSIDER_AFTER, Reacher, ReachOut, ReachPolicy, recent_lines
+from fish.brain.reach import HOME_LATELY, Reacher, ReachOut, ReachPolicy, recent_lines
 from fish.config import Settings, owner_words
 from fish.cottage import Cottage, invented_act
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
@@ -148,7 +148,7 @@ class Brain:
             return []
         try:
             # the room was just brought up to now (tick): what happened this very minute counts
-            return self.cottage.between(now - RECONSIDER_AFTER, now + timedelta(minutes=1), routine=False)
+            return self.cottage.between(now - HOME_LATELY, now + timedelta(minutes=1), routine=False)
         except ValueError:
             return []
 

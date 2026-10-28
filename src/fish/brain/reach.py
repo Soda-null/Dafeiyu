@@ -1,35 +1,39 @@
 """She speaks first (decision 10).
 
-Two layers. The rules gate costs nothing and runs every poll: on, daytime, an hour apart,
-not right after he wrote, not re-asked within the hour after a "no", and no daily cap unless
-FISH_REACH_MAX sets one (decision 30: she sends when she wants to). Then a trigger must
-exist: something she saw today worth sharing, a follow-up that came due, a long silence, an
-anniversary, something that happened at home (decision 26), or plain boredom. Only then is
-the model asked once whether she feels like saying something, and what, told how many of her
-messages he has not answered yet. Not saying anything is her call.
+Two layers. The gate costs nothing and runs every poll. It holds only what is not hers to
+decide: she is on, awake, has met him, and WeChat would still deliver (decision 14). Beyond
+that it only paces how often the thought crosses her mind: a random 20–60 minutes after she
+last thought of it, or after he last wrote, so a running chat is not cut into. No gaps between
+messages and no daily cap unless FISH_REACH_MAX sets one (decisions 30, 31).
+
+Then a trigger must exist: something she saw today worth sharing, a follow-up that came due,
+a long silence, an anniversary, something that happened at home (decision 26), or plain
+boredom. Only then is the model asked once whether she feels like saying something, and
+what. She is told how long ago he wrote and how many of her messages are still unanswered;
+whether to say anything, and how often, is her call.
 """
 
 from __future__ import annotations
 
 import json
+import random
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 
 from fish.brain.ask import ask_json
 from fish.brain.llm import LLM
 from fish.brain.parse import clean_say
 from fish.brain.prompt import WEEKDAYS
 from fish.config import owner_words
+from fish.cottage import asleep_hours
 from fish.memory import Followup, Memory, MemoryStore, ProspectiveStore, Relationship, Window
 from fish.memory.longterm import iso
 from fish.memory.prospective import DUE_SHOWN
 from fish.mood import Mood
 
-DAY_START, DAY_END = time(9, 0), time(22, 30)
-MIN_GAP = timedelta(hours=1)
-AFTER_HIS_MESSAGE = timedelta(minutes=60)
-RECONSIDER_AFTER = timedelta(hours=1)
+THINK_PAUSE_MINUTES = (20, 60)  # how long until the thought "should I text him" comes back
+HOME_LATELY = timedelta(hours=1)  # cottage events still fresh enough to mention
 SILENCE_TRIGGER_HOURS = 18
 # WeChat drops bot messages to someone silent for 24 h without telling us (community docs),
 # so after this long she cannot reach him and waits.
@@ -48,6 +52,7 @@ class Triggers:
     bored: bool = False
     home: list[str] = field(default_factory=list)  # what happened in her cottage lately
     unanswered: int = 0  # her own first messages since he last wrote
+    last_sent_hours: float | None = None  # how long ago she last texted first
 
     @property
     def any(self) -> bool:
@@ -65,11 +70,13 @@ class ReachOut:
 class ReachPolicy:
     """The rules, with their little state kept in the relationship ledger (reach_* keys)."""
 
-    def __init__(self, conn: sqlite3.Connection, *, enabled: bool = True, max_per_day: int = 0) -> None:
+    def __init__(self, conn: sqlite3.Connection, *, enabled: bool = True, max_per_day: int = 0,
+                 rng: random.Random | None = None) -> None:
         """max_per_day 0 means no cap: whether to send is hers (decision 30)."""
         self.conn = conn
         self.enabled = enabled
         self.max_per_day = max_per_day
+        self.rng = rng or random.Random()
         self.kv = Relationship(conn)
 
     # --- state -----------------------------------------------------------------
@@ -84,8 +91,23 @@ class ReachPolicy:
     def shared_ids(self) -> set[int]:
         return set(json.loads(self.kv.get("reach_shared", "[]") or "[]"))
 
+    def _plan_next_think(self, base: datetime) -> datetime:
+        at = base + timedelta(minutes=self.rng.uniform(*THINK_PAUSE_MINUTES))
+        self.kv.set("reach_next_think", iso(at), base)
+        self.kv.set("reach_think_base", iso(base), base)
+        return at
+
+    def next_think(self) -> datetime | None:
+        """When the thought may come back. A message from him since it was planned moves it to
+        a while after his message: while they are chatting she does not start something new."""
+        his, base = self.last_his_message(), self._dt("reach_think_base")
+        if his is not None and (base is None or his > base):
+            return self._plan_next_think(his)
+        return self._dt("reach_next_think")
+
     def record_considered(self, now: datetime) -> None:
         self.kv.set("reach_last_considered", iso(now), now)
+        self._plan_next_think(now)
 
     def unanswered(self) -> int:
         """How many of her first messages are still waiting for his reply."""
@@ -114,23 +136,18 @@ class ReachPolicy:
         """Why she may not reach out right now, or None when the gate is open."""
         if not self.enabled:
             return "off"
-        if not DAY_START <= now.time() <= DAY_END:
-            return "night"
+        if asleep_hours(now):
+            return "asleep"
         if self.max_per_day and self.count_today(now) >= self.max_per_day:
             return "enough today"
-        last_sent = self._dt("reach_last_sent")
-        if last_sent and now - last_sent < MIN_GAP:
-            return "too soon"
         his = self.last_his_message()
         if his is None:
             return "never met"
-        if now - his < AFTER_HIS_MESSAGE:
-            return "just talked"
         if now - his > timedelta(hours=WINDOW_HOURS):
             return "out of reach"
-        considered = self._dt("reach_last_considered")
-        if considered and now - considered < RECONSIDER_AFTER:
-            return "decided recently"
+        nxt = self.next_think()
+        if nxt is not None and now < nxt:
+            return "not yet"
         return None
 
     def triggers(self, now: datetime, mood: Mood, home: list[str] | None = None) -> Triggers:
@@ -145,7 +162,9 @@ class ReachPolicy:
         known = self.kv.days_known(now)
         anniversary = known if known in ANNIVERSARIES or (known > 0 and known % 100 == 0) else None
         bored = mood.boredom >= BORED_LEVEL and silence >= BORED_SILENCE_HOURS
-        return Triggers(seen, due, silence, anniversary, bored, list(home or []), self.unanswered())
+        last_sent = self._dt("reach_last_sent")
+        return Triggers(seen, due, silence, anniversary, bored, list(home or []), self.unanswered(),
+                        (now - last_sent).total_seconds() / 3600 if last_sent else None)
 
 
 class Reacher:
@@ -169,12 +188,9 @@ class Reacher:
             reasons.append("- 你有点无聊")
         for line in trig.home:
             reasons.append(f"- 家里的事：{line}")
-        if trig.silence_hours >= 1:
-            since = owner_words(f"他上次找你是 {int(trig.silence_hours)} 小时前。")
-        else:
-            since = "你们刚聊过。"
-        if trig.unanswered:
-            since += owner_words(f"你前面主动发的 {trig.unanswered} 条他还没回。")
+        since = owner_words(f"他上次找你是{ago(trig.silence_hours)}。")
+        if trig.unanswered and trig.last_sent_hours is not None:
+            since += owner_words(f"你前面主动发的 {trig.unanswered} 条他还没回，最近一条是{ago(trig.last_sent_hours)}发的。")
         when = f"{now.strftime('%Y-%m-%d')} 周{WEEKDAYS[now.weekday()]} {now.strftime('%H:%M')}"
         data = ask_json(self.llm, "reach_out", persona=self.persona, now=when, since=since,
                         mood=mood.describe(), reasons="\n".join(reasons) or "（没什么特别的）",
@@ -189,6 +205,11 @@ class Reacher:
         asked = tuple(i for i in (data.get("asked") or []) if isinstance(i, int) and i in ok_asked)
         shared = tuple(i for i in (data.get("shared") or []) if isinstance(i, int) and i in ok_shared)
         return ReachOut(say[:300], asked, shared)
+
+
+def ago(hours: float) -> str:
+    """" 40 分钟前" / " 3 小时前": plain words for the prompt."""
+    return f" {int(hours * 60)} 分钟前" if hours < 1 else f" {int(hours)} 小时前"
 
 
 def recent_lines(window: Window, n: int = 6) -> list[str]:
