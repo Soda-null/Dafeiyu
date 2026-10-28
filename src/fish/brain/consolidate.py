@@ -69,7 +69,9 @@ class Consolidator:
     def merge_pairs(self, pairs: list[tuple[Memory, Memory]]) -> list[Merge]:
         if not pairs:
             return []
-        text = "\n\n".join(f"对 {i + 1}：\n- [#{a.id}] {a.text}\n- [#{b.id}] {b.text}"
+        # each with the day it was written: the later one says how things are now (memory v3 §14)
+        text = "\n\n".join(f"对 {i + 1}：\n- [#{a.id}]（{a.created[:10]} 记的）{a.text}\n"
+                           f"- [#{b.id}]（{b.created[:10]} 记的）{b.text}"
                            for i, (a, b) in enumerate(pairs))
         data = self._ask("merge", pairs=text)
         allowed = {frozenset((a.id, b.id)): (a, b) for a, b in pairs}

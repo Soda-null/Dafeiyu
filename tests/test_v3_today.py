@@ -221,14 +221,16 @@ def test_what_he_planned_comes_up_on_the_day(tmp_path):
 
     brain.respond("我哪天去深圳来着", now=datetime(2027, 9, 20, 12, 30))  # 小林 day 15
     system = brain.llm.calls[-1][0][0]["content"]
-    assert f"[#{trip.id}] （下周二 9月28日）他下下周二去深圳总部述职" in section(system, "这句话让你想起的")
+    # the note's own "下下周二" was written as the day it named (memory v3 §14): read a week later it
+    # is not two weeks off
+    assert f"[#{trip.id}] （下周二 9月28日）他9月28日周二去深圳总部述职" in section(system, "这句话让你想起的")
     assert "述职" not in section(system, "今天")
 
     brain.respond("明天要早起", now=datetime(2027, 9, 27, 22, 0))
-    assert ("明天：他下下周二去深圳总部述职（上上周一 9月13日说的）"
+    assert ("明天：他9月28日周二去深圳总部述职（上上周一 9月13日说的）"
             in section(brain.llm.calls[-1][0][0]["content"], "今天"))
     brain.respond("早，困死", now=datetime(2027, 9, 28, 7, 40))  # 小林 day 23
-    assert ("今天：他下下周二去深圳总部述职（上上周一 9月13日说的）"
+    assert ("今天：他9月28日周二去深圳总部述职（上上周一 9月13日说的）"
             in section(brain.llm.calls[-1][0][0]["content"], "今天"))
     # news from today is not a plan: the chat it came from is in front of her
     store.note("event", "他今天去深圳了", importance=5, now=datetime(2027, 9, 28, 8, 0))

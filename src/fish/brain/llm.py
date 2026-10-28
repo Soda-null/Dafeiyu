@@ -24,6 +24,7 @@ class DeepSeekLLM:
 
         self._client = OpenAI(api_key=settings.api_key, base_url=settings.base_url, timeout=60)
         self._model = settings.model
+        self.last_finish: str | None = None  # why the last reply stopped ("stop", "length")
 
     def chat(self, messages, *, json_mode=False, temperature=1.0, max_tokens=800) -> str:
         kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
@@ -31,6 +32,7 @@ class DeepSeekLLM:
             model=self._model, messages=messages, temperature=temperature,
             max_tokens=max_tokens, **kwargs,
         )
+        self.last_finish = resp.choices[0].finish_reason
         return (resp.choices[0].message.content or "").strip()
 
 
@@ -50,6 +52,10 @@ class CountingLLM:
                               max_tokens=max_tokens)
         self.chars_out += len(out)
         return out
+
+    @property
+    def last_finish(self) -> str | None:
+        return getattr(self.inner, "last_finish", None)
 
 
 def _text_of(content) -> str:

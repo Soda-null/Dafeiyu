@@ -16,7 +16,7 @@ from datetime import date, datetime, timedelta
 from fish.memory import pacts as pk
 from fish.memory import stability as st
 from fish.memory.scrub import secret
-from fish.memory.when import day_of, fix_weekday, written_day
+from fish.memory.when import absolute, day_of, fix_weekday, written_day
 
 KINDS = ("fact", "event", "howto", "insight", "self", "world")  # world: things she saw online
 PROFILE_IMPORTANCE = 8  # facts at or above this importance form the always-present profile
@@ -40,8 +40,9 @@ FACT_REPEAT_SIMILARITY = 0.8  # facts differ by one number when he corrects hims
 # and no more than KIND_CAPS["self"] of them alive.
 SELF_REPEAT_SIMILARITY = 0.35
 KIND_CAPS = {"insight": 20, "howto": 20, "self": 30}  # beyond this the least stable is pushed out
-# Notes about the chat itself (he is testing her memory) are not things about him.
-ABOUT_THE_CHAT = re.compile(r"考我|考她|记性|记不记得|试探我|试探她|测我记")
+# Notes about the chat itself (he is testing her memory, she could not recall) are not things about
+# him: "他欠我一样东西，具体是什么我记不清了" would later read as a debt she knows of.
+ABOUT_THE_CHAT = re.compile(r"考我|考她|记性|记不记得|试探我|试探她|测我记|我(?:记不清|想不起|没记住)")
 ABOUT_HIM_KINDS = ("fact", "event", "insight", "howto")
 GIST_AT = (3, 6, 12, 24, 48, 96)  # times at which a repeated thing is rewritten as a gist
 # Only for things that happen (his events, her own doings). A fact, a rule or an insight said again
@@ -77,6 +78,14 @@ OUTCOMES_SHOWN = 3
 # weeks (stability.UNASKED_MAX_DAYS), whoever the merge made the subject. Only that row shape
 # ("我/他一直没问成他……"): his own "他一直没问成导师……" is an ordinary thing about him.
 UNASKED = re.compile(r"^[我他]一直没问成他")
+# A note is about what he said, not what she said (memory v3 §14): her guess at a question of his,
+# or a turn of his she made up, written down as his, is a false memory for good. Its content words
+# (no dates, no function words, no persons) must not come from her lines of the chat alone.
+ECHO_HIS = 0.2  # less than this share of the note's words from his lines ...
+ECHO_HERS = 0.5  # ... and this much from words only she said: hers, not his
+_NOT_CONTENT = re.compile(r"[的了是在和就也都还又很吧呢啊吗呀哦嗯他她我你]")
+_DAY_WORDS = re.compile(r"\d{4}\s*[-年/.]\s*\d{1,2}(?:\s*[-月/.]\s*\d{1,2}\s*[日号]?)?|\d{1,2}\s*月(?:\s*\d{1,2}\s*[日号])?"
+                        r"|\d{1,2}\s*[日号点时]|(?:周|星期|礼拜)[一二三四五六日天]")
 
 
 def strongest_about(abouts: list[str | None]) -> str | None:
@@ -98,6 +107,27 @@ def overlap(a: str, b: str) -> float:
     "he had lab on 10-27" are the same words."""
     x, y = _bigrams(a), _bigrams(b)
     return 2 * len(x & y) / (len(x) + len(y)) if x and y else 0.0
+
+
+def _content(text: str) -> set[str]:
+    chars = [c for c in _NOT_CONTENT.sub("", _DAY_WORDS.sub(" ", text)) if c.isalnum() or c == " "]
+    return {a + b for a, b in zip(chars, chars[1:]) if a != " " and b != " "}
+
+
+def _numbers(text: str) -> set[str]:
+    return set(re.findall(r"\d+", _DAY_WORDS.sub(" ", text)))
+
+
+def echoes_her(text: str, his: str, hers: str) -> bool:
+    """The note says what she said in the chat (`hers`, her lines), not what he said (`his`):
+    hardly any of its words are his and most are hers alone, or it has a number only she said."""
+    note = _content(text)
+    if note:
+        him = _content(his)
+        only_hers = _content(hers) - him
+        if len(note & him) < ECHO_HIS * len(note) and len(note & only_hers) >= ECHO_HERS * len(note):
+            return True
+    return bool(_numbers(text) & (_numbers(hers) - _numbers(his)))
 
 
 def iso(now: datetime) -> str:
@@ -304,8 +334,13 @@ class MemoryStore:
         text = fix_weekday(text, now.date())
         if kind in ABOUT_HIM_KINDS and ABOUT_THE_CHAT.search(text):
             return None
+        said_as = text  # the words as said, for the day they name (two days named: no one day)
+        if heard in pk.HEARD:
+            text = absolute(text, now)  # "下个月19号" read next month is not May (§14)
         about = fields.pop("about", None)
         pact = state = None
+        if heard in pk.HEARD and kind in RULE_KINDS and pk.ruled_promise(text):
+            kind = "fact"  # "他答应我，……" filed as an insight: a rule would fade in weeks
         if heard in pk.HEARD:
             if pk.nickname(text):
                 kind, about, pact = "fact", "一辈子", "both"  # what he calls her is a fact for life
@@ -330,7 +365,7 @@ class MemoryStore:
         if "stability" in fields:
             importance = st.importance_of(fields["stability"])
         said = said if kind == "event" else ""  # a lasting fact is not dated by "明天" in his line
-        fields.setdefault("happened_on", (day_of(text, now, said) or now.date()).isoformat())
+        fields.setdefault("happened_on", (day_of(said_as, now, said) or now.date()).isoformat())
         new = self.add(kind, text, importance=importance, now=now, **fields)
         self.conn.execute("UPDATE memories SET about = ?, last_time = ?, pact = ?, pact_state = ? WHERE id = ?",
                           (about, iso(now)[:10], pact, state, new.id))
@@ -561,14 +596,29 @@ class MemoryStore:
         )
         return sorted(map(_from_row, rows), key=card_order)[:limit]
 
-    def pacts(self, limit: int = pk.PACTS_SHOWN) -> list[Memory]:
+    def pacts(self, limit: int = pk.PACTS_SHOWN, *, settled: bool = False) -> list[Memory]:
         """The promises between them still open, latest first (memory v3 §B3): always in front of
-        her in a block of their own, so they leave her card."""
+        her in a block of their own, so they leave her card. settled: he asks what was promised
+        (pacts.asks_pact), so the ones kept or called off come after the open ones (§14)."""
+        states = "('open', 'kept', 'dropped')" if settled else "('open')"
         rows = self.conn.execute(
-            "SELECT * FROM memories WHERE superseded_by IS NULL AND pact_state = 'open'"
-            " ORDER BY COALESCE(last_time, substr(created, 1, 10)) DESC, id DESC LIMIT ?", (limit,)
+            f"SELECT * FROM memories WHERE superseded_by IS NULL AND pact_state IN {states}"
+            " ORDER BY pact_state = 'open' DESC, COALESCE(last_time, substr(created, 1, 10)) DESC, id DESC"
+            " LIMIT ?", (limit,)
         )
         return [_from_row(r) for r in rows]
+
+    def make_pact(self, memory_id: int, who: str) -> Memory:
+        """His own line made a promise and the note of it was not taken for one (memory v3 §14):
+        it becomes an open pact, pinned, for life; a rule or an insight becomes a fact."""
+        if who not in pk.WHO:
+            raise ValueError(f"who must be one of {pk.WHO}, got {who!r}")
+        self.conn.execute(
+            "UPDATE memories SET kind = CASE WHEN kind IN ('insight', 'howto') THEN 'fact' ELSE kind END,"
+            " about = '一辈子', pinned = 1, stability = ?, importance = ?, pact = ?, pact_state = 'open'"
+            " WHERE id = ?", (st.INFINITE, st.importance_of(st.INFINITE), who, memory_id))
+        self.conn.commit()
+        return self.get(memory_id)
 
     def pact_for(self, text: str) -> Memory | None:
         """The open promise a follow-up is about ("期末考完去海边了吗" and the promise of the

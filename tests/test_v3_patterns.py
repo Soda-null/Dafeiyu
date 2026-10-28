@@ -73,7 +73,7 @@ def test_ribs_lapse_after_three_fridays_without_them_and_she_is_told_so():
     assert pattern_lines(by_day[60], date(2027, 3, 4)) == []
     assert asks_habit("我周五一般吃啥，你发现没")
     assert pattern_lines(by_day[60], date(2027, 3, 4), asked=True) == [
-        "程序数的：周五他常说到「糖醋排骨」（6 个周五，多在中午，最近一次是2月12日，两周前），"
+        "程序数的：周五他常说到「糖醋排骨」（6 个周五，多在中午，最近一次是2月12日，三周前），"  # 20 days: about three weeks
         "比如「今天食堂有糖醋排骨，爽」。"]
     # Fridays 47, 54, 61 he came and never said it: from the night after day 61 it has lapsed,
     # not shown on Fridays any more, and said to be so when he asks (day 90)

@@ -20,6 +20,44 @@ MOODS = ("开心", "平静", "无聊", "困", "饿", "烦", "难过", "好奇")
 _STICKER_IN_TEXT = re.compile(r"[\[（(【]\s*(?:sticker|表情包?|贴纸)?\s*#?\s*(\d+)\s*[\]）)】]", re.I)
 
 
+# What must never reach him as her words (checkup round two, docs/memory_v3_zh.md §14): the model,
+# asked again in plain text, or writing its say, sometimes goes on past her one line. It plays his
+# next turn ("user嗯 你猜", "他：那明天见", a chat-template token), writes the reply's fields out
+# as text ("mood：平静"), or adds the whole JSON object. Every marker is our own machinery: the chat
+# API's role names, the 他/你 labels of our transcripts, the field names of our output format.
+_FAKE_TURN = re.compile(r"^\s*(?:<[|｜].*?[|｜]>|(?:user|assistant|system|sys|human)(?![a-z])|[他她你]\s*[:：])",
+                        re.I)
+_FIELD_LINE = re.compile(r"^\s*[\"']?(?:say|mood|topic|notes|followups|asked|corrections|look|seen|image_note"
+                         r"|keep_sticker|sticker|心情|话题)[\"']?\s*[:：=]", re.I)
+_OWN_LABEL = re.compile(r"^\s*(?:say|assistant|你)\s*[:：]\s*", re.I)
+
+
+def cut_say(text: str) -> tuple[str, bool]:
+    """Her words without what she wrote past them, and whether a made-up turn was cut (then
+    anything else in the reply may answer that made-up turn). Line 1 is hers: only a label of her
+    own ("say:", "你：") and anything from a JSON object on are taken off it. From line 2 on, it ends
+    at the first line that is a turn of the chat, a field of the reply or a JSON object."""
+    lines = text.strip().splitlines()
+    if not lines:
+        return "", False
+    first = _OWN_LABEL.sub("", lines[0])
+    first = first.split('{"', 1)[0]
+    kept, fake = [first], False
+    for line in lines[1:]:
+        if _FAKE_TURN.match(line):
+            fake = True
+            break
+        if _FIELD_LINE.match(line) or line.lstrip().startswith("{") or '{"' in line:
+            break
+        kept.append(line)
+    return "\n".join(kept).strip(), fake
+
+
+def clean_say(text: str) -> str:
+    """Her words, without a made-up turn, a field written out or a JSON object after them."""
+    return cut_say(text)[0]
+
+
 def split_sticker_placeholder(say: str) -> tuple[str, int | None]:
     """Remove a sticker placeholder from what she says; return the text and the id it named."""
     found = _STICKER_IN_TEXT.search(say)
@@ -175,7 +213,7 @@ def parse_followups(items) -> list[FollowupRequest]:
 def parse_reply(raw: str) -> Reply:
     data = extract_json(raw)
     if data is None or not isinstance(data.get("say"), str):
-        return Reply(say=prose_only(raw), parsed=False)  # never his eyes on raw JSON
+        return Reply(say=clean_say(prose_only(raw)), parsed=False)  # never his eyes on raw JSON
     mood = data.get("mood")
     topic = data.get("topic")
     asked = [i for i in (data.get("asked") or []) if isinstance(i, int)] \
@@ -187,23 +225,37 @@ def parse_reply(raw: str) -> Reply:
     image_note = str(data.get("image_note") or "").strip()[:80] or None
     keep_sticker = str(data.get("keep_sticker") or "").strip()[:80] or None
     sticker = data.get("sticker") if isinstance(data.get("sticker"), int) and data["sticker"] > 0 else None
-    say, named = split_sticker_placeholder(data["say"].strip())
+    said, fake = cut_say(data["say"])
+    say, named = split_sticker_placeholder(said)
     if sticker is None and named:
         sticker = named
+    # a say that went on into a made-up turn of his: what she noted may be what "he" said there
     return Reply(
         say=say,
         mood=mood if mood in MOODS else None,
         topic=str(topic).strip()[:20] if topic else None,
-        notes=parse_notes(data.get("notes")),
-        followups=parse_followups(data.get("followups")),
+        notes=[] if fake else parse_notes(data.get("notes")),
+        followups=[] if fake else parse_followups(data.get("followups")),
         asked=asked,
-        corrections=corrections,
+        corrections=[] if fake else corrections,
         look=look or None,
-        seen=seen,
+        seen=[] if fake else seen,
         image_note=image_note,
         keep_sticker=keep_sticker,
         sticker=sticker,
     )
+
+
+def parse_retry(raw: str) -> Reply:
+    """The plain-text second try, when the JSON reply gave nothing. Her line, cleaned. If the JSON
+    object came after it anyway and nothing before it plays his turn, the object counts (the notes
+    in it are hers, a promise among them); after a made-up turn of his it answers that turn, and
+    nothing in it is kept."""
+    before, fake = cut_say(prose_only(raw))
+    if not fake and "{" in raw and (reply := parse_reply(raw)).parsed:
+        reply.say = before or reply.say  # the line she wrote as text is the one asked for
+        return reply
+    return Reply(say=before, parsed=False)
 
 
 def _salvage(raw: str, key: str) -> str:

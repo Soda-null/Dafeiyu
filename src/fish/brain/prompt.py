@@ -81,6 +81,7 @@ class PromptContext:
     today_section: str = ""  # dates, birthday soon, plans for today (memory/today.py)
     pacts: list[Memory] = field(default_factory=list)  # promises between them still open
     stars: dict[int, str] = field(default_factory=dict)  # pact id -> the trigger his line said
+    nothing_found: bool = False  # he asks if she remembers and nothing came back (memory v3 §14)
     pages: list[Page] = field(default_factory=list)  # old chats she looked back at (memory/pages.py)
 
 
@@ -134,6 +135,11 @@ def render_profile(profile: list[Memory], mentioned: set[int] = frozenset(),
     return "\n".join(lines) or "（还没有）"
 
 
+# Checkup round two (memory v3 §14): asked "我新家有啥毛病来着" with nothing recalled, she went along
+# with the question and named two faults he never had; the close then wrote them down as his.
+NOTHING_FOUND = ("（这件你什么也没想起来：答案要是也不在“你一直记得的”里，就直说忘了、让他提醒你；"
+                 "别说任何具体的东西，也别顺着他问法里的说法往下编）")
+
 PACT_SAYS = {"him": "他答应过你", "her": "你答应过他", "both": "你们说好的"}
 
 
@@ -143,7 +149,9 @@ def render_pacts(pacts: list[Memory], stars: dict[int, str] | None = None) -> st
     stars = stars or {}
     lines = []
     for p in sorted(pacts, key=lambda p: p.id not in stars):
-        says = owner_words(PACT_SAYS.get(p.pact or "", PACT_SAYS["both"])) + f"：{p.text}"
+        # a kept one is shown when he asks what was promised: "……（兑现了）"
+        says = owner_words(PACT_SAYS.get(p.pact or "", PACT_SAYS["both"])) + \
+            f"：{p.text if p.pact_state in (None, 'open') else p.line()}"
         if p.id in stars:
             lines.append(f"- ★[#{p.id}] " + owner_words("他刚说到") + f"「{stars[p.id]}」——{says}")
         else:
@@ -227,16 +235,19 @@ def build_chat_messages(ctx: PromptContext) -> list[dict[str, str]]:
     messages: list[dict] = [{"role": "system", "content": system}]
     for t in window:
         messages.append({"role": "user" if t.role == "user" else "assistant", "content": t.text})
+    user_text = ctx.user_text
+    if ctx.nothing_found:  # said right at his line, where the guess would be made
+        user_text = f"{user_text}\n" + owner_words(NOTHING_FOUND)
     if ctx.user_image:  # pictures may only ride in a user message (DeepSeek's rule)
         # With a picture in the message the model sometimes chats in prose before the JSON;
         # a reminder right next to the picture keeps it to the format.
-        text = (ctx.user_text or owner_words("（他发了一张图）")) + "\n（照“输出格式”，只输出一个 JSON 对象，say 里放你要说的话）"
+        text = (user_text or owner_words("（他发了一张图）")) + "\n（照“输出格式”，只输出一个 JSON 对象，say 里放你要说的话）"
         messages.append({"role": "user", "content": [
             {"type": "text", "text": text},
             {"type": "image_url", "image_url": {"url": ctx.user_image}},
         ]})
     else:
-        messages.append({"role": "user", "content": ctx.user_text})
+        messages.append({"role": "user", "content": user_text})
     return messages
 
 

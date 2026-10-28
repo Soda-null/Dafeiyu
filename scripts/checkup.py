@@ -290,7 +290,7 @@ def summary(cu: Checkup) -> dict:
                       calls=cu.llm.calls + cu.judge_llm.calls,
                       chars_in=cu.llm.chars_in + cu.judge_llm.chars_in,
                       chars_out=cu.llm.chars_out + cu.judge_llm.chars_out,
-                      kinds=kinds(cu.conn))
+                      kinds=kinds(cu.conn), fallbacks=len(cu.brain.fallbacks))
 
 
 def rejudge(result: dict, judge_llm: LLM, start: date, *, only_broken: bool = False) -> dict:
@@ -342,6 +342,8 @@ def render_from(name: str, s: dict, graded: list[dict], *, label: str, version: 
            f"- 顺带想起（软指标）：{s['soft_ok']} / {s['soft']}",
            "- 各档：" + "、".join(f"{k} {v}" for k, v in s["labels"].items()),
            ]
+    if "fallbacks" in s:  # first replies that gave nothing, so she was asked again in plain text
+        out.append(f"- 第一次回复读不出、改用纯文字再问：{s['fallbacks']} 次（原样留在临时目录 fallbacks.json）")
     if s.get("kinds"):
         k = s["kinds"]
         out.append("- 她写了多少（写过 / 还活着）：" + "、".join(
@@ -417,6 +419,8 @@ def main(argv: list[str] | None = None) -> None:
     t0 = time.time()
     cu.run(days, final_day)
     elapsed = time.time() - t0
+    (workdir / "fallbacks.json").write_text(json.dumps(cu.brain.fallbacks, ensure_ascii=False, indent=1),
+                                           encoding="utf-8")
 
     args.out.mkdir(parents=True, exist_ok=True)
     stem = f"{datetime.now():%Y-%m-%d}-{args.label}-{days}d"

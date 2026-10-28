@@ -64,6 +64,13 @@ class Window:
         )
         return _turns(rows)
 
+    def said_in(self, episode_id: int) -> tuple[str, str]:
+        """What he said and what she said in the whole episode, folded turns too."""
+        rows = self.conn.execute("SELECT role, text FROM messages WHERE episode_id = ? ORDER BY id",
+                                 (episode_id,)).fetchall()
+        return ("\n".join(r["text"] for r in rows if r["role"] == "user"),
+                "\n".join(r["text"] for r in rows if r["role"] != "user"))
+
     def to_fold(self, episode_id: int) -> list[Turn]:
         """The oldest turns to summarize away, or [] while the episode still fits."""
         count = self.conn.execute(

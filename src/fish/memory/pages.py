@@ -38,6 +38,10 @@ HOW_ASKED = re.compile(rf"记不记得|还?记得[不吗没]|{ASKS_MEMORY.patter
 # She could not answer: every such sentence on 小周's and the review databases' chats, none else.
 MISSED = re.compile(r"没记住|没记得|答不上|没答上|没接住|想不起|记不清|(?:我|鱼|我说|哪[门个天样])忘了"
                     r"|没跟我说过|没告诉过?我|说过没有")
+# He asks whether she remembers, as a question ("……来着", "还记得吗", "我跟你说过……吗"), not
+# telling her again ("我跟你说过我不吃辣"): when nothing comes back, she is reminded at his line
+# that nothing did (memory v3 §14).
+ASKS_RECALL = re.compile(r"来着|记不记得|还?记得[不吗没]|还记得|我(?:跟你|和你|对你)?(?:说|讲|提)过[^，。！!]*?(?:吗|没|啥|什么|[?？])")
 PAGES_SHOWN = 2
 PAGE_CHARS = 160
 # Below this a page shares a word or two with his line by chance. A day or a week he names is
@@ -50,6 +54,10 @@ SENTENCE = re.compile(r"(?<=[。！？!?；;\n])")
 BARE_WEEKDAY = re.compile(r"(?<![上这本下])(?:周|星期|礼拜)[一二三四五六日天]")
 NOT_WORD = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff]+")
 PRONOUNS = set("我你他她")
+
+
+def asks_recall(line: str) -> bool:
+    return bool(ASKS_RECALL.search(line))
 
 
 @dataclass(frozen=True)

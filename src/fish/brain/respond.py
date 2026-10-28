@@ -13,16 +13,19 @@ from typing import Callable
 
 from fish.brain.leisure import Leisure, default_activities, moment_line, pastimes_line
 from fish.brain.llm import LLM
-from fish.brain.parse import Reply, parse_episode_close, parse_reply
+from fish.brain.parse import Reply, parse_episode_close, parse_reply, parse_retry
 from fish.brain.prompt import (PromptContext, build_chat_messages, build_close_messages,
                                build_fold_messages)
 from fish.brain.reach import Reacher, ReachOut, ReachPolicy, recent_lines
 from fish.config import Settings, owner_words
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
-from fish.memory import (BigramEmbedder, Diary, Episode, EpisodeManager, MemoryStore, Moment, Pastimes,
-                         PhaseStore, ProspectiveStore, Relationship, StickerAlbum, TimeCued, TraitStore,
-                         Window, arrival_line, asks_habit, cue_for, keys_of, mentioned, recall,
-                         today_section, triggered, turn_back)
+from fish.memory import (ABOUT_HIM_KINDS, BigramEmbedder, Diary, Episode, EpisodeManager, Memory, MemoryStore,
+                         Moment, Pastimes, PhaseStore, ProspectiveStore, Relationship, StickerAlbum, TimeCued,
+                         TraitStore, Window, arrival_line, asks_habit, asks_pact, asks_recall, cue_for,
+                         echoes_her, his_line, keys_of, mentioned, overlap, recall, today_section, triggered,
+                         turn_back)
+from fish.memory.longterm import PACT_LINK
+from fish.memory.retrieval import TOUCH_RELEVANCE
 from fish.memory.prospective import DUE_SHOWN
 from fish.memory.window import FOLD_BATCH
 from fish.mood import MoodStore, stage_of
@@ -31,11 +34,35 @@ from fish.world import Searcher, read_file
 from fish.world.days import day_line
 
 FALLBACK_SAY = "……（走神了，你刚说什么？）"
+# The second try, when the JSON reply gave nothing: in plain text the model, still told to write
+# one JSON object, wrote her line and went on playing his turns (docs/memory_v3_zh.md §14).
+PLAIN_REMINDER = "（这次不用 JSON，只写你这一句回他的话，不替他说话）"
+PROMISE_CHARS = 120  # how much of his line is kept when it is the only record of a promise
+FALLBACK_KEPT = 400  # how much of a first reply that gave nothing is kept, to see why
 CLOSE_TOKENS = 800  # the close writes a summary, notes, results: cut short, its JSON would not parse
 SEEN_DAYS, SEEN_SHOWN = 2, 3  # recent world memories offered in the prompt
 SHARED_CHARS = 2500  # how much of a page or file he shared she reads (decision 23)
 URL = re.compile(r"https?://[^\s，。！？、；（）()【】<>\"']+")
 PageReader = Callable[[str], tuple[str, str]]  # url -> (title, text); world.read_page
+
+
+def echoed(kind: str, text: str, his: str, hers: str) -> bool:
+    """A note about him whose words are hers in this chat, not his (longterm.echoes_her). Her own
+    doings and promises ("我答应他……") are hers to write."""
+    return kind in ABOUT_HIM_KINDS and not text.lstrip().startswith("我") and echoes_her(text, his, hers)
+
+
+def plain_text(messages: list[dict]) -> list[dict]:
+    """The same messages, his last one carrying PLAIN_REMINDER (a picture's text part too)."""
+    out = [dict(m) for m in messages]
+    last = out[-1]
+    reminder = owner_words(PLAIN_REMINDER)
+    if isinstance(last["content"], str):
+        last["content"] = f"{last['content']}\n{reminder}"
+    else:
+        last["content"] = [dict(part, text=f"{part['text']}\n{reminder}") if part.get("type") == "text"
+                           else part for part in last["content"]]
+    return out
 
 
 class Brain:
@@ -64,6 +91,9 @@ class Brain:
         self.traits = TraitStore(conn)
         self.pastimes = Pastimes(conn)
         self.leisure: Leisure | None = None  # built on the first free moment; tests set their own
+        # first replies that gave nothing usable, with why the model stopped when it says: the
+        # checkup counts and writes them (memory v3 §14); nothing is stored
+        self.fallbacks: list[dict] = []
 
     def stage(self) -> str:
         return stage_of(self.relationship.closeness)
@@ -136,8 +166,10 @@ class Brain:
             self.store.touch(m.id, now, strengthen=False)
         formers = {m.id: f.text for m in profile if (f := self.store.former(m.id)) is not None}
         # The promises still open are always in front of her too; one whose trigger his line
-        # says ("驾照") is starred (memory v3 §B3).
-        pacts = self.store.pacts()
+        # says ("驾照") is starred (memory v3 §B3). When he asks what was promised, the ones kept
+        # or called off are there as well (§14).
+        pacts = self.store.pacts(settled=asks_pact(user_text))
+        stars = triggered(user_text, [p for p in pacts if p.pact_state == "open"])
         cue = cue_for(user_text, last_fish)
         recalled = recall(self.store, cue, now, embedder=TimeCued(BigramEmbedder(), now),
                           skip={m.id for m in profile + pacts})
@@ -146,6 +178,10 @@ class Brain:
         pages = (turn_back(self.episodes.closed(), user_text, now, cue=cue, skip={ep.id})
                  if self.settings.pages else [])
         today = self.today_lines(now, profile, user_text)
+        # he asks if she remembers and nothing his line touches came back (memory v3 §14)
+        nothing_found = (asks_recall(user_text) and not pages and not touched and not stars
+                         and not (pacts and asks_pact(user_text))  # the answer is in that block
+                         and all(r.relevance < TOUCH_RELEVANCE for r in recalled))
         shared, shared_note = self.open_shared(incoming)
         ctx = PromptContext(
             persona=self.persona, now=now, mood=mood,
@@ -160,8 +196,8 @@ class Brain:
             phase=self.phases.current(), growth=self.growth_lines(), **self.place_fields(),
             **self.day_fields(now),
             stickers=self.album.offer(), user_image=data_url(image) if image else None,
-            shared=shared, today_section=today, pacts=pacts, stars=triggered(user_text, pacts),
-            pages=pages,
+            shared=shared, today_section=today, pacts=pacts, stars=stars,
+            pages=pages, nothing_found=nothing_found,
         )
         messages = build_chat_messages(ctx)
         reply = self.ask(messages)
@@ -235,8 +271,10 @@ class Brain:
         reply = parse_reply(raw)
         if reply.parsed or reply.say:
             return reply  # a parsed reply with an empty say is her choosing not to answer
-        raw = self.llm.chat(messages, json_mode=False, temperature=1.0)
-        return Reply(say=raw.strip() or FALLBACK_SAY, parsed=False)
+        self.fallbacks.append({"raw": raw[:FALLBACK_KEPT], "finish": getattr(self.llm, "last_finish", None)})
+        reply = parse_retry(self.llm.chat(plain_text(messages), json_mode=False, temperature=1.0))
+        reply.say = reply.say or FALLBACK_SAY
+        return reply
 
     def look_up(self, ctx: PromptContext, first: Reply) -> tuple[Reply, str | None]:
         """She wanted to check something: look it up, ask once more with the result.
@@ -259,11 +297,20 @@ class Brain:
 
     def record(self, reply: Reply, episode_id: int, now: datetime,
                seen_source: str | None = None, said: str = "") -> None:
-        """said: his line this turn; its time words date a note whose own words name no day."""
+        """said: his line this turn; its time words date a note whose own words name no day.
+        A note that only says what she said in this chat is not written (memory v3 §14); a promise
+        his line makes is kept even when no note was taken for one."""
+        his, hers = self.window.said_in(episode_id)
+        written = []
         for n in reply.notes:
-            self.store.note(n.kind, n.text, importance=n.importance, valence=n.valence,
-                            arousal=n.arousal, about=n.about, source_episode=episode_id, tags=n.tags,
-                            now=now, said=said, heard="chat")
+            if echoed(n.kind, n.text, his, hers):
+                continue
+            m = self.store.note(n.kind, n.text, importance=n.importance, valence=n.valence,
+                                arousal=n.arousal, about=n.about, source_episode=episode_id, tags=n.tags,
+                                now=now, said=said, heard="chat")
+            if m is not None:
+                written.append(m)
+        self.keep_his_promise(said, written, [t for n in reply.notes for t in n.tags], episode_id, now)
         for n in reply.seen:
             self.store.note("world", n.text, importance=n.importance, valence=n.valence,
                             source_episode=episode_id, tags=n.tags, source=seen_source, now=now)
@@ -280,6 +327,24 @@ class Brain:
         for i in reply.asked:
             if i in open_ids:
                 self.prospective.close(i, episode=episode_id)
+
+    def keep_his_promise(self, said: str, written: list[Memory], tags: list[str], episode_id: int,
+                         now: datetime) -> None:
+        """His line makes a promise between them (pacts.his_line) and no note of this turn became
+        one: the model filed it as an insight, or the reply that held it did not parse (memory v3
+        §14). The note of it this turn becomes the pact; with none, his words are kept as one."""
+        who = his_line(said) if said else None
+        if who is None or any(m.pact_state is not None for m in written):
+            return
+        best = max(written, key=lambda m: overlap(said, m.text), default=None)
+        if best is not None and overlap(said, best.text) >= PACT_LINK:
+            self.store.make_pact(best.id, who)
+            return
+        kept = self.store.note("fact", owner_words("他说") + f"：「{said.strip()[:PROMISE_CHARS]}」", importance=9,
+                               about="一辈子", source_episode=episode_id, tags=list(dict.fromkeys(tags))[:6],
+                               now=now, heard="chat")
+        if kept is not None and kept.pact_state is None:
+            self.store.make_pact(kept.id, who)
 
     def add_followup(self, text: str, due: str, now: datetime, episode_id: int | None = None) -> None:
         """A follow-up points at what it is about (memory v3 §B1): an open promise, so it is never
@@ -378,7 +443,10 @@ class Brain:
         # what the chat said, word for word, when even the summary cannot be read from the reply
         fallback = "；".join(filter(None, [ep.running_summary, "、".join(t.text for t in turns)]))[:200]
         closed = parse_episode_close(raw, fallback)
+        his, hers = self.window.said_in(ep.id)
         for n in closed.notes:
+            if echoed(n.kind, n.text, his, hers):
+                continue  # what she guessed or made up in the chat, not what he said
             self.store.note(n.kind, n.text, importance=n.importance, valence=n.valence,
                             arousal=n.arousal, about=n.about, source_episode=ep.id, tags=n.tags, now=at,
                             heard="close")

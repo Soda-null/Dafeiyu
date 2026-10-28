@@ -34,16 +34,43 @@ N = r"(\d{1,2}|十[一二]?|[一二两三四五六七八九十])"
 WEEK = r"(?:周|星期|礼拜)"
 LAST_WEEK = r"(?:上周|上个?星期|上个?礼拜)"
 THIS_WEEK = r"(?:这周|本周|这个?星期|这个?礼拜)"
-HABIT = re.compile(r"一般|每[周天个次回]|经常|总是|老是|平时")  # "what do I usually eat on Fridays" names no one day
+HABIT = re.compile(r"一般|每[周天个次回月年]|经常|总是|老是|平时")  # "what do I usually eat on Fridays" names no one day
+# A day of the month, to 三十一: "十九号", "19号"
+DAYNUM = r"(?:\d{1,2}|[二三]?十[一二三四五六七八九]?|[一二三四五六七八九])"
+NOT_A_DAY = r"(?![线楼床房门室号院路车口码台位机店球])"  # 3号线, 5号楼, 8号床: not days
+# What part of a month: "初" the first ten days, "中旬" the middle ten, "底" the rest
+PARTS = r"上旬|中旬|下旬|初|中|底|末"
+# Public holidays that fall on the same days every year (month, first day, last day). The ones of
+# the lunar calendar move; without a calendar they name no days.
+FESTIVALS = {"国庆": (10, 1, 7), "十一": (10, 1, 7), "元旦": (1, 1, 3), "五一": (5, 1, 5), "劳动节": (5, 1, 5)}
+FESTIVAL = re.compile(r"国庆|元旦|劳动节|(?<![\d第月十])五一(?![\d月号点日个岁])|(?<![\d第月])十一(?![\d月号点日个岁])")
+MONTH_OFF = {"上上": -2, "上": -1, "这": 0, "本": 0, "下": 1, "下下": 2}
 
 
 def _n(s: str) -> int:
     return int(s) if s.isdigit() else NUM[s]
 
 
+def day_num(s: str) -> int:
+    """"19", "十九", "二十三", "七" as a number."""
+    if s.isdigit():
+        return int(s)
+    if "十" in s:
+        tens, _, ones = s.partition("十")
+        return (NUM[tens] if tens else 1) * 10 + (NUM[ones] if ones else 0)
+    return NUM[s]
+
+
+def months_from(today: date, k: int) -> tuple[int, int]:
+    """The year and month k months from today's."""
+    y, m = divmod(today.month - 1 + k, 12)
+    return today.year + y, m + 1
+
+
 def _month(year: int, month: int, part: str = "") -> tuple[date, date]:
     last = monthrange(year, month)[1]
-    lo, hi = {"初": (1, 10), "中": (11, 20), "底": (21, last), "末": (21, last)}.get(part, (1, last))
+    lo, hi = {"初": (1, 10), "上旬": (1, 10), "中": (11, 20), "中旬": (11, 20), "底": (21, last),
+              "末": (21, last), "下旬": (21, last)}.get(part, (1, last))
     return date(year, month, lo), date(year, month, hi)
 
 
@@ -51,7 +78,8 @@ def _month(year: int, month: int, part: str = "") -> tuple[date, date]:
 # "我上周考的啥来着" asks about an exam, and "上周" is in every chat that retells an older one.
 TIME_WORDS = re.compile(
     rf"{LAST_WEEK}[一二三四五六日天]?|{THIS_WEEK}|大前天|前天|前晚|昨[天晚儿日早]|{N}天前"
-    rf"|前几天|前两天|这几天|最近几天|{N}\s*月\s*{N}\s*[号日]|{N}\s*月份?[初中底末]?|上个月|这个月|本月|去年"
+    rf"|前几天|前两天|这几天|最近几天|{N}\s*月\s*{N}\s*[号日]|{N}\s*月份?(?:{PARTS})?"
+    rf"|(?:上上个?|上个?|这个?|本)月份?(?:{PARTS})?|去年"
     rf"|今[天晚早儿]|{WEEK}[一二三四五六日天]"
 )
 
@@ -91,16 +119,21 @@ def window(cue: str, now: datetime) -> tuple[date, date] | None:
         except ValueError:
             return None
         return d, d
-    if m := re.search(rf"{N}\s*月(?:份)?([初中底末])?", cue):
+    if m := FESTIVAL.search(cue):
+        month, lo, hi = FESTIVALS[m.group(0)]
+        year = today.year - (1 if "去年" in cue or (month, lo) > (today.month, today.day) else 0)
+        return date(year, month, lo), date(year, month, hi)
+    if m := re.search(rf"{N}\s*月(?:份)?({PARTS})?", cue):
         month = _n(m.group(1))
         if 1 <= month <= 12:
             year = today.year - (1 if "去年" in cue or month > today.month else 0)
             return _month(year, month, m.group(2) or "")
-    if "上个月" in cue:
-        first = today.replace(day=1) - timedelta(days=1)
-        return _month(first.year, first.month)
-    if re.search(r"这个月|本月", cue):
-        return today.replace(day=1), today
+    # "上个月中旬", "上上个月底", "这个月初": a part of a month counted back from this one, never
+    # past today
+    if m := re.search(rf"(上上|上|这|本)个?月(?:份)?({PARTS})?", cue):
+        year, month = months_from(today, MONTH_OFF[m.group(1)])
+        lo, hi = _month(year, month, m.group(2) or "")
+        return lo, min(hi, today) if lo <= today else hi
     if "去年" in cue:
         return date(today.year - 1, 1, 1), date(today.year - 1, 12, 31)
     if re.search(r"今[天晚早儿]", cue):
@@ -126,6 +159,7 @@ _RELATIVE = re.compile(
     r"大前天|(?<![以之从提])前[天晚]|昨[天晚儿日早]|今[天晚早儿]|明[天晚早儿]|大后天|(?<![以之然最])后天"
     rf"|(上上|下下|上|下|这|本){WEEK}([一二三四五六日天])"
     rf"|{N}天(?:前|后|以后|之后)"
+    rf"|(上上|下下|上|下|这|本)个?月({DAYNUM})\s*[号日]{NOT_A_DAY}"
 )
 _FIXED = {"大前天": -3, "前天": -2, "前晚": -2, "后天": 2, "大后天": 3}
 
@@ -179,6 +213,12 @@ def _relative_days(text: str, today: date) -> set[date]:
         elif m.group(1):
             week = {"上上": -2, "上": -1, "这": 0, "本": 0, "下": 1, "下下": 2}[m.group(1)]
             days.add(monday + timedelta(days=7 * week + WEEKDAY[m.group(2)]))
+        elif m.group(4):  # "下个月十九号"; a birthday's is every year's (written_day)
+            if ANNUAL.search(text):
+                continue
+            year, month = months_from(today, MONTH_OFF[m.group(4)])
+            if 1 <= (day := day_num(m.group(5))) <= monthrange(year, month)[1]:
+                days.add(date(year, month, day))
         else:
             n = _n(m.group(3))
             days.add(today + timedelta(days=-n if word.endswith("前") else n))
@@ -230,6 +270,70 @@ def day_of(text: str, now: datetime, said: str = "") -> date | None:
     return None
 
 
+# --- writing: a note's time words as the days they name (memory v3 §14) -------------------------
+# A note is read weeks after it was said: "他的生日是下个月19号" said on 3/17 read on 4/27 is May.
+_DAY_OFF = {"大前天": -3, "前天": -2, "昨天": -1, "昨儿": -1, "昨日": -1, "今天": 0, "今儿": 0, "今日": 0,
+            "明天": 1, "明儿": 1, "明日": 1, "后天": 2, "大后天": 3}
+_PART_OF_DAY = {"昨晚": (-1, "晚上"), "昨早": (-1, "早上"), "今晚": (0, "晚上"), "今早": (0, "早上"),
+                "明晚": (1, "晚上"), "明早": (1, "早上"), "前晚": (-2, "晚上")}
+_YEAR_OFF = {"前年": -2, "去年": -1, "今年": 0, "明年": 1, "后年": 2}
+_ABSOLUTE = re.compile(
+    rf"(?P<mo>上上|下下|上|下|这|本)个?月(?:(?P<md>{DAYNUM})\s*(?P<mk>[号日]){NOT_A_DAY}|(?P<mp>{PARTS}))?"
+    rf"|(?P<wk>上上|下下|上|下|这|本){WEEK}(?P<wd>[一二三四五六日天])?"
+    r"|(?P<pd>昨晚|昨早|今晚|今早|明晚|明早|(?<![以之从提])前晚)"
+    r"|(?P<d>大前天|大后天|(?<![以之从提])前天|(?<![以之然最])后天|昨[天儿日]|今[天儿日]|明[天儿日])"
+    rf"|(?P<nd>{DAYNUM})天(?P<nds>前|后|以后|之后)"
+    r"|(?P<y>前年|去年|今年|明年|后年)"
+)
+# "9月15日(2027-09-15)" once the words are dates: the model had already written the day
+_TWICE = re.compile(r"(\d{1,2})月(\d{1,2})([日号])?\s*[（(]\s*(\d{4})-0?\1-0?\2\s*[)）]")
+
+
+def absolute(text: str, now: datetime) -> str:
+    """The time words of a note as the days they name, read at `now` (when it was said):
+    "下个月十九号" -> "4月19号", "下下周二" -> "9月28日周二", "昨晚" -> "1月10日晚上",
+    "上周" -> "1月4日那周", "去年" -> "2026年". A habit ("每个月底") is not a day and stays; so do
+    "3号线", "5号楼" and a day of the month said alone ("19号"), which may be a number of anything.
+    A birthday or an anniversary keeps no year: it is every year's."""
+    if HABIT.search(text):
+        return text
+    today = now.date()
+    monday = today - timedelta(days=today.weekday())
+    annual = bool(ANNUAL.search(text))
+
+    def md(d: date) -> str:
+        return f"{d.month}月{d.day}日"
+
+    def sub(m: re.Match) -> str:
+        g = m.groupdict()
+        if g["mo"]:
+            year, month = months_from(today, MONTH_OFF[g["mo"]])
+            y = "" if year == today.year or annual else f"{year}年"
+            if g["md"]:
+                day = day_num(g["md"])
+                return f"{y}{month}月{day}{g['mk']}" if 1 <= day <= monthrange(year, month)[1] else m.group(0)
+            return f"{y}{month}月{g['mp'] or ''}"
+        if g["wk"]:
+            start = monday + timedelta(days=7 * MONTH_OFF[g["wk"]])
+            if g["wd"]:
+                d = start + timedelta(days=WEEKDAY[g["wd"]])
+                return f"{md(d)}周{WEEKDAYS_CN[d.weekday()]}"
+            return f"{md(start)}那周"
+        if g["pd"]:
+            k, part = _PART_OF_DAY[g["pd"]]
+            return md(today + timedelta(days=k)) + part
+        if g["d"]:
+            return md(today + timedelta(days=_DAY_OFF[g["d"]]))
+        if g["nd"]:
+            n = day_num(g["nd"])
+            return md(today + timedelta(days=-n if g["nds"] == "前" else n))
+        return f"{today.year + _YEAR_OFF[g['y']]}年"
+
+    out = _ABSOLUTE.sub(sub, text)
+    return _TWICE.sub(lambda m: f"{m[1]}月{m[2]}{m[3] or '日'}" if annual
+                      else f"{m[4]}-{int(m[1]):02d}-{int(m[2]):02d}", out)
+
+
 def _written(d: date, form: str) -> str:
     if form == "iso":
         return d.isoformat()
@@ -276,7 +380,7 @@ def spoken(d: date, today: date) -> str:
         return f"{md}，{delta}天后"
     days = -delta
     if days < 31:
-        return f"{md}，{_cn(days // 7)}周前"
+        return f"{md}，{_cn(max(1, round(days / 7)))}周前"  # 27 days is about four weeks, not three
     if days < 365:
         return f"{md}，{_cn(max(1, round(days / 30.4)))}个月前"
     return f"{md}，{_cn(days // 365)}年前"

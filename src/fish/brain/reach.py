@@ -16,6 +16,7 @@ from datetime import datetime, time, timedelta
 
 from fish.brain.ask import ask_json
 from fish.brain.llm import LLM
+from fish.brain.parse import clean_say
 from fish.brain.prompt import WEEKDAYS
 from fish.config import owner_words
 from fish.memory import Followup, Memory, MemoryStore, ProspectiveStore, Relationship, Window
@@ -162,7 +163,7 @@ class Reacher:
                         recent="\n".join(f"- {r}" for r in recent) or "（还没聊过）", temperature=1.0)
         if not data:
             return None
-        say = str(data.get("say") or "").strip()
+        say = clean_say(str(data.get("say") or ""))
         if not say:
             return None
         ok_asked = {f.id for f in trig.due}

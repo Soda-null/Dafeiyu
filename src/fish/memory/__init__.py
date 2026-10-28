@@ -21,11 +21,11 @@ Never depends on the channels package.
 
 from fish.memory.diary import Diary
 from fish.memory.episodes import Episode, EpisodeManager
-from fish.memory.longterm import KINDS, Memory, MemoryStore, overlap
+from fish.memory.longterm import ABOUT_HIM_KINDS, KINDS, Memory, MemoryStore, echoes_her, overlap
 from fish.memory.pastimes import Moment, Pastime, Pastimes
 from fish.memory.phase import Phase, PhaseStore
-from fish.memory.pacts import triggered
-from fish.memory.pages import Page, keys_of, turn_back
+from fish.memory.pacts import asks_pact, his_line, triggered
+from fish.memory.pages import Page, asks_recall, keys_of, turn_back
 from fish.memory.patterns import arrival_line, asks_habit, count_patterns
 from fish.memory.prospective import Followup, ProspectiveStore
 from fish.memory.relationship import Relationship
@@ -38,9 +38,9 @@ from fish.memory.when import TimeCued, spoken, told_day
 from fish.memory.window import Turn, Window
 
 __all__ = [
-    "KINDS", "TRAITS", "BigramEmbedder", "Diary", "Embedder", "Episode", "EpisodeManager",
+    "ABOUT_HIM_KINDS", "KINDS", "TRAITS", "BigramEmbedder", "Diary", "Embedder", "Episode", "EpisodeManager",
     "Followup", "Growth", "Memory", "MemoryStore", "Moment", "Page", "Pastime", "Pastimes", "Phase", "PhaseStore", "ProspectiveStore",
     "Recalled", "Relationship", "Sticker", "StickerAlbum", "TimeCued", "TraitStore", "Turn", "Window",
-    "arrival_line", "asks_habit", "count_patterns", "cue_for", "keys_of", "mentioned", "overlap", "recall", "redact", "secret", "spoken", "today_section", "told_day",
+    "arrival_line", "asks_habit", "asks_pact", "asks_recall", "echoes_her", "his_line", "count_patterns", "cue_for", "keys_of", "mentioned", "overlap", "recall", "redact", "secret", "spoken", "today_section", "told_day",
     "triggered", "turn_back",
 ]
