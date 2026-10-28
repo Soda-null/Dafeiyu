@@ -18,8 +18,10 @@ WEEKDAYS = "一二三四五六日"
 # JSON mode often answered with only spaces: the model wants to start in prose, JSON mode allows only
 # "{" or whitespace. A reminder with a one-line example right at his line fixed it; the same words in
 # the system prompt did not (docs/memory_v3_zh.md §15). Only in the prompt, never in what is stored.
-JSON_REMINDER = ('（照"输出格式"只输出一个 json 对象，例如 {"say": "嗯，我在呢", "mood": "平静", '
-                 '"topic": "闲聊", "notes": [], "followups": [], "asked": [], "corrections": []}）')
+# Placeholders, not words: an example with real values ("闲聊") got copied, and a repeated
+# topic makes her bored turn after turn (mood.after_turn).
+JSON_REMINDER = ('（照"输出格式"只输出一个 json 对象，例如 {"say": "你要说的话", "mood": "你此刻的心情", '
+                 '"topic": "这轮聊的事", "notes": [], "followups": [], "asked": [], "corrections": []}）')
 
 
 def load_template(name: str) -> str:
