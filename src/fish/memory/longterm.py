@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from fish.memory import stability as st
+from fish.memory.when import day_of, fix_weekday
 
 KINDS = ("fact", "event", "howto", "insight", "self", "world")  # world: things she saw online
 PROFILE_IMPORTANCE = 8  # facts at or above this importance form the always-present profile
@@ -99,6 +100,7 @@ class Memory:
     about: str | None = None  # 路过 / 日常 / 本人 / 一辈子, or 待印证 for a rule not yet confirmed
     last_time: str | None = None  # YYYY-MM-DD it last happened; a day counts once
     why: str | None = None  # why it was superseded (WHYS); None while current, or before v3
+    happened_on: str | None = None  # YYYY-MM-DD it happened (or will); None before v3
 
     @property
     def unconfirmed(self) -> bool:
@@ -152,6 +154,7 @@ def _from_row(r: sqlite3.Row) -> Memory:
         about=r["about"] if "about" in r.keys() else None,
         last_time=r["last_time"] if "last_time" in r.keys() else None,
         why=r["why"] if "why" in r.keys() else None,
+        happened_on=r["happened_on"] if "happened_on" in r.keys() else None,
     )
 
 
@@ -187,7 +190,9 @@ class MemoryStore:
         merged_from: tuple[int, ...] | list[int] = (),
         source: str | None = None,
         now: datetime | None = None,
+        happened_on: str | None = None,
     ) -> Memory:
+        """happened_on: the day it happened; by default the one day its text names, else today."""
         if kind not in KINDS:
             raise ValueError(f"kind must be one of {KINDS}, got {kind!r}")
         now = now or datetime.now()
@@ -197,25 +202,30 @@ class MemoryStore:
             stability = st.initial_stability(importance, valence)
         if pinned:
             stability = st.INFINITE
+        happened_on = happened_on or (day_of(text, now) or now.date()).isoformat()
         cur = self.conn.execute(
             "INSERT INTO memories (kind, text, created, source_episode, importance, valence, arousal,"
-            " stability, last_recalled, recall_count, superseded_by, merged_from, tags, pinned, source)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?)",
+            " stability, last_recalled, recall_count, superseded_by, merged_from, tags, pinned, source,"
+            " happened_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?)",
             (kind, text, iso(now), source_episode, importance, valence, arousal, stability,
              iso(now), json.dumps(list(merged_from)), json.dumps(list(tags), ensure_ascii=False),
-             int(pinned), source),
+             int(pinned), source, happened_on),
         )
         self.conn.commit()
         return self.get(cur.lastrowid)
 
     def note(self, kind: str, text: str, *, importance: int, now: datetime | None = None,
-             **fields) -> Memory | None:
+             said: str = "", **fields) -> Memory | None:
         """How the brain and the routines write (decision 19): choose before writing.
 
         None: not written (it is about the chat itself, not about him). An older memory:
         this was a repeat, so the old one was recalled instead. Otherwise the new memory;
-        if its kind is over its cap, the least stable one of that kind is pushed out."""
+        if its kind is over its cap, the least stable one of that kind is pushed out.
+        said: his line the note came from; its time words date the note when the note's own
+        text names no day (memory v3 §B1). A date that disagrees with the weekday written
+        next to it is moved to that weekday first (§B2 D5)."""
         now = now or datetime.now()
+        text = fix_weekday(text, now.date())
         if kind in ABOUT_HIM_KINDS and ABOUT_THE_CHAT.search(text):
             return None
         if kind == "self" and text.lstrip().startswith(("他", "她")):
@@ -235,6 +245,7 @@ class MemoryStore:
             fields["pinned"] = about == "一辈子"
         if "stability" in fields:
             importance = st.importance_of(fields["stability"])
+        fields.setdefault("happened_on", (day_of(text, now, said) or now.date()).isoformat())
         new = self.add(kind, text, importance=importance, now=now, **fields)
         self.conn.execute("UPDATE memories SET about = ?, last_time = ? WHERE id = ?",
                           (about, iso(now)[:10], new.id))
@@ -327,7 +338,8 @@ class MemoryStore:
         now: datetime | None = None,
     ) -> Memory:
         """He corrected her: a new memory replaces the old one, which stays as 'what she used to think'.
-        It keeps what the old one was about (his major corrected is still about him himself)."""
+        It keeps what the old one was about (his major corrected is still about him himself), and
+        the day it happened unless the new words name another one."""
         old = self.get(old_id)
         now = now or datetime.now()
         importance = old.importance if importance is None else importance
@@ -337,6 +349,7 @@ class MemoryStore:
             old.kind, text, importance=importance, valence=old.valence, arousal=old.arousal,
             source_episode=old.source_episode, tags=old.tags, pinned=old.pinned,
             stability=stability, now=now,
+            happened_on=(d.isoformat() if (d := day_of(text, now)) else old.happened_on),
         )
         self.conn.execute("UPDATE memories SET about = ?, last_time = ? WHERE id = ?",
                           (old.about, iso(now)[:10], new.id))
@@ -345,7 +358,8 @@ class MemoryStore:
 
     def merge(self, ids: list[int], text: str, *, now: datetime | None = None) -> Memory:
         """Nightly: several near-duplicates become one, more stable, with its sources noted.
-        What it is about, whether it is pinned and the day it last happened carry over."""
+        What it is about, whether it is pinned and the day it last happened carry over; so does
+        the day it happened (the latest of its sources), unless the merged words name one."""
         olds = [self.get(i) for i in ids]
         if not olds:
             raise ValueError("merge needs at least one memory")
@@ -362,6 +376,8 @@ class MemoryStore:
             pinned=any(o.pinned for o in olds),
             stability=st.after_merge(*(o.stability for o in olds)),
             merged_from=ids, now=now,
+            happened_on=(d.isoformat() if (d := day_of(text, now))
+                         else max((o.happened_on for o in olds if o.happened_on), default=None)),
         )
         for o in olds:
             self.supersede(o.id, new.id, why="merge")
@@ -406,6 +422,17 @@ class MemoryStore:
             "SELECT * FROM memories WHERE superseded_by IS NULL AND kind = 'howto' AND stability > ?"
             " ORDER BY importance DESC, stability DESC, id DESC LIMIT ?", (st.WEAKENED_DAYS, limit)
         )
+        return [_from_row(r) for r in rows]
+
+    def planned_for(self, days: list[date]) -> list[Memory]:
+        """Things he said would happen on these days (an exam, a trip), said before the day came:
+        what the "today" section reminds her of (memory v3 §B3). A note written on the day it is
+        about is not a plan, it is news, and the chat it came from is still in front of her."""
+        wanted = [d.isoformat() for d in days]
+        rows = self.conn.execute(
+            f"SELECT * FROM memories WHERE superseded_by IS NULL AND kind IN ('event', 'fact')"
+            f" AND happened_on IN ({', '.join('?' * len(wanted))}) AND substr(created, 1, 10) < happened_on"
+            " ORDER BY happened_on, id", wanted)
         return [_from_row(r) for r in rows]
 
     def seen_recently(self, now: datetime, days: int = 7) -> list[Memory]:

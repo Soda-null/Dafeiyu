@@ -4,9 +4,10 @@ nothing else. Every model call in the chat path lives here.
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from typing import Callable
@@ -21,7 +22,7 @@ from fish.config import Settings, owner_words
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
 from fish.memory import (BigramEmbedder, Diary, Episode, EpisodeManager, MemoryStore, Moment, Pastimes,
                          PhaseStore, ProspectiveStore, Relationship, StickerAlbum, TimeCued, TraitStore,
-                         Window, cue_for, mentioned, recall)
+                         Window, cue_for, mentioned, recall, today_section)
 from fish.memory.prospective import DUE_SHOWN
 from fish.memory.window import FOLD_BATCH
 from fish.mood import MoodStore, stage_of
@@ -85,6 +86,16 @@ class Brain:
                 "pastimes_line": pastimes_line(self.pastimes, now),
                 "today_line": "你今天空闲时：" + "；".join(done) + "。" if done else ""}
 
+    def today_lines(self, now: datetime, profile: list) -> str:
+        """Dates, his birthday soon, what he planned for today and tomorrow, worked out by code
+        (memory v3 §B3). The weekday patterns are counted at night from memory v3 step 6 on."""
+        plans = self.store.planned_for([now.date(), now.date() + timedelta(days=1)])
+        try:
+            patterns = json.loads(self.relationship.get("patterns") or "[]")
+        except ValueError:
+            patterns = []
+        return today_section(now, profile, plans, patterns=patterns, him=owner_words("他"))
+
     def growth_lines(self) -> list[str]:
         lines = self.traits.describe()
         notes = self.traits.growth_notes(1)
@@ -125,6 +136,7 @@ class Brain:
         formers = {m.id: f.text for m in profile if (f := self.store.former(m.id)) is not None}
         recalled = recall(self.store, cue_for(user_text, last_fish), now,
                           embedder=TimeCued(BigramEmbedder(), now), skip={m.id for m in profile})
+        today = self.today_lines(now, profile)
         shared, shared_note = self.open_shared(incoming)
         ctx = PromptContext(
             persona=self.persona, now=now, mood=mood,
@@ -139,7 +151,7 @@ class Brain:
             phase=self.phases.current(), growth=self.growth_lines(), **self.place_fields(),
             **self.day_fields(now),
             stickers=self.album.offer(), user_image=data_url(image) if image else None,
-            shared=shared,
+            shared=shared, today_section=today,
         )
         messages = build_chat_messages(ctx)
         reply = self.ask(messages)
@@ -158,7 +170,7 @@ class Brain:
         if reply.say.strip():  # silence is a real answer sometimes; it leaves no bubble
             self.window.append("fish", reply.say, channel, ep.id, now)
         self.episodes.touch(ep.id, now)
-        self.record(reply, ep.id, now, seen_source=seen_source)
+        self.record(reply, ep.id, now, seen_source=seen_source, said=user_text)
         if image is not None and reply.keep_sticker:
             self.album.add(image, sniff_mime(image) or "image/jpeg", reply.keep_sticker, now=now)
         outgoing = Outgoing(reply.say)
@@ -236,11 +248,12 @@ class Brain:
         return merged, (found.url if found else None)
 
     def record(self, reply: Reply, episode_id: int, now: datetime,
-               seen_source: str | None = None) -> None:
+               seen_source: str | None = None, said: str = "") -> None:
+        """said: his line this turn; its time words date a note whose own words name no day."""
         for n in reply.notes:
             self.store.note(n.kind, n.text, importance=n.importance, valence=n.valence,
                             arousal=n.arousal, about=n.about, source_episode=episode_id, tags=n.tags,
-                            now=now)
+                            now=now, said=said)
         for n in reply.seen:
             self.store.note("world", n.text, importance=n.importance, valence=n.valence,
                             source_episode=episode_id, tags=n.tags, source=seen_source, now=now)

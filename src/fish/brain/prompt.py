@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from fish.brain import budget
 from fish.config import owner_words
 from fish.memory import Followup, Memory, Phase, Recalled, Sticker, Turn
+from fish.memory.when import spoken
 from fish.mood import Mood
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -59,6 +60,7 @@ class PromptContext:
     shared: str = ""  # a link or file he shared, already opened (decision 23)
     mentioned: set[int] = field(default_factory=set)  # card facts his line touches
     formers: dict[int, str] = field(default_factory=dict)  # card fact id -> what she used to think
+    today_section: str = ""  # dates, birthday soon, plans for today (memory/today.py)
 
 
 def state_line(ctx: PromptContext) -> str:
@@ -110,13 +112,20 @@ def render_profile(profile: list[Memory], mentioned: set[int] = frozenset(),
     return "\n".join(lines) or "（还没有）"
 
 
-def render_recalled(recalled: list[Recalled]) -> str:
+def day_label(m: Memory, today: date | None) -> str:
+    """"（上周三 1月13日）": the day it happened, said the way he would say it (memory v3 §B3)."""
+    day = m.happened_on or (m.created[:10] if m.created else "")
+    return f"（{spoken(date.fromisoformat(day), today)}）" if today and day else ""
+
+
+def render_recalled(recalled: list[Recalled], today: date | None = None) -> str:
+    """today: when given, each line starts with the day it happened, relative to today."""
     lines = []
     former_shown = False
     for r in recalled:
         tag = "（模糊）" if r.fuzzy else ""
         tag += "（被提醒才想起）" if r.cued else ""
-        lines.append(f"- [#{r.memory.id}] {r.memory.line()}{tag}")
+        lines.append(f"- [#{r.memory.id}] {day_label(r.memory, today)}{r.memory.line()}{tag}")
         if r.former and not former_shown:
             lines.append(f"  （你之前记的是：{r.former.text}）")
             former_shown = True
@@ -147,16 +156,17 @@ def build_chat_messages(ctx: PromptContext) -> list[dict[str, str]]:
         phase=render_phase(ctx.phase), growth=render_growth(ctx.growth),
         home=(ctx.home_line + "。" if ctx.home_line else "（还不知道）")
         + (f"附近：{ctx.places}" if ctx.places else ""),
-        shared=ctx.shared or "（没有）",
+        shared=ctx.shared or "（没有）", today=ctx.today_section or "（没算）",
     )
+    today = ctx.now.date()
     fixed = render(template, recalled="", followups="", summary="", **fixed_fields)
     recalled, summary, window, followups_text = budget.fit(
         ctx.recalled, ctx.summary, ctx.window, render_followups(ctx.followups),
         len(fixed), ctx.user_text, limit=ctx.limit + len(ctx.shared),  # sharing never costs memories
-        render_recalled=render_recalled,
+        render_recalled=lambda rs: render_recalled(rs, today),
     )
     system = render(
-        template, recalled=render_recalled(recalled), followups=followups_text or "（没有）",
+        template, recalled=render_recalled(recalled, today), followups=followups_text or "（没有）",
         summary=summary or "（这是开头）", **fixed_fields,
     )
     messages: list[dict] = [{"role": "system", "content": system}]
@@ -188,10 +198,12 @@ def build_fold_messages(summary: str, turns: list[Turn]) -> list[dict[str, str]]
 def build_close_messages(summary: str, turns: list[Turn], already: list[str],
                          today: str, known: list[str] | None = None) -> list[dict[str, str]]:
     """known: what she always carries about him (her profile), so the close can see what is
-    still missing and fill in what the chat forgot to write down."""
+    still missing and fill in what the chat forgot to write down. today: YYYY-MM-DD; the
+    weekday is added here so the notes do not work it out wrong."""
     content = render(
         load_template("close_episode"), summary=summary or "（无）", turns=render_turns(turns),
-        already="\n".join(f"- {a}" for a in already) or "（无）", today=today,
+        already="\n".join(f"- {a}" for a in already) or "（无）",
+        today=f"{today} 周{WEEKDAYS[date.fromisoformat(today[:10]).weekday()]}",
         known="\n".join(f"- {k}" for k in known or []) or "（还没有）",
     )
     return [{"role": "user", "content": content}]

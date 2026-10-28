@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 # Columns added after a table first shipped; applied to older databases on connect.
 ADDED_COLUMNS = [("memories", "source", "TEXT"),
                  ("memories", "times", "INTEGER NOT NULL DEFAULT 1"),  # decision 20: how often it happened
@@ -14,6 +14,7 @@ ADDED_COLUMNS = [("memories", "source", "TEXT"),
                  ("memories", "about", "TEXT"),  # decision 21: 路过 / 日常 / 本人 / 一辈子 / 待印证
                  ("memories", "last_time", "TEXT"),  # the day it last happened: one count per day
                  ("memories", "why", "TEXT"),  # memory v3: why it was superseded (longterm.WHYS)
+                 ("memories", "happened_on", "TEXT"),  # memory v3: YYYY-MM-DD the thing happened
                  ("stickers", "digest", "TEXT")]  # sha1 of the picture: the same one is kept once
 
 SCHEMA = """

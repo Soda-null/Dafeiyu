@@ -79,7 +79,7 @@ def test_prompt_carries_profile_recalled_followups_and_state(tmp_path):
     brain.respond("演示过去了，松口气", now=T0)
     system = system_of(llm)
     assert f"[#{core.id}] 他叫小杨" in system
-    assert f"[#{demo.id}] 他上周有个机器人演示" in system
+    assert f"[#{demo.id}] （上周三 10月21日）他上周有个机器人演示" in system  # the day, worked out
     assert f"[#{due.id}] 问他演示怎么样" in system
     assert "现在是 2026-10-26 周一 20:00" in system and "你们认识第 1 天" in system
     assert llm.calls[-1][0][-1] == {"role": "user", "content": "演示过去了，松口气"}
@@ -149,7 +149,7 @@ def test_stale_episode_is_closed_with_a_summary(tmp_path):
 
 def test_budget_drops_recalled_memories_first(tmp_path):
     llm = scripted()
-    brain, conn = make_brain(tmp_path, llm, prompt_chars=3250)  # fixed part is ~3000 (decision 22 rules)
+    brain, conn = make_brain(tmp_path, llm, prompt_chars=3550)  # fixed part is ~3450 (v3 "today" section)
     store = MemoryStore(conn)
     for i in range(6):
         store.add("event", f"第{i}次聊考试，他说很慌" + "，细节" * 20, importance=5, tags=["考试"], now=T0)
@@ -157,7 +157,7 @@ def test_budget_drops_recalled_memories_first(tmp_path):
     system = system_of(llm)
     shown = sum(1 for i in range(6) if f"第{i}次聊考试" in system)
     assert 1 <= shown < 6
-    assert len(system) <= 3200 + 60
+    assert len(system) <= 3550 + 60
 
 
 def test_mood_moves_with_the_turn(tmp_path):
