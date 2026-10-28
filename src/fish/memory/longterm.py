@@ -11,13 +11,15 @@ import json
 import re
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from fish.memory import stability as st
 
 KINDS = ("fact", "event", "howto", "insight", "self", "world")  # world: things she saw online
 PROFILE_IMPORTANCE = 8  # facts at or above this importance form the always-present profile
 PROFILE_SIZE = 12
+# Card facts that keep him safe come right after the pinned ones (memory v3 §B3).
+SAFETY = re.compile(r"过敏|不耐(?!烦)|病|药")
 
 # Choosing before writing (decision 19): what `note` refuses or folds into an old memory.
 REPEAT_SIMILARITY = 0.5  # same kind, this much bigram overlap (dates removed): a repeat
@@ -125,6 +127,12 @@ class Memory:
     @property
     def alive(self) -> bool:
         return self.superseded_by is None
+
+
+def card_order(m: Memory) -> tuple:
+    """Sort key of her card: pinned, then safety, then the latest day it came up."""
+    last = date.fromisoformat(m.last_time or m.created[:10])
+    return (not m.pinned, not SAFETY.search(m.text), -last.toordinal(), -m.importance, m.id)
 
 
 def _from_row(r: sqlite3.Row) -> Memory:
@@ -381,15 +389,15 @@ class MemoryStore:
         return [_from_row(r) for r in self.conn.execute(sql + " ORDER BY id", args)]
 
     def profile(self, limit: int = PROFILE_SIZE) -> list[Memory]:
-        """The facts she always keeps in mind: pinned first, then the most stable. Facts
-        about him himself (about = 本人, decision 21) always qualify."""
+        """The facts she always keeps in mind (her card): pinned first, then what keeps him
+        safe (allergies, illness, medicine), then the rest by when it last came up. Facts about
+        him himself (about = 本人, decision 21) always qualify. Not by stability (memory v3
+        §B3): how strongly she holds a fact says nothing about whether it is who he is now."""
         rows = self.conn.execute(
             "SELECT * FROM memories WHERE superseded_by IS NULL AND kind = 'fact'"
-            " AND (pinned = 1 OR importance >= ? OR about = '本人')"
-            " ORDER BY pinned DESC, stability DESC, importance DESC, id LIMIT ?",
-            (PROFILE_IMPORTANCE, limit),
+            " AND (pinned = 1 OR importance >= ? OR about = '本人')", (PROFILE_IMPORTANCE,)
         )
-        return [_from_row(r) for r in rows]
+        return sorted(map(_from_row, rows), key=card_order)[:limit]
 
     def howto_card(self, limit: int = 8) -> list[Memory]:
         """How to get along with him: the rules she has drawn, always in mind (decision 11).

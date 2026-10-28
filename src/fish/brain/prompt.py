@@ -32,7 +32,7 @@ class PromptContext:
     now: datetime
     mood: Mood
     relationship: dict[str, int]
-    profile: list[Memory]
+    profile: list[Memory]  # her card, which never takes the places of what is recalled
     diary: list[tuple[str, str]]
     recalled: list[Recalled]
     followups: list[Followup]
@@ -57,6 +57,7 @@ class PromptContext:
     stickers: list[Sticker] = field(default_factory=list)  # her album, for picking one
     user_image: str | None = None  # data URL of a picture he sent with this message
     shared: str = ""  # a link or file he shared, already opened (decision 23)
+    mentioned: set[int] = field(default_factory=set)  # card facts his line touches
 
 
 def state_line(ctx: PromptContext) -> str:
@@ -95,8 +96,9 @@ def render_stickers(stickers: list[Sticker]) -> str:
     return "\n".join(f"- [#{s.id}] {s.caption}" for s in stickers) or "（相册还是空的）"
 
 
-def render_profile(profile: list[Memory]) -> str:
-    return "\n".join(f"- [#{m.id}] {m.line()}" for m in profile) or "（还没有）"
+def render_profile(profile: list[Memory], mentioned: set[int] = frozenset()) -> str:
+    return "\n".join(f"- [#{m.id}] {m.line()}" + ("（他这句话提到了）" if m.id in mentioned else "")
+                     for m in profile) or "（还没有）"
 
 
 def render_recalled(recalled: list[Recalled]) -> str:
@@ -109,7 +111,7 @@ def render_recalled(recalled: list[Recalled]) -> str:
         if r.former and not former_shown:
             lines.append(f"  （你之前记的是：{r.former.text}）")
             former_shown = True
-    return "\n".join(lines) or "（什么也没想起来。他要是问你记不记得，那就是不记得了）"
+    return "\n".join(lines) or "（什么也没想起来。他要是问你记不记得，答案又不在你一直记得的那些里，那就是不记得了）"
 
 
 def render_followups(followups: list[Followup]) -> str:
@@ -128,7 +130,7 @@ def render_seen(seen: list[Memory]) -> str:
 def build_chat_messages(ctx: PromptContext) -> list[dict[str, str]]:
     template = load_template("chat")
     fixed_fields = dict(
-        persona=ctx.persona, profile=render_profile(ctx.profile), diary=render_diary(ctx.diary),
+        persona=ctx.persona, profile=render_profile(ctx.profile, ctx.mentioned), diary=render_diary(ctx.diary),
         state=state_line(ctx), seen=render_seen(ctx.seen), looked_up=ctx.looked_up or "（没查）",
         stage=ctx.stage, stage_rules=ctx.stage_rules or "（照平时）",
         howto=render_howto(ctx.howto), stickers=render_stickers(ctx.stickers),

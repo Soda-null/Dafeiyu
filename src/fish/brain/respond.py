@@ -19,8 +19,9 @@ from fish.brain.prompt import (PromptContext, build_chat_messages, build_close_m
 from fish.brain.reach import Reacher, ReachOut, ReachPolicy, recent_lines
 from fish.config import Settings, owner_words
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
-from fish.memory import (Diary, Episode, EpisodeManager, MemoryStore, Moment, Pastimes, PhaseStore,
-                         ProspectiveStore, Relationship, StickerAlbum, TraitStore, Window, recall)
+from fish.memory import (BigramEmbedder, Diary, Episode, EpisodeManager, MemoryStore, Moment, Pastimes,
+                         PhaseStore, ProspectiveStore, Relationship, StickerAlbum, TimeCued, TraitStore,
+                         Window, cue_for, mentioned, recall)
 from fish.memory.prospective import DUE_SHOWN
 from fish.memory.window import FOLD_BATCH
 from fish.mood import MoodStore, stage_of
@@ -115,12 +116,19 @@ class Brain:
 
         window = self.window.recent(ep.id)
         last_fish = next((t.text for t in reversed(window) if t.role == "fish"), "")
-        recalled = recall(self.store, user_text + " " + last_fish, now)
+        # Her card is in front of her anyway: it takes none of the places of what his line brings
+        # back, and a card fact his line touches is marked and used (memory v3 §B3).
+        profile = self.store.profile()
+        touched = mentioned(user_text, profile)
+        for m in touched:
+            self.store.touch(m.id, now)
+        recalled = recall(self.store, cue_for(user_text, last_fish), now,
+                          embedder=TimeCued(BigramEmbedder(), now), skip={m.id for m in profile})
         shared, shared_note = self.open_shared(incoming)
         ctx = PromptContext(
             persona=self.persona, now=now, mood=mood,
             relationship=self.relationship.stats(now),
-            profile=self.store.profile(), diary=self.diary.recent(2),
+            profile=profile, mentioned={m.id for m in touched}, diary=self.diary.recent(2),
             recalled=recalled, followups=self.prospective.due(now)[:DUE_SHOWN],
             summary=ep.running_summary, window=window, user_text=user_text,
             limit=self.settings.prompt_chars,

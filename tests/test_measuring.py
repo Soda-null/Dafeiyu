@@ -87,6 +87,11 @@ def test_her_previous_line_can_find_what_his_line_alone_cannot(db):
     assert both["totals"]["按字面（现在）"] == 1 and both["no_her_line"] == 0  # "团子" was in her line
 
 
+def test_the_chat_cue_takes_her_line_only_when_his_is_very_short(db):
+    res = bench.bench(db, SCRIPT, cue="chat", out=lambda *_: None)
+    assert res["totals"]["按字面（现在）"] == 1  # "那它叫啥来着" is too short alone: 团子 from her line
+
+
 def test_what_is_on_her_card_counts_as_found(db):
     res = bench.bench(db, SCRIPT, cue="his", skip_card=True, out=lambda *_: None)
     assert res["totals"]["按字面（现在）"] == 1  # the pinned birthday

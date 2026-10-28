@@ -7,12 +7,14 @@ written down at all, and does each way of finding put it in front of her? Forget
 ignored, so this measures finding only. Works for any script in evals/ (小周, 小林).
 
   .venv/bin/python scripts/recall_bench.py <checkup fish.db> evals/xiaozhou_90d.json
-        [--cue his|his+hers] [--skip-card] [--vectors bge.json] [--show malatang,movie]
+        [--cue his|his+hers|chat] [--skip-card] [--vectors bge.json] [--show malatang,movie]
 
 --cue: what the search is given. "his" is only his line; "his+hers" adds her previous line
-       in the same chat, which is what respond.py does today (memory v3 §B3 drops it).
+       in the same chat (what respond.py did before memory v3); "chat" is what respond.py does
+       now (retrieval.cue_for: his line, hers too only when his is very short).
 --skip-card: what is on her card (store.profile at that moment) is in front of her anyway, so
-       it counts as found and does not take one of the six places.
+       it counts as found and does not take one of the six places (respond.py does this since
+       memory v3 step 2). "chat --skip-card", row "按字面 + 按时间", is the chat as it is now.
 --vectors: {"M:<memory text>": [...], "Q:<question>": [...]} from any sentence model; adds
        the "by meaning" rows. Without it only by-words and by-time are compared.
 """
@@ -29,13 +31,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from fish.memory.longterm import PROFILE_IMPORTANCE, PROFILE_SIZE, Memory, _from_row  # noqa: E402
+from fish.memory.longterm import (PROFILE_IMPORTANCE, PROFILE_SIZE, Memory, _from_row,  # noqa: E402
+                                  card_order)
 from fish.memory.retrieval import (DEFAULT_K, RECENCY_DECAY_PER_HOUR, W_IMPORTANCE, W_RECENCY,  # noqa: E402
-                                   W_RELEVANCE, BigramEmbedder)
+                                   W_RELEVANCE, BigramEmbedder, cue_for)
 from fish.memory.when import TimeCued  # noqa: E402
 
 COS_LO, COS_HI = 0.35, 0.80  # where a sentence model's cosine starts to mean anything, and "same thing"
-CUES = ("his", "his+hers")
+CUES = ("his", "his+hers", "chat")
 
 
 class Vectors:
@@ -82,11 +85,11 @@ def known_then(mems: list[Memory], now: datetime) -> list[Memory]:
 
 
 def card_then(alive: list[Memory]) -> set[int]:
-    """store.profile() as it would have been: pinned, important or about him himself. Uses
-    the final stability, so the order among unpinned facts is an approximation."""
+    """store.profile() as it would have been: pinned, important or about him himself, in the
+    card's order. Uses the final last_time, so the order among unpinned facts is approximate."""
     card = [m for m in alive if m.kind == "fact"
             and (m.pinned or m.importance >= PROFILE_IMPORTANCE or m.about == "本人")]
-    card.sort(key=lambda m: (not m.pinned, -m.stability, -m.importance, m.id))
+    card.sort(key=card_order)
     return {m.id for m in card[:PROFILE_SIZE]}
 
 
@@ -152,10 +155,13 @@ def bench(db: Path, script: dict, *, cue: str = "his", skip_card: bool = False,
                     out(f"[{fact['id']}] 第 {p['day']} 天「{p['ask']}」：没记下")
                 continue
             text = p["ask"]
-            if cue == "his+hers":
+            if cue != "his":
                 hers = her_line_before(conn, p["ask"], now)
                 no_her_line += hers is None
-                text = f"{p['ask']} {hers}" if hers else p["ask"]
+                if cue == "chat":
+                    text = cue_for(p["ask"], hers or "")
+                elif hers:
+                    text = f"{p['ask']} {hers}"
             card = card_then(alive) if skip_card else set()
             on_card = bool(answers & card)
             line = ["在底牌上"] if on_card else []
@@ -184,7 +190,8 @@ def main(argv: list[str] | None = None) -> None:
     res = bench(args.db, script, cue=args.cue, skip_card=args.skip_card, vectors=args.vectors,
                 show=set(filter(None, args.show.split(","))))
     asked, missing = res["asked"], res["missing"]
-    cue = "只用他这句" if args.cue == "his" else "他这句 + 她上一句"
+    cue = {"his": "只用他这句", "his+hers": "他这句 + 她上一句",
+           "chat": "他这句，太短才加她上一句"}[args.cue]
     print(f"\n{script['name']}：{asked} 问；到问的那天答案根本没记下的 {missing} 问（哪种找法都救不了）。")
     if res["no_her_line"]:
         print(f"（有 {res['no_her_line']} 问在库里找不到这句话，只用了他这句；库和剧本对不上？）")
