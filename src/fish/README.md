@@ -20,20 +20,20 @@
 | `memory/phase.py` | 性格中间层：基调、劲头、在意的事、一句话，`update` 每晚八成旧两成新 | 能用 |
 | `memory/traits.py` | 性格底色层：五根有界滑杆，`apply` 一次最多挪 0.15，`describe` 只说挪得明显的；每月的"回头看"笔记 | 能用 |
 | `memory/relationship.py` | 关系账：认识天数、连续天数、**亲近值**按天涨（每轮 +0.3、开心 +1，但一天最多 +2，熟了以后 +1、很熟以后 +0.8；没聊的日子 −0.5；决定 17） | 能用 |
-| `brain/` | 所有模型调用都在这：`respond.py` 每轮流程（收尾旧情景 → 挑 → 拼 → 问 → 记 → 心情 → 折叠）；`prompt.py` 按 `prompts/*.md` 渲染；`budget.py` 字数预算；`parse.py` 读 JSON 回复；`llm.py`：`DeepSeekLLM`（JSON 模式）、`FakeLLM`、`CountingLLM`（数调用，体检用） | 能用，还没用真模型验过 |
+| `brain/` | 所有模型调用都在这：`respond.py` 每轮流程（收尾旧情景 → 挑 → 拼 → 问 → 记 → 心情 → 折叠）；`prompt.py` 按 `prompts/*.md` 渲染；`budget.py` 字数预算；`parse.py` 读 JSON 回复；`llm.py`：`DeepSeekLLM`（JSON 模式）、`FakeLLM`、`CountingLLM`（数调用，体检用） | 能用，寝室机上真跑着 |
 | `brain/prompts/` | `gist.md`（夜里把反复的事改写成大意，决定 20）；聊天：`chat.md`（人设 + 怎么回 + 输出格式 + 底牌 / 日记 / 现在 / 想起 / 惦记 / 摘要）、`fold.md`（折叠窗口）、`close_episode.md`（收尾聊天）；夜里：`merge.md`（合并重复）、`contradictions.md`（新事实取代旧的）、`reflect.md`（反思）、`diary.md`（日记和生活线）；用户能直接改 | 能用 |
 | `brain/consolidate.py` | 夜里的四次模型调用（合并、取代、反思、日记），回复坏了就当"今晚不做" | 能用 |
 | `brain/world.py` | 逛的两次模型调用：从今天的标题里挑最多 3 条、看完写见闻和新念头（`prompts/browse_pick.md`、`browse_read.md`）；`brain/ask.py` 是它们共用的"问一句拿 JSON" | 能用 |
 | `brain/leisure/` | 她的空闲时间（决定 24，"你可以"不是"你必须"）：`free.py` 是门（白天、他半小时没说话、一天 3 段、隔 3 小时）和一段空闲的流程（摆菜单、打乱、问她挑、选了事再写见闻）；每样能做的事一个文件：`feeds.py`（翻新闻、刷 B 站）、`book.py`（维基文库读书，带书签）、`curious.py`（查好奇的）。**加新的**：写一个 `Activity` 子类（`base.py`），在 `__init__.py` 的 `default_activities` 加一行 | 能用，10 个测试 |
 | `memory/pastimes.py` | 书签（在读的书，30 天没碰算弃了）和每段空闲的记录 `leisure_log` | 能用 |
-| `brain/reach.py` | 她先开口（决定 10）：`ReachPolicy` 规则的门和由头（状态存关系账的 `reach_*`），`Reacher` 问她一次说不说（`prompts/reach_out.md`）；`respond.py` 的 `tick(send)` 串起来 | 能用 |
-| `brain/respond.py` 的图片部分 | 他发的图作为图片给模型（只能放在用户那条消息里）；`image_note` 存进对话；`keep_sticker` 收进相册；`sticker` 编号 → `Outgoing` 带图；`prompts/sticker_caption.md` 给 inbox 的图起叫法 | 能用，待真机验证 |
+| `brain/reach.py` | 她先开口（决定 10）：`ReachPolicy` 规则的门和由头（见闻、到期的惦记、太久没聊、纪念日、无聊、家里刚发生的事；状态存关系账的 `reach_*`），`Reacher` 问她一次说不说（`prompts/reach_out.md`）；`respond.py` 的 `tick(send)` 串起来 | 能用 |
+| `brain/respond.py` 的图片部分 | 他发的图作为图片给模型（只能放在用户那条消息里）；`image_note` 存进对话；`keep_sticker` 收进相册；`sticker` 编号 → `Outgoing` 带图；`prompts/sticker_caption.md` 给 inbox 的图起叫法 | 能用，真机验证过 |
 | `world/` | 只管"看"，不调模型：`feeds`（RSS / Atom）、`bilibili`（热门、分区榜、热评）、`wiki`（中文维基查一下，`Searcher` 协议）、`reader`（网页 → 正文）、`files`（他分享的 PDF / Word / 文本 → 正文，决定 23）、`sources.json` + `sources.py`（订阅源、取今天的、点开一条）、`wikisource`（维基文库按书名找书、按段读，决定 24）、`days`（节气、节假日和调休，表缓存在 `data/home/`） | 能用 |
 | `world/place.py` + `routines/outside.py` | 她住哪（决定 15）：定位到街区、每天天气、附近的店、街区地图拼图并让她看一次 | 能用 |
 | `routines/` | `nightly.py` 八步（第三版加了 6b：数星期几规律），一个"鱼日"（03:30 到次日 03:30）只跑一次；`browse.py` 只剩手动的 `fish browse`（决定 24 起她空闲时想逛才逛）；`outside.py` 天气和节假日表，微信服务每小时看一眼、一天真取一次；`export.py` 写 `data/notebook_export.md`；`runs.py` 记每个例行做到哪天 | 能用 |
 | `cottage/` | 她的湖边小屋（决定 26），不调模型：`rules.py` 是数字（和 `docs/cottage_rules_zh.md` 一起改）、菜店的货、`layout` 读规则文件第 1 节给她看；`room.py` 是现状文件 `data/cottage/now.json`：`advance` 让时间走（睡觉、饭点吃饭、菜放坏）、`offers` / `act` 是她能做的事、`give` / `put_on_sill` 是他放东西、`for_chat` / `for_leisure` 是她看见的几行；`invented_act` 认她笔记里编的做过的事（有屋子以后不记）。`brain/leisure/cottage.py` 把动作摆进空闲菜单；`FISH_COTTAGE` 开关，默认关 | 能用，`tests/test_cottage.py` |
 | `messages.py` | 电话线和大脑之间传的 `Incoming(text, image, file)` / `Outgoing(text, sticker)`，和图片类型探测、data URL | 能用 |
-| `channels/` | `terminal.py`；`ilink.py` 腾讯 ClawBot 的 HTTP 协议（照官方插件 2.4.10：扫码登录、长轮询 `getupdates`、`sendmessage`、正在输入；收图下载解密、上传发图，AES-128-ECB），`wechat.py` 微信电话线（`login` 扫码存凭证；`WeChatChannel` 只回主人、去重、每行一个气泡、文字后发表情包、出错退避、-14 提示重扫；每轮轮询之间 `tick` 让她有机会先开口，`push` 用上次的对话凭证发） | 文字真机验证过；图片待验证 |
+| `channels/` | `terminal.py`；`ilink.py` 腾讯 ClawBot 的 HTTP 协议（照官方插件 2.4.10：扫码登录、长轮询 `getupdates`、`sendmessage`、正在输入；收图下载解密、上传发图，AES-128-ECB），`wechat.py` 微信电话线（`login` 扫码存凭证；`WeChatChannel` 只回主人、去重、每行一个气泡、文字后发表情包、出错退避、-14 提示重扫；每轮轮询之间 `tick` 让她有机会先开口，`push` 用上次的对话凭证发） | 文字和图片真机验证过 |
 | `memory/stickers.py` | 表情包相册：存图、起叫法、按用过次数排、记用过；同一张图按指纹只收一次；`offer` 每轮给她看常用的 12 张加随机换的其余，相册再大也轮得到没用过的 | 能用 |
 | `routines/stickers.py` | 送她表情包：`import_folder` 把一个文件夹的图拷进收件箱，`adopt_inbox` 一张张让她起叫法收下（`fish stickers` 当场全收，夜里一晚 10 张） | 能用 |
 | `__main__.py` | `python3 -m fish [chat \| nightly \| browse \| show \| stickers [文件夹] \| cottage [put 东西 \| sill 东西] \| wechat [login]]` | 能跑 |

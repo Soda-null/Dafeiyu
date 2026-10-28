@@ -3,7 +3,8 @@
 Two layers. The rules gate costs nothing and runs every poll: on, daytime, at most
 MAX_PER_DAY a day, hours apart, not right after he wrote, not re-asked within hours of a
 "no". Then a trigger must exist: something she saw today worth sharing, a follow-up that
-came due, a long silence, an anniversary, or plain boredom. Only then is the model asked
+came due, a long silence, an anniversary, something that happened at home (decision 26),
+or plain boredom. Only then is the model asked
 once whether she feels like saying something, and what. Not saying anything is her call.
 """
 
@@ -44,11 +45,12 @@ class Triggers:
     silence_hours: float = 0.0
     anniversary: int | None = None
     bored: bool = False
+    home: list[str] = field(default_factory=list)  # what happened in her cottage lately
 
     @property
     def any(self) -> bool:
         return bool(self.seen or self.due or self.silence_hours >= SILENCE_TRIGGER_HOURS
-                    or self.anniversary or self.bored)
+                    or self.anniversary or self.bored or self.home)
 
 
 @dataclass(frozen=True)
@@ -120,7 +122,8 @@ class ReachPolicy:
             return "decided recently"
         return None
 
-    def triggers(self, now: datetime, mood: Mood) -> Triggers:
+    def triggers(self, now: datetime, mood: Mood, home: list[str] | None = None) -> Triggers:
+        """home: lines from her cottage's record for the last few hours, when she has one."""
         store = MemoryStore(self.conn)
         his = self.last_his_message()
         silence = (now - his).total_seconds() / 3600 if his else 0.0
@@ -131,7 +134,7 @@ class ReachPolicy:
         known = self.kv.days_known(now)
         anniversary = known if known in ANNIVERSARIES or (known > 0 and known % 100 == 0) else None
         bored = mood.boredom >= BORED_LEVEL and silence >= BORED_SILENCE_HOURS
-        return Triggers(seen, due, silence, anniversary, bored)
+        return Triggers(seen, due, silence, anniversary, bored, list(home or []))
 
 
 class Reacher:
@@ -153,6 +156,8 @@ class Reacher:
             reasons.append(f"- 今天是你们认识的第 {trig.anniversary} 天")
         if trig.bored:
             reasons.append("- 你有点无聊")
+        for line in trig.home:
+            reasons.append(f"- 家里的事：{line}")
         if trig.silence_hours >= 1:
             since = owner_words(f"他上次找你是 {int(trig.silence_hours)} 小时前。")
         else:

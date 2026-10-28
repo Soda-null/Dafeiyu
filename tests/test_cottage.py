@@ -233,3 +233,27 @@ def test_one_life_not_two(tmp_path):
     assert report["diary"]
     mine = [m.text for m in brain.store.alive("self")]
     assert "想养盆薄荷" in mine and "煮了碗面" not in mine
+
+
+def test_what_happened_at_home_is_a_reason_to_text_him(tmp_path):
+    from fish.brain.reach import ReachPolicy
+    from fish.memory import Relationship
+
+    conn = connect(tmp_path / "fish.db")
+    s = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db", cottage=True)
+    prompts = []
+
+    def respond(messages, json_mode):
+        prompts.append(messages[-1]["content"])
+        return json.dumps({"say": "青菜放坏了，心疼", "asked": [], "shared": []}, ensure_ascii=False)
+
+    brain = Brain(conn, s, FakeLLM(respond), persona_text="你是大肥鱼。")
+    brain.window.append("user", "在吗", "wechat", None, MON - timedelta(hours=2))
+    Relationship(conn).note_active_day(MON - timedelta(hours=2))
+    brain.cottage.load(MON - timedelta(days=4))  # the greens are four days old by now
+    assert brain.consider_reach_out(MON) is None and prompts == []  # nothing has happened yet
+    assert "青菜放坏了，扔了" in brain.cottage.advance(MON).lines
+    assert brain.consider_reach_out(MON).text == "青菜放坏了，心疼"
+    assert "- 家里的事：10:00 青菜放坏了，扔了" in prompts[-1]
+    later = MON + timedelta(hours=4)
+    assert ReachPolicy(conn).triggers(later, brain.moods.load(), home=brain.home_lately(later)).home == []

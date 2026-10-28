@@ -16,7 +16,7 @@ from fish.brain.llm import LLM
 from fish.brain.parse import Reply, parse_episode_close, parse_reply, parse_retry
 from fish.brain.prompt import (JSON_REMINDER, PromptContext, build_chat_messages, build_close_messages,
                                build_fold_messages)
-from fish.brain.reach import Reacher, ReachOut, ReachPolicy, recent_lines
+from fish.brain.reach import RECONSIDER_AFTER, Reacher, ReachOut, ReachPolicy, recent_lines
 from fish.config import Settings, owner_words
 from fish.cottage import Cottage, invented_act
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
@@ -139,6 +139,17 @@ class Brain:
             base.hunger += change.hunger
             base.energy += change.energy
             self.moods.save(base)  # save clamps
+
+    def home_lately(self, now: datetime) -> list[str]:
+        """What happened in her cottage in the last few hours: a reason to text him (decision
+        26). Only recent, so one event does not knock on the gate all day."""
+        if self.cottage is None:
+            return []
+        try:
+            # the room was just brought up to now (tick): what happened this very minute counts
+            return self.cottage.between(now - RECONSIDER_AFTER, now + timedelta(minutes=1))
+        except ValueError:
+            return []
 
     def cottage_text(self, now: datetime, hunger: float) -> str:
         if self.cottage is None:
@@ -423,7 +434,7 @@ class Brain:
         if policy.refused(now) is not None:
             return None
         mood = MoodStore.apply_clock(self.moods.load(), now)
-        trig = policy.triggers(now, mood)
+        trig = policy.triggers(now, mood, home=self.home_lately(now))
         if not trig.any:
             return None
         policy.record_considered(now)  # before asking, so a crash cannot loop on the model
