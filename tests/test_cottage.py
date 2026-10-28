@@ -280,3 +280,24 @@ def test_a_meal_on_time_is_not_news_and_her_lone_message_is_not_his(tmp_path):
     brain.window.append("fish", "中午做了西红柿炒蛋", "wechat", ep.id, datetime(2026, 11, 2, 12, 5))
     brain.close_episode(brain.episodes.open_episode(), datetime(2026, 11, 2, 16, 0))
     assert [m.text for m in brain.store.alive()] == ["想再买点西红柿"]
+
+
+def test_life_shows_her_day_without_her_memories(tmp_path, capsys):
+    from fish.__main__ import life
+    from fish.memory import Diary, MemoryStore, Pastimes
+
+    s = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db", cottage=True)
+    conn = connect(s.db_path)
+    now = MON.replace(hour=15)
+    c = home(tmp_path, MON.replace(hour=7))
+    c.give("南瓜", MON.replace(hour=9))
+    p = Pastimes(conn)
+    p.end_moment(p.begin_moment(MON.replace(hour=14)), "nothing")
+    p.end_moment(p.begin_moment(MON.replace(hour=13)), "cottage", result="洗了碗")  # in the room's record already
+    Diary(conn).write("2026-11-01", "湖边风大，看了半天鸭子。")
+    MemoryStore(conn).add("fact", "他在 Springfield 上学", importance=6, now=now)
+    life(conn, s, 3, now=now)
+    out = capsys.readouterr().out
+    assert "冰箱里有" in out and "南瓜" in out and "09:00 他往冰箱里放了南瓜" in out
+    assert "14:00 什么都没干，发了会儿呆" in out and "洗了碗" not in out
+    assert "看了半天鸭子" in out and "Springfield" not in out

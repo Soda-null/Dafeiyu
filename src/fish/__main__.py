@@ -1,6 +1,8 @@
-"""`python3 -m fish [chat | nightly | browse | show | stickers [folder] | cottage [put 东西 [顿数] | sill 东西] | wechat [login]]`.
+"""`python3 -m fish [chat | nightly | browse | life [天数] | show | stickers [folder] | cottage [put 东西 [顿数] | sill 东西] | wechat [login]]`.
 
 chat          talk to her in the terminal (default). Runs the nightly routine first if due.
+life          her day on one screen: what she is doing, her room, today, this stretch, the last
+              few diaries (`life 7` for a week of them). No memories: that is `show`.
 nightly       run the nightly routine now (safe to repeat: once per day).
 browse        make her browse now (by hand only: she browses in her free time when she likes, decision 24).
 show          print what she remembers: profile, memories, follow-ups, episodes, diary, mood.
@@ -25,7 +27,7 @@ from fish.channels import ILinkClient, TerminalChannel, WeChatChannel, WeChatSta
 from fish.channels.wechat import STATE_FILE
 from fish.config import REPO_ROOT, Settings, load_settings, owner_words
 from fish.cottage import Cottage
-from fish.brain.leisure import moment_line
+from fish.brain.leisure import away, moment_line
 from fish.brain.leisure.book import where
 from fish.memory import (Diary, EpisodeManager, MemoryStore, Pastimes, PhaseStore, ProspectiveStore,
                          Relationship, TraitStore)
@@ -94,6 +96,41 @@ def show(conn: sqlite3.Connection, now: datetime | None = None) -> None:
         print(f"  在追的：{p.title}（{status}，上次 {p.touched[:10]}）")
 
 
+def life(conn: sqlite3.Connection, settings: Settings, days: int = 3, now: datetime | None = None) -> None:
+    """Her life, not her memory: what she is doing and what her day was, in one screen."""
+    now = now or datetime.now()
+    print(f"== 她现在（{now:%m-%d %H:%M}）==")
+    events: list[str] = []
+    if settings.cottage:
+        home = Cottage(settings.db_path.parent / "cottage" / "now.json")
+        try:
+            room = home.load(now)
+        except ValueError as e:
+            raise SystemExit(str(e))
+        if room.doing:
+            print("  " + home.doing_line(room).replace("你", "她", 1))
+        for line in home.lines(room).values():
+            print(f"  {line}")
+        events = home.today(room, now)
+    mood = MoodStore.apply_clock(MoodStore(conn).load(), now)
+    print(f"  心情：{mood.describe()}")
+    phase = PhaseStore(conn).current()
+    if phase.line:
+        print(f"  这阵子：{phase.line}")
+    pastimes = Pastimes(conn)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    events += [moment_line(m) for m in pastimes.moments(midnight, now) if away(m)]
+    print("== 今天 ==")
+    for line in sorted(events) or ["还没什么事"]:
+        print(f"  {line}")
+    reading = [p.title for p in pastimes.all() if p.status == "on"][:3]
+    if reading:
+        print(f"  在读 / 在追：{'、'.join(reading)}")
+    print("== 日记 ==")
+    for day, text in Diary(conn).recent(days) or [("", "还没写过")]:
+        print(f"  {day}  {text}")
+
+
 def give_stickers(brain: Brain, folder: Path | None) -> None:
     inbox = inbox_of(brain)
     if folder is not None:
@@ -135,13 +172,13 @@ def cottage(settings: Settings, sub: str | None, rest: list[str]) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="fish", description="大肥鱼")
-    ap.add_argument("command", nargs="?", choices=["chat", "nightly", "browse", "show", "stickers", "cottage",
+    ap.add_argument("command", nargs="?", choices=["chat", "nightly", "browse", "life", "show", "stickers", "cottage",
                                                    "wechat"], default="chat")
-    ap.add_argument("subcommand", nargs="?", help="wechat: login; stickers: a folder of pictures; cottage: put / sill")
+    ap.add_argument("subcommand", nargs="?", help="wechat: login; stickers: a folder of pictures; cottage: put / sill; life: how many diaries")
     ap.add_argument("rest", nargs="*", help="cottage put / sill: what")
     args = ap.parse_args(argv)
     if args.subcommand is not None and (args.command, args.subcommand) != ("wechat", "login") \
-            and args.command not in ("stickers", "cottage"):
+            and args.command not in ("stickers", "cottage", "life"):
         ap.error(f"unexpected argument: {args.subcommand}")
     if args.rest and args.command != "cottage":
         ap.error(f"unexpected argument: {' '.join(args.rest)}")
@@ -153,6 +190,11 @@ def main(argv: list[str] | None = None) -> None:
     conn = connect(settings.db_path)
     if args.command == "show":
         show(conn)
+        return
+    if args.command == "life":
+        if args.subcommand is not None and not args.subcommand.isdigit():
+            ap.error("life 后面只能跟天数，比如 life 7")
+        life(conn, settings, int(args.subcommand or 3))
         return
     if args.command == "wechat" and args.subcommand == "login":
         previous = WeChatState.load(WECHAT_STATE) if WECHAT_STATE.exists() else None

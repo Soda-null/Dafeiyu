@@ -2,6 +2,14 @@
 # Look at her on the always-on box from your laptop, every time shown in your timezone
 # (TZ= in this checkout's .env; the box's own clock may be elsewhere). See docs/box_zh.md.
 #
+# Short form: `yu` (a one-line wrapper in ~/.local/bin, see docs/box_zh.md) is this script.
+#
+#   yu                her day: what she is doing, her room, today, the last 3 diaries
+#   yu 7              the same with a week of diaries (any number)
+#   yu mem            what she remembers (same as show)
+#   yu room           her cottage; yu put 鸡蛋 [顿数] / yu sill 一盆薄荷 put something in
+#   yu log            live WeChat log
+#
 #   scripts/fish.sh show      what she remembers right now
 #   scripts/fish.sh notebook  last night's exported notebook (diary, notes, phase)
 #   scripts/fish.sh logs      live WeChat log (Ctrl-C to stop)
@@ -15,10 +23,14 @@ BOX="${BOX:-ubuntu-tailscale}"
 cd "$(dirname "$0")/.."
 TZ_USER="$(sed -n 's/^TZ=//p' .env 2>/dev/null | tail -1)"
 TZ_USER="${TZ_USER:-UTC}"
-case "${1:-show}" in
-    show)     ssh "$BOX" "cd Dafeiyu && TZ=$TZ_USER .venv/bin/python -m fish show" ;;
+case "${1:-life}" in
+    life)     ssh "$BOX" "cd Dafeiyu && TZ=$TZ_USER .venv/bin/python -m fish life ${2:-}" ;;
+    [0-9]*)   ssh "$BOX" "cd Dafeiyu && TZ=$TZ_USER .venv/bin/python -m fish life $1" ;;
+    put|sill) ssh "$BOX" "cd Dafeiyu && TZ=$TZ_USER .venv/bin/python -m fish cottage $*" ;;
+    room)     ssh "$BOX" "cd Dafeiyu && TZ=$TZ_USER .venv/bin/python -m fish cottage" ;;
+    mem|show) ssh "$BOX" "cd Dafeiyu && TZ=$TZ_USER .venv/bin/python -m fish show" ;;
     notebook) ssh "$BOX" "cat Dafeiyu/data/notebook_export.md" ;;
-    logs)     ssh -t "$BOX" "TZ=$TZ_USER journalctl --user -u dafeiyu-wechat -f -o short-iso" ;;
+    log|logs) ssh -t "$BOX" "TZ=$TZ_USER journalctl --user -u dafeiyu-wechat -f -o short-iso" ;;
     sent)     ssh "$BOX" "TZ=$TZ_USER journalctl --user -u dafeiyu-wechat -o short-iso --no-pager | grep '→' | tail -20" ;;
     timers)   ssh "$BOX" "TZ=$TZ_USER systemctl --user list-timers --no-pager | grep -E 'NEXT|dafeiyu'" ;;
     browse)   ssh "$BOX" "cd Dafeiyu && TZ=$TZ_USER .venv/bin/python -m fish browse" ;;
@@ -34,5 +46,5 @@ case "${1:-show}" in
             "$folder/" "$BOX:$stage/"
         ssh "$BOX" "cd Dafeiyu && TZ=$TZ_USER .venv/bin/python -m fish stickers ~/$stage && rm -rf ~/$stage" ;;
     cottage)  shift; ssh "$BOX" "cd Dafeiyu && TZ=$TZ_USER .venv/bin/python -m fish cottage $*" ;;
-    *) echo "usage: scripts/fish.sh [show|notebook|logs|sent|timers|browse|stickers <folder>|cottage ...]" >&2; exit 2 ;;
+    *) echo "用法：yu [天数] | mem | room | put 东西 [顿数] | sill 东西 | log | sent | notebook | timers | browse | stickers <文件夹>" >&2; exit 2 ;;
 esac
