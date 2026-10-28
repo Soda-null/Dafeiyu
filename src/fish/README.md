@@ -32,6 +32,9 @@
 | `world/place.py` + `routines/outside.py` | 她住哪（决定 15）：定位到街区、每天天气、附近的店、街区地图拼图并让她看一次 | 能用 |
 | `routines/` | `nightly.py` 八步（第三版加了 6b：数星期几规律），一个"鱼日"（03:30 到次日 03:30）只跑一次；`browse.py` 只剩手动的 `fish browse`（决定 24 起她空闲时想逛才逛）；`outside.py` 天气和节假日表，微信服务每小时看一眼、一天真取一次；`export.py` 写 `data/notebook_export.md`；`runs.py` 记每个例行做到哪天 | 能用 |
 | `cottage/` | 她的湖边小屋（决定 26），不调模型：`rules.py` 是数字（和 `docs/cottage_rules_zh.md` 一起改）、菜店的货、`layout` 读规则文件第 1 节给她看；`room.py` 是现状文件 `data/cottage/now.json`：`advance` 让时间走（睡觉、饭点吃饭、菜放坏）、`offers` / `act` 是她能做的事、`give` / `put_on_sill` 是他放东西、`for_chat` / `for_leisure` 是她看见的几行；`invented_act` 认她笔记里编的做过的事（有屋子以后不记）。`brain/leisure/cottage.py` 把动作摆进空闲菜单；`FISH_COTTAGE` 开关，默认开（决定 28） | 能用，`tests/test_cottage.py` |
+| `msgs.py` | 节点之间传的消息（合同，`nodes_design_zh.md` §3）：`HeSaid`、`SheSaid`、`TimePassed`、`DayEnded`、`HomeEvent` 等，都不可改；不 import 项目里任何东西 | 第 1 步，还没接进服务 |
+| `bus.py` | 总线：`subscribe(消息类, 函数)`、`publish(消息)`；话题就是消息的类；一个订阅者出错不影响别的，测试里一起报、服务里记日志 | 第 1 步，还没接进服务 |
+| `clock.py` | 时钟节点：每格发 `TimePassed`，跨过 03:30 发 `DayEnded`（睡了几晚就补几天）；`day_of` 算一个时刻属于她哪一天 | 第 1 步，还没接进服务 |
 | `messages.py` | 电话线和大脑之间传的 `Incoming(text, image, file)` / `Outgoing(text, sticker)`，和图片类型探测、data URL | 能用 |
 | `channels/` | `terminal.py`；`ilink.py` 腾讯 ClawBot 的 HTTP 协议（照官方插件 2.4.10：扫码登录、长轮询 `getupdates`、`sendmessage`、正在输入；收图下载解密、上传发图，AES-128-ECB），`wechat.py` 微信电话线（`login` 扫码存凭证；`WeChatChannel` 只回主人、去重、每行一个气泡、文字后发表情包、出错退避、-14 提示重扫；每轮轮询之间 `tick` 让她有机会先开口，`push` 用上次的对话凭证发） | 文字和图片真机验证过 |
 | `memory/stickers.py` | 表情包相册：存图、起叫法、按用过次数排、记用过；同一张图按指纹只收一次；`offer` 每轮给她看常用的 12 张加随机换的其余，相册再大也轮得到没用过的 | 能用 |

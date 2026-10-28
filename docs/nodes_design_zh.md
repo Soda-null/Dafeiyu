@@ -1,7 +1,7 @@
 # 节点化：像 ROS 那样把她拆开
 
 > **是什么：** 架构稿。把现在"大脑一个文件管一切"的写法，改成 ROS 式的节点 + 消息：每个模块只认约定好的消息，不伸手进别人内部；加新功能是加一个节点，不是改一堆老文件。
-> **地位：** 草稿（用户 2026-10-28 晚："我要的是思路，类似 ros 一样的模块化思想"）。看完点头才动代码；动了以后 `architecture_zh.md` 按它改。
+> **地位：** 现行方向（用户 2026-10-28 晚："我要的是思路，类似 ros 一样的模块化思想"，"开始第 1 步"）。第 1 步做完（10-28）；第 2 步起按 §4 一步一步来，每步用户点头。`architecture_zh.md` 第 2 步做完再改。
 > **读法：** §1 看一眼问题在哪；§2 是节点清单；§3 是消息清单（最要紧的一节）；§4 是怎么一步步搬，每步都能单独做、单独停。
 
 ## 0. 一句话
@@ -51,7 +51,7 @@
 
 1. `brain`、`memory`、`mood` 不许 import `channels`。
 2. `memory`、`cottage`、`world` 不调模型。
-3. **节点之间只能 import `msgs.py` 和 `bus.py`，以及对方 `__init__.py` 导出的服务。** 不许 import 对方的子文件（`from fish.memory.window import FOLD_BATCH` 这种现在有 13 处，全部收掉）。不许在节点外写 SQL。`tests/test_skeleton.py` 查。
+3. **节点之间只能 import `msgs.py` 和 `bus.py`，以及对方 `__init__.py` 导出的服务。** 不许 import 对方的子文件（`from fish.memory.window import FOLD_BATCH` 这种现在有 26 处，一半藏在函数里面，全部收掉）。不许在节点外写 SQL。`tests/test_skeleton.py` 查。
 
 ## 3. 消息清单（合同）
 
@@ -83,7 +83,7 @@ Reply(say, sticker, mood_word, notes, followups, asked, corrections, look)      
 
 | 步 | 做什么 | 动哪些文件 | 不动什么 | 大概多大 |
 |---|---|---|---|---|
-| 1 | **立合同 + 总线。** 写 `msgs.py`、`bus.py`、`clock`；`tests/test_skeleton.py` 加第三条铁律的检查（先只报告不拦） | 新文件为主 | 行为一点不变 | 半天 |
+| 1 ✅ | **立合同 + 总线。** 写 `msgs.py`、`bus.py`、`clock.py`；`tests/test_skeleton.py` 加第三条铁律的检查：现有 26 处跨节点 import、3 个越界写 SQL 的文件记成老账放过，**新的一律失败**；修掉一处就得从老账里划掉（测试会提醒），清单只会变短 | 新文件为主 | 行为一点不变 | 10-28 做完 |
 | 2 | **拆 `handle()`。** 把"收集"拆成各节点的服务，拼成 `Situation`；`brain.reply(Situation)` 只拼提示词、问、读。`app.py` 当 launch 文件 | `brain/respond.py` 拆成 `brain/reply.py`（纯）+ `app.py`（接线） | 提示词文本、记忆规则、测试的断言 | 一到两天，最大的一步 |
 | 3 | **把"先开口""空闲""小屋动作"改成订阅。** 它们订 `TimePassed` / `HomeEvent`，不再由 `respond.tick()` 挨个调 | `reach/`、`leisure/` 成独立节点 | 它们各自内部的规则 | 一天 |
 | 4 | **心情只订消息。** 饿困跟着 `TimePassed` / `SheAte` / `SheSlept` 走（决定 32 已经这么定了，这步只是把"小屋改心情"从 `respond.move_time` 搬成订阅） | `mood/`、`cottage/` | 数值 | 半天 |
