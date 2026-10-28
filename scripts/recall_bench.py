@@ -87,9 +87,9 @@ def known_then(mems: list[Memory], now: datetime) -> list[Memory]:
 
 def card_then(alive: list[Memory]) -> set[int]:
     """store.profile() and store.pacts() as they would have been: the card (pinned, important
-    or about him himself, a pact that is not open) and the open promises (memory v3 step 4).
+    or about him himself, his nickname; no promise) and the open promises (memory v3 step 4).
     Uses the final last_time and pact state, so the order among unpinned facts is approximate."""
-    card = [m for m in alive if m.pact_state not in ("open", "dropped") and (
+    card = [m for m in alive if m.pact_state is None and (
         m.kind == "fact" and (m.pinned or m.importance >= PROFILE_IMPORTANCE or m.about == "本人")
         or m.pact and m.pinned)]
     card.sort(key=card_order)

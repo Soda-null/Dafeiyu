@@ -55,13 +55,19 @@ def test_a_promise_heard_in_chat_is_pinned_and_open_however_it_was_filed(tmp_pat
     assert cherry.pact == "both"
     # without a promise word: "等…考完…给你拍" is one too
     assert promise("他说等期末考完他去海边玩，给我拍海的照片", "event") == "him"
+    assert promise("他和我说好了周末一起看电影", "event") == "him"  # 和我说好 is to her
     assert [p.id for p in store.pacts()] == [cherry.id, poem.id, sea.id]
 
 
 def test_a_promise_to_someone_else_or_written_by_her_alone_is_not_a_pact(tmp_path):
     store = store_of(tmp_path)
     for text in ("他答应室友周末一起去爬山", "他跟室友说好周六打球", "他答应他妈过年回家",
-                 "他在等室友，给我发了个消息", "他保证下次不熬夜了"):
+                 "他在等室友，给我发了个消息", "他保证下次不熬夜了",
+                 # waiting is not a condition, and what he sent her is not something to come
+                 "他等公交等了好久，给我发了个哭脸", "他等外卖等到十点，结果给我发了张照片吐槽",
+                 # 跟我说 is him telling her; a third person before the promise word is somebody else's
+                 "他2027-01-20跟我说他和导师约好了下周见面", "他说他跟导师保证了下周交初稿，给我吐槽了半天",
+                 "他和室友约好周末去爬山，回来给我看照片"):
         m = store.note("event", text, importance=5, about="日常", now=T0, heard="chat")
         assert m.pact is None and not m.pinned, text
     # her own plan from browsing or the night: never a pact, though the words are a promise's
@@ -162,12 +168,14 @@ def test_a_follow_up_about_an_open_promise_is_never_let_go(tmp_path):
     brain, conn, _ = make_brain(tmp_path)
     store, later = MemoryStore(conn), ProspectiveStore(conn)
     sea = store.note("event", SEA, importance=5, tags=["海边", "期末"], now=T0, heard="chat")
-    brain.add_followup("期末考完了吗，海边去了没", "2027-01-20", T0)
+    brain.add_followup("期末考完去海边了吗", "2027-01-20", T0)
     brain.add_followup("问他感冒好了没", "2027-01-11", T0)
-    sea_ask, cold = later.open()[::-1]
-    assert sea_ask.source_memory == sea.id and cold.source_memory is None
+    # a shared tag (期末) alone does not tie the exam's result to the promise of the sea
+    brain.add_followup("问问他期末考得怎么样", "2027-01-15", T0)
+    sea_ask, cold, exam = sorted(later.open(), key=lambda f: f.id)
+    assert sea_ask.source_memory == sea.id and cold.source_memory is None and exam.source_memory is None
     gone = later.expire(T0 + timedelta(days=60))
-    assert [f.id for f in gone] == [cold.id] and [f.id for f in later.open()] == [sea_ask.id]
+    assert {f.id for f in gone} == {cold.id, exam.id} and [f.id for f in later.open()] == [sea_ask.id]
     store.settle(sea.id, "kept", T0 + timedelta(days=61))  # kept: the question can go now
     assert [f.id for f in later.expire(T0 + timedelta(days=62))] == [sea_ask.id]
 
@@ -198,8 +206,23 @@ def test_the_close_settles_only_a_promise_it_was_shown(tmp_path):
     aquarium = next(m for m in store.alive() if "海洋馆" in m.text)  # a close note is heard from him
     assert (aquarium.pact, aquarium.pact_state) == ("him", "open")
     assert [p.id for p in store.pacts()] == [aquarium.id, poem.id]
-    card = [m for m in store.profile() if m.id == sea.id]
-    assert card and card[0].line().endswith("（兑现了）")
+    # kept: off the block and never on her card; pinned, it comes back when he brings it up
+    assert sea.id not in {m.id for m in store.profile()}
+    brain.respond("还记得我拍的海边吗", now=T0 + timedelta(days=20, hours=3, minutes=5))
+    recalled = section(llm.calls[-1][0][0]["content"], "这句话让你想起的")
+    assert f"{SEA}（兑现了）" in recalled
+
+
+def test_kept_promises_never_crowd_his_allergy_off_her_card(tmp_path):
+    store = store_of(tmp_path)
+    nut = store.note("fact", "他对花生过敏", importance=5, about="本人", now=T0)
+    name = store.note("fact", "他给我起的外号是胖鱼", importance=5, now=T0, heard="chat")
+    kept = [store.note("event", f"他答应我第{i}周去Springfield给我拍照片", importance=5, now=T0, heard="chat")
+            for i in range(1, 13)]
+    assert len({m.id for m in kept}) == 12 and all(m.pact == "him" for m in kept)
+    for m in kept:
+        store.settle(m.id, "kept", T0 + timedelta(days=1))
+    assert [m.id for m in store.profile()] == [name.id, nut.id] and store.pacts() == []
 
 
 # --- a pact survives what happens to it at night ---------------------------------------------

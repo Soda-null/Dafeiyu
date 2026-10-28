@@ -478,13 +478,13 @@ class MemoryStore:
         safe (allergies, illness, medicine), then the rest by when it last came up. Facts about
         him himself (about = 本人, decision 21) always qualify. Not by stability (memory v3
         §B3): how strongly she holds a fact says nothing about whether it is who he is now.
-        A pact is on it when it is not a fact too (his nickname, a promise he kept); an open
-        one has its own block (`pacts`), one called off is not on it."""
+        His nickname is on it (a pact with no state); a promise is not, whatever its state: an
+        open one has its own block (`pacts`), a settled one is pinned and comes back when
+        recalled (§B3), so kept promises never crowd his allergy off the card."""
         rows = self.conn.execute(
-            "SELECT * FROM memories WHERE superseded_by IS NULL"
+            "SELECT * FROM memories WHERE superseded_by IS NULL AND pact_state IS NULL"
             " AND ((kind = 'fact' AND (pinned = 1 OR importance >= ? OR about = '本人'))"
-            "      OR (pact IS NOT NULL AND pinned = 1))"
-            " AND COALESCE(pact_state, '') NOT IN ('open', 'dropped')", (PROFILE_IMPORTANCE,)
+            "      OR (pact IS NOT NULL AND pinned = 1))", (PROFILE_IMPORTANCE,)
         )
         return sorted(map(_from_row, rows), key=card_order)[:limit]
 
@@ -498,18 +498,15 @@ class MemoryStore:
         return [_from_row(r) for r in rows]
 
     def pact_for(self, text: str) -> Memory | None:
-        """The open promise a follow-up is about ("海边去了没" and the promise of the sea): one
-        whose tag it says, else the one it overlaps most, at PACT_LINK or more."""
-        open_pacts = self.pacts(limit=-1)
-        tagged = pk.triggered(text, open_pacts)
-        best = max(open_pacts, key=lambda p: (p.id in tagged, overlap(text, p.text)), default=None)
-        if best is not None and (best.id in tagged or overlap(text, best.text) >= PACT_LINK):
-            return best
-        return None
+        """The open promise a follow-up is about ("期末考完去海边了吗" and the promise of the
+        sea): the one it overlaps most, at PACT_LINK or more. A shared tag alone is not enough:
+        "问问他期末考得怎么样" says 期末 too, and a linked follow-up never runs out."""
+        best = max(self.pacts(limit=-1), key=lambda p: overlap(text, p.text), default=None)
+        return best if best is not None and overlap(text, best.text) >= PACT_LINK else None
 
     def settle(self, memory_id: int, state: str, now: datetime | None = None) -> Memory:
         """He kept a promise, or said it is off: it leaves the block. The memory stays pinned and
-        its words stay as they were; a kept one reads "（兑现了）" and is on her card."""
+        its words stay as they were, read with "（兑现了）" when it is recalled; never on her card."""
         if state not in pk.STATES[1:]:
             raise ValueError(f"a pact is settled as kept or dropped, got {state!r}")
         now = now or datetime.now()
