@@ -103,6 +103,29 @@ def test_mentioned_is_by_words_and_tags_only(tmp_path):
     assert mentioned("昨天干嘛了", [home, milk]) == []  # a time word touches nothing
 
 
+def test_mentioned_reaches_only_allergy_facts_through_the_allergen_table(tmp_path):
+    store = MemoryStore(connect(tmp_path / "fish.db"))
+    fav = store.note("fact", "他最爱吃花生酱拌面", importance=8, about="本人", now=T0)
+    allergy = store.note("fact", "他吃了会起疹子", importance=8, about="本人", tags=["花生过敏"], now=T0)
+    assert mentioned("今晚吃宫保鸡丁", [fav, allergy]) == [allergy]  # a peanut he loves is no warning
+    joined = store.note("fact", "他不能多吃", importance=8, about="本人", tags=["花", "生过敏"], now=T0)
+    assert mentioned("今晚吃宫保鸡丁", [joined]) == []  # keys never match across tag boundaries
+
+
+def test_a_corrected_card_fact_still_shows_what_she_used_to_think(tmp_path):
+    brain, conn, llm = make_brain(tmp_path)
+    store = MemoryStore(conn)
+    old = store.note("fact", "他住3号楼", importance=8, about="本人", tags=["宿舍"], now=T0 - timedelta(days=10))
+    new = store.correct(old.id, "他住7号楼", now=T0 - timedelta(days=5))
+    sister = store.note("fact", "他有个妹妹叫小雨", importance=8, about="本人", now=T0 - timedelta(days=5))
+    assert {new.id, sister.id} <= {m.id for m in store.profile()}
+
+    brain.respond("今天好累", now=T0)  # not about the dorm: the card shows the correction anyway
+    card = section(llm.calls[-1][0][0]["content"], "你一直记得的关于他的事")
+    assert f"[#{new.id}] 他住7号楼\n  （你之前记的是：他住3号楼）" in card
+    assert card.count("之前记的是") == 1  # the sister was never corrected
+
+
 def test_the_card_is_pinned_then_safety_then_latest_not_most_stable(tmp_path):
     store = MemoryStore(connect(tmp_path / "fish.db"))
     old = store.note("fact", "他学机械", importance=8, about="本人", arousal=0.9, now=T0 - timedelta(days=60))

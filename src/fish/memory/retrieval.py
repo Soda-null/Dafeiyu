@@ -18,6 +18,7 @@ touches, with a small table so "宫保鸡丁" reaches "he is allergic to peanuts
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -36,6 +37,8 @@ DEFAULT_BUDGET_CHARS = 400
 FILLER = set("的了吗呢吧啊呀哦嗯哈么嘛呗啦哇噢就也都还又很太这那个")
 SHORT_CUE = 6
 # Only for marking a card fact as touched: what someone allergic to X runs into without saying X.
+# It reaches allergy facts only: "他最爱吃花生酱拌面" is not touched by "宫保鸡丁".
+ALLERGY = re.compile(r"过敏|不耐(?!烦)")
 ALLERGEN_CUES = {
     "花生": ("宫保鸡丁", "花生酱", "鱼皮花生"),
     "乳糖": ("牛奶", "奶茶", "拿铁", "芝士"),
@@ -90,8 +93,9 @@ def mentioned(line: str, memories: list[Memory], embedder: Embedder | None = Non
     embedder = embedder or BigramEmbedder()
     out = []
     for m in memories:
-        hit = embedder.relevance(line, m) >= STRONG_CUE or any(
-            key in m.text + "".join(m.tags) and any(w in line for w in words)
+        allergy = any(ALLERGY.search(x) for x in (m.text, *m.tags))
+        hit = embedder.relevance(line, m) >= STRONG_CUE or allergy and any(
+            any(key in x for x in (m.text, *m.tags)) and any(w in line for w in words)
             for key, words in ALLERGEN_CUES.items())
         if hit:
             out.append(m)

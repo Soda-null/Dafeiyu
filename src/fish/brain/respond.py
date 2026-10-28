@@ -122,13 +122,15 @@ class Brain:
         touched = mentioned(user_text, profile)
         for m in touched:
             self.store.touch(m.id, now)
+        formers = {m.id: f.text for m in profile if (f := self.store.former(m.id)) is not None}
         recalled = recall(self.store, cue_for(user_text, last_fish), now,
                           embedder=TimeCued(BigramEmbedder(), now), skip={m.id for m in profile})
         shared, shared_note = self.open_shared(incoming)
         ctx = PromptContext(
             persona=self.persona, now=now, mood=mood,
             relationship=self.relationship.stats(now),
-            profile=profile, mentioned={m.id for m in touched}, diary=self.diary.recent(2),
+            profile=profile, mentioned={m.id for m in touched}, formers=formers,
+            diary=self.diary.recent(2),
             recalled=recalled, followups=self.prospective.due(now)[:DUE_SHOWN],
             summary=ep.running_summary, window=window, user_text=user_text,
             limit=self.settings.prompt_chars,
