@@ -17,15 +17,19 @@ from pathlib import Path
 
 from typing import Callable
 
-from fish.brain.leisure import Leisure, away, default_activities, moment_line, pastimes_line
+from fish.app import wire
+from fish.brain.leisure import Leisure, LeisureNode, away, default_activities, moment_line, pastimes_line
 from fish.brain.llm import LLM
 from fish.brain.parse import Reply, parse_episode_close
 from fish.brain.prompt import Situation, build_close_messages, build_fold_messages, render_day
-from fish.brain.reach import HOME_LATELY, Reacher, ReachOut, ReachPolicy, recent_lines
+from fish.brain.reach import HOME_LATELY, ReachNode, ReachOut
+from fish.bus import Bus
+from fish.clock import Clock
 from fish.brain.reply import FALLBACK_SAY, PLAIN_REMINDER, Replier, plain_text  # noqa: F401 (tests import them here)
 from fish.config import Settings, owner_words
 from fish.cottage import Cottage, invented_act
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
+from fish.msgs import SheSaid, TimePassed
 from fish.memory import (ABOUT_HIM_KINDS, FOLD_BATCH, PACT_LINK, Diary, Episode, EpisodeManager, Memory,
                          MemoryStore, Moment, Pastimes, PhaseStore, ProspectiveStore, Recollector, Relationship,
                          StickerAlbum, TraitStore, Window, asks_recall, echoes_her, his_line, keys_of, overlap,
@@ -86,6 +90,18 @@ class Brain:
         self.recollector = Recollector(conn, store=self.store, prospective=self.prospective,
                                        episodes=self.episodes, window=self.window, diary=self.diary,
                                        phases=self.phases, relationship=self.relationship)
+        # the nodes that live on time (docs/nodes_design_zh.md step 3), wired in app.py
+        self.bus = Bus()
+        self.clock = Clock(self.bus)
+        self._say: Callable[[str], bool] = lambda text: False  # the channel's send, set each tick
+        self._channel = "wechat"
+        self._first_lines = 0  # lines she said first, so tick can tell its channel
+        self.reach = ReachNode(self.bus, conn, enabled=settings.reach_out, max_per_day=settings.reach_max_per_day,
+                               llm=lambda: self.llm, persona=self.persona, window=self.window,
+                               kitchen=self.cottage is not None, home_lately=self.home_lately,
+                               say=lambda text: self._say(text), channel=lambda: self._channel)
+        self.leisure_node = LeisureNode(self.free_time)
+        wire(self.bus, room=self.on_time, reach=self.reach, leisure=self.leisure_node, chat=self.keep_her_line)
 
     # the model and the searcher belong to the brain proper; tests swap the model after building
     @property
@@ -359,46 +375,38 @@ class Brain:
     # --- she speaks first (decision 10) ----------------------------------------
 
     def consider_reach_out(self, now: datetime | None = None) -> ReachOut | None:
-        """Whether she wants to say something right now. Cheap unless the gate opens."""
-        now = now or datetime.now()
-        policy = ReachPolicy(self.conn, enabled=self.settings.reach_out,
-                             max_per_day=self.settings.reach_max_per_day)
-        if policy.refused(now) is not None:
-            return None
-        mood = MoodStore.apply_clock(self.moods.load(), now, kitchen=self.cottage is not None)
-        trig = policy.triggers(now, mood, home=self.home_lately(now))
-        if not trig.any:
-            return None
-        policy.record_considered(now)  # before asking, so a crash cannot loop on the model
-        return Reacher(self.llm, self.persona).decide(now, mood, trig, recent_lines(self.window))
+        """Whether she wants to say something right now (the reach node's question)."""
+        return self.reach.consider(now or datetime.now())
 
-    def commit_reach_out(self, ro: ReachOut, channel: str, now: datetime | None = None) -> None:
-        """She said it and it went through: remember it as part of the conversation."""
-        now = now or datetime.now()
-        stale = self.episodes.stale(now)
+    def on_time(self, m: TimePassed) -> None:
+        self.move_time(m.now)
+
+    def keep_her_line(self, m: SheSaid) -> None:
+        """A line she said first went through: it is part of the conversation now, and the
+        follow-ups it asked about are done."""
+        if not m.first:
+            return
+        self._first_lines += 1
+        stale = self.episodes.stale(m.at)
         if stale is not None:
-            self.close_episode(stale, now)
-        ep = self.episodes.open_episode() or self.episodes.start(channel, now)
-        self.window.append("fish", ro.text, channel, ep.id, now)
-        self.episodes.touch(ep.id, now)
+            self.close_episode(stale, m.at)
+        ep = self.episodes.open_episode() or self.episodes.start(m.channel, m.at)
+        self.window.append("fish", m.text, m.channel, ep.id, m.at)
+        self.episodes.touch(ep.id, m.at)
         open_ids = {f.id for f in self.prospective.open()}
-        for i in ro.asked:
+        for i in m.asked:
             if i in open_ids:
                 self.prospective.close(i, episode=ep.id)
-        ReachPolicy(self.conn).record_sent(now, ro)
 
     def tick(self, send: Callable[[str], bool], channel: str = "wechat",
              now: datetime | None = None) -> bool:
-        """Called by a channel between polls. True when she reached out and it was delivered;
-        otherwise it may be one of her free moments."""
-        now = now or datetime.now()
-        self.move_time(now)
-        ro = self.consider_reach_out(now)
-        if ro is not None and send(ro.text):
-            self.commit_reach_out(ro, channel, now)
-            return True
-        self.free_time(now)
-        return False
+        """Called by a channel between polls: the clock moves one step and the nodes that live
+        on time do what they do (app.py says who, in what order). True when she said something
+        first and it went through."""
+        self._say, self._channel = send, channel
+        before = self._first_lines
+        self.clock.tick(now or datetime.now())
+        return self._first_lines > before
 
     def free_time(self, now: datetime | None = None) -> Moment | None:
         """A free moment, if she has one now: she may do something, or nothing (decision 24)."""

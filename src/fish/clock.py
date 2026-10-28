@@ -1,7 +1,9 @@
 """The clock node (docs/nodes_design_zh.md §2): every tick it publishes TimePassed, and when a
 tick crosses 03:30, where her day ends, DayEnded for the day that just finished.
 
-Not wired into the running service yet (step 3 of the plan); nothing subscribes today.
+Every tick is published, even one at the same moment as the last or before it (tests set the
+clock by hand; each subscriber decides what a repeated moment means, as the cottage already
+does). A day ends only when the clock moves forward across 03:30.
 """
 
 from __future__ import annotations
@@ -23,15 +25,17 @@ class Clock:
     def __init__(self, bus: Bus) -> None:
         self.bus = bus
         self.last: datetime | None = None
+        self.ended: date | None = None  # the latest day already announced over: never twice
 
     def tick(self, now: datetime) -> None:
         since, self.last = self.last, now
-        if since is not None and now <= since:
-            return  # the clock never runs backwards; a repeated tick is not news
         self.bus.publish(TimePassed(now, since))
-        if since is not None:
+        if since is not None and now > since:
             # every day that ended between the two ticks, oldest first (a laptop asleep for two nights)
             day = day_of(since)
+            if self.ended is not None:
+                day = max(day, self.ended + timedelta(days=1))
             while day < day_of(now):
+                self.ended = day
                 self.bus.publish(DayEnded(day, now))
                 day += timedelta(days=1)

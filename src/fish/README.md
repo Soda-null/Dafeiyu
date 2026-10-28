@@ -27,15 +27,16 @@
 | `brain/world.py` | 逛的两次模型调用：从今天的标题里挑最多 3 条、看完写见闻和新念头（`prompts/browse_pick.md`、`browse_read.md`）；`brain/ask.py` 是它们共用的"问一句拿 JSON" | 能用 |
 | `brain/leisure/` | 她的空闲时间（决定 24，"你可以"不是"你必须"）：`free.py` 是门（白天、他半小时没说话、一天 3 段、隔 3 小时）和一段空闲的流程（摆菜单、打乱、问她挑、选了事再写见闻）；每样能做的事一个文件：`feeds.py`（翻新闻、刷 B 站）、`book.py`（维基文库读书，带书签）、`curious.py`（查好奇的）。**加新的**：写一个 `Activity` 子类（`base.py`），在 `__init__.py` 的 `default_activities` 加一行 | 能用，10 个测试 |
 | `memory/pastimes.py` | 书签（在读的书，30 天没碰算弃了）和每段空闲的记录 `leisure_log` | 能用 |
-| `brain/reach.py` | 她先开口（决定 10）：`ReachPolicy` 规则的门和由头（见闻、到期的惦记、太久没聊、纪念日、无聊、家里刚发生的事；状态存关系账的 `reach_*`），`Reacher` 问她一次说不说（`prompts/reach_out.md`）；`respond.py` 的 `tick(send)` 串起来 | 能用 |
+| `brain/reach.py` | 她先开口（决定 10）：`ReachNode` 是节点（第 3 步），订"时间走了"、发出去就在总线上发 `SheSaid`；`ReachPolicy` 规则的门和由头（见闻、到期的惦记、太久没聊、纪念日、无聊、家里刚发生的事；状态存关系账的 `reach_*`），`Reacher` 问她一次说不说（`prompts/reach_out.md`）；`respond.py` 的 `tick(send)` 串起来 | 能用 |
 | `brain/respond.py` 的图片部分 | 他发的图作为图片给模型（只能放在用户那条消息里）；`image_note` 存进对话；`keep_sticker` 收进相册；`sticker` 编号 → `Outgoing` 带图；`prompts/sticker_caption.md` 给 inbox 的图起叫法 | 能用，真机验证过 |
 | `world/` | 只管"看"，不调模型：`feeds`（RSS / Atom）、`bilibili`（热门、分区榜、热评）、`wiki`（中文维基查一下，`Searcher` 协议）、`reader`（网页 → 正文）、`files`（他分享的 PDF / Word / 文本 → 正文，决定 23）、`sources.json` + `sources.py`（订阅源、取今天的、点开一条）、`wikisource`（维基文库按书名找书、按段读，决定 24）、`days`（节气、节假日和调休，表缓存在 `data/home/`） | 能用 |
 | `world/place.py` + `routines/outside.py` | 她住哪（决定 15）：定位到街区、每天天气、附近的店、街区地图拼图并让她看一次 | 能用 |
 | `routines/` | `nightly.py` 八步（第三版加了 6b：数星期几规律），一个"鱼日"（03:30 到次日 03:30）只跑一次；`browse.py` 只剩手动的 `fish browse`（决定 24 起她空闲时想逛才逛）；`outside.py` 天气和节假日表，微信服务每小时看一眼、一天真取一次；`export.py` 写 `data/notebook_export.md`；`runs.py` 记每个例行做到哪天 | 能用 |
 | `cottage/` | 她的湖边小屋（决定 26），不调模型：`rules.py` 是数字（和 `docs/cottage_rules_zh.md` 一起改）、菜店的货、`layout` 读规则文件第 1 节给她看；`room.py` 是现状文件 `data/cottage/now.json`：`advance` 让时间走（睡觉、饭点吃饭、菜放坏）、`offers` / `act` 是她能做的事、`give` / `put_on_sill` 是他放东西、`for_chat` / `for_leisure` 是她看见的几行；`invented_act` 认她笔记里编的做过的事（有屋子以后不记）。`brain/leisure/cottage.py` 把动作摆进空闲菜单；`FISH_COTTAGE` 开关，默认开（决定 28） | 能用，`tests/test_cottage.py` |
-| `msgs.py` | 节点之间传的消息（合同，`nodes_design_zh.md` §3）：`HeSaid`、`SheSaid`、`TimePassed`、`DayEnded`、`HomeEvent` 等，都不可改；不 import 项目里任何东西 | 第 1 步，还没接进服务 |
-| `bus.py` | 总线：`subscribe(消息类, 函数)`、`publish(消息)`；话题就是消息的类；一个订阅者出错不影响别的，测试里一起报、服务里记日志 | 第 1 步，还没接进服务 |
-| `clock.py` | 时钟节点：每格发 `TimePassed`，跨过 03:30 发 `DayEnded`（睡了几晚就补几天）；`day_of` 算一个时刻属于她哪一天 | 第 1 步，还没接进服务 |
+| `msgs.py` | 节点之间传的消息（合同，`nodes_design_zh.md` §3）：`HeSaid`、`SheSaid`、`TimePassed`、`DayEnded`、`HomeEvent` 等，都不可改；不 import 项目里任何东西 | `TimePassed`、`SheSaid` 已在用 |
+| `bus.py` | 总线：`subscribe(消息类, 函数)`、`publish(消息)`；话题就是消息的类；一个订阅者出错不影响别的，测试里一起报、服务里记日志 | 第 3 步起接进服务 |
+| `clock.py` | 时钟节点：每格发 `TimePassed`（手动拨回去也发），往前跨过 03:30 发 `DayEnded`（睡了几晚就补几天，同一天不发两次）；`day_of` 算一个时刻属于她哪一天 | 第 3 步起接进服务：`Brain.tick` 就是走一格 |
+| `app.py` | 启动文件（节点化第 3 步）：一张表写谁订什么、按什么顺序；只认 `bus` 和 `msgs`，节点作为参数交进来。**加一个跟时间或她的话有关的新功能 = 这里加一行** | 能用 |
 | `messages.py` | 电话线和大脑之间传的 `Incoming(text, image, file)` / `Outgoing(text, sticker)`，和图片类型探测、data URL | 能用 |
 | `channels/` | `terminal.py`；`ilink.py` 腾讯 ClawBot 的 HTTP 协议（照官方插件 2.4.10：扫码登录、长轮询 `getupdates`、`sendmessage`、正在输入；收图下载解密、上传发图，AES-128-ECB），`wechat.py` 微信电话线（`login` 扫码存凭证；`WeChatChannel` 只回主人、去重、每行一个气泡、文字后发表情包、出错退避、-14 提示重扫；每轮轮询之间 `tick` 让她有机会先开口，`push` 用上次的对话凭证发） | 文字和图片真机验证过 |
 | `memory/stickers.py` | 表情包相册：存图、起叫法、按用过次数排、记用过；同一张图按指纹只收一次；`offer` 每轮给她看常用的 12 张加随机换的其余，相册再大也轮得到没用过的 | 能用 |

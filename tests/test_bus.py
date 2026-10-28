@@ -64,8 +64,36 @@ def test_the_clock_ticks_and_ends_days_once_each_even_after_a_long_sleep():
     clock = Clock(bus)
     clock.tick(datetime(2026, 10, 28, 23, 0))
     clock.tick(datetime(2026, 10, 29, 3, 0))
-    clock.tick(datetime(2026, 10, 29, 3, 0))  # the same moment again: nothing new
+    clock.tick(datetime(2026, 10, 29, 3, 0))  # the same moment again: a tick, no day ends
     clock.tick(datetime(2026, 10, 29, 4, 0))  # 03:30 crossed: the 28th is over
+    clock.tick(datetime(2026, 10, 29, 2, 0))  # set back by hand: a tick, and no day ends again
     clock.tick(datetime(2026, 10, 31, 9, 0))  # the laptop slept two nights
-    assert got == [("tick", "28 23:00"), ("tick", "29 03:00"), ("tick", "29 04:00"), ("day", "2026-10-28"),
-                   ("tick", "31 09:00"), ("day", "2026-10-29"), ("day", "2026-10-30")]
+    assert got == [("tick", "28 23:00"), ("tick", "29 03:00"), ("tick", "29 03:00"), ("tick", "29 04:00"),
+                   ("day", "2026-10-28"), ("tick", "29 02:00"), ("tick", "31 09:00"),
+                   ("day", "2026-10-29"), ("day", "2026-10-30")]  # the 28th is not over twice
+
+
+def test_a_new_node_only_subscribes(tmp_path):
+    """Step 3: what lives on time is on the bus. A node added later (a screen, say) subscribes
+    and hears every tick and every line she says first; tick itself never changes."""
+    import json
+    from datetime import timedelta
+
+    from fish.brain import Brain, FakeLLM
+    from fish.brain.leisure import Leisure
+    from fish.config import Settings
+    from fish.msgs import SheSaid
+    from fish.storage import connect
+
+    llm = FakeLLM(lambda messages, json_mode: json.dumps({"say": "在干嘛"}, ensure_ascii=False))
+    s = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db")
+    brain = Brain(connect(s.db_path), s, llm, persona_text="你是大肥鱼。")
+    brain.leisure = Leisure(brain, [], sources=[])
+    noon = datetime(2026, 10, 28, 12, 0)
+    brain.respond("在吗", now=noon - timedelta(hours=20))
+    screen = []
+    brain.bus.subscribe(TimePassed, lambda m: screen.append(("tick", m.now.hour)))
+    brain.bus.subscribe(SheSaid, lambda m: screen.append(("she", m.text, m.first)))
+    assert brain.tick(lambda text: True, now=noon) is True
+    assert screen == [("she", "在干嘛", True), ("tick", 12)]  # she spoke inside the tick, before the screen's turn
+    assert [t.text for t in brain.window.recent()][-1] == "在干嘛"

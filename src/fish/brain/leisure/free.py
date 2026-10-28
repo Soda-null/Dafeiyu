@@ -12,7 +12,7 @@ from __future__ import annotations
 import random
 import sqlite3
 from datetime import datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from fish.brain.ask import ask_json
 from fish.brain.leisure.base import Activity, Choice, Kit, Material
@@ -22,6 +22,7 @@ from fish.brain.prompt import WEEKDAYS
 from fish.brain.world import Browser
 from fish.memory import MemoryStore, Moment, Pastimes
 from fish.mood import MoodStore
+from fish.msgs import SheSaid, TimePassed
 from fish.world import Fetch, Searcher, load_sources, urllib_fetch
 
 if TYPE_CHECKING:
@@ -195,6 +196,24 @@ class Leisure:
         today = datetime.combine(now.date(), time(0))
         lines = [moment_line(m) for m in kit.pastimes.moments(today, now) if m.choice]
         return "\n".join(f"- {line}" for line in lines) or "（今天还没有）"
+
+
+class LeisureNode:
+    """Her free time as a node (docs/nodes_design_zh.md step 3): on a tick she may have a free
+    moment, unless she just texted him at that very moment (she was busy with that)."""
+
+    def __init__(self, run: Callable[[datetime], "Moment | None"]) -> None:
+        self.run = run
+        self.spoke_at: datetime | None = None
+
+    def on_she_said(self, m: SheSaid) -> None:
+        if m.first:
+            self.spoke_at = m.at
+
+    def on_time(self, m: TimePassed) -> None:
+        if self.spoke_at == m.now:
+            return
+        self.run(m.now)
 
 
 def away(m: Moment) -> bool:

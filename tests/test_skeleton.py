@@ -9,7 +9,7 @@ import fish
 
 MODULES = [
     "fish.config", "fish.storage", "fish.persona", "fish.memory", "fish.mood",
-    "fish.brain", "fish.routines", "fish.channels", "fish.cottage", "fish.msgs", "fish.bus", "fish.clock",
+    "fish.brain", "fish.routines", "fish.channels", "fish.cottage", "fish.msgs", "fish.bus", "fish.clock", "fish.app",
 ]
 NO_CHANNELS = ["brain", "memory", "mood", "persona", "storage", "routines", "cottage"]
 SRC = Path(fish.__file__).parent
@@ -91,3 +91,9 @@ def test_the_contract_and_the_bus_depend_on_nothing():
     for name in ("msgs.py", "bus.py"):
         src = (SRC / name).read_text(encoding="utf-8")
         assert not re.search(r"^\s*(?:from|import)\s+fish\b", src, re.M), f"{name} must stay dependency-free"
+
+
+def test_the_launch_file_knows_only_the_bus_and_the_messages():
+    src = (SRC / "app.py").read_text(encoding="utf-8")
+    used = set(re.findall(r"^\s*(?:from|import)\s+fish\.([a-z_]+)", src, re.M))
+    assert used <= {"bus", "msgs"}, f"app.py wires nodes it is handed; it imports none: {sorted(used)}"

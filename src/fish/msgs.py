@@ -30,6 +30,7 @@ class SheSaid:
     channel: str
     first: bool = False
     sticker: str = ""  # path of the sticker sent after the text, "" when none
+    asked: tuple[int, ...] = ()  # follow-ups this line asks about (they are done once asked)
 
 
 @dataclass(frozen=True)

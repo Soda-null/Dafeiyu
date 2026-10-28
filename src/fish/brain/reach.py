@@ -20,8 +20,10 @@ import random
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from typing import Callable
 
 from fish.brain.ask import ask_json
+from fish.bus import Bus
 from fish.brain.llm import LLM
 from fish.brain.parse import clean_say
 from fish.brain.prompt import WEEKDAYS
@@ -30,7 +32,8 @@ from fish.cottage import asleep_hours
 from fish.memory import Followup, Memory, MemoryStore, ProspectiveStore, Relationship, Window
 from fish.memory.longterm import iso
 from fish.memory.prospective import DUE_SHOWN
-from fish.mood import Mood
+from fish.mood import Mood, MoodStore
+from fish.msgs import SheSaid, TimePassed
 
 THINK_PAUSE_MINUTES = (20, 60)  # how long until the thought "should I text him" comes back
 HOME_LATELY = timedelta(hours=1)  # cottage events still fresh enough to mention
@@ -210,6 +213,47 @@ class Reacher:
 def ago(hours: float) -> str:
     """" 40 分钟前" / " 3 小时前": plain words for the prompt."""
     return f" {int(hours * 60)} 分钟前" if hours < 1 else f" {int(hours)} 小时前"
+
+
+class ReachNode:
+    """Speaking first as a node (docs/nodes_design_zh.md step 3). Every tick she may think of
+    him; when she says something and it goes through, the line goes out on the bus for whoever
+    keeps the chat, and the gate's own ledger notes it. It does not know who listens."""
+
+    def __init__(self, bus: Bus, conn: sqlite3.Connection, *, enabled: bool, max_per_day: int,
+                 llm: Callable[[], LLM], persona: str, window: Window, kitchen: bool,
+                 home_lately: Callable[[datetime], list[str]], say: Callable[[str], bool],
+                 channel: Callable[[], str]) -> None:
+        self.bus = bus
+        self.conn = conn
+        self.enabled = enabled
+        self.max_per_day = max_per_day
+        self.llm = llm  # read each time: tests swap the model after building
+        self.persona = persona
+        self.window = window
+        self.kitchen = kitchen
+        self.home_lately = home_lately
+        self.say = say  # the channel's send for this tick; True when it went through
+        self.channel = channel
+
+    def consider(self, now: datetime) -> ReachOut | None:
+        """Whether she wants to say something right now. Cheap unless the gate opens."""
+        policy = ReachPolicy(self.conn, enabled=self.enabled, max_per_day=self.max_per_day)
+        if policy.refused(now) is not None:
+            return None
+        mood = MoodStore.apply_clock(MoodStore(self.conn).load(), now, kitchen=self.kitchen)
+        trig = policy.triggers(now, mood, home=self.home_lately(now))
+        if not trig.any:
+            return None
+        policy.record_considered(now)  # before asking, so a crash cannot loop on the model
+        return Reacher(self.llm(), self.persona).decide(now, mood, trig, recent_lines(self.window))
+
+    def on_time(self, m: TimePassed) -> None:
+        ro = self.consider(m.now)
+        if ro is None or not self.say(ro.text):
+            return
+        self.bus.publish(SheSaid(ro.text, m.now, self.channel(), first=True, asked=ro.asked))
+        ReachPolicy(self.conn).record_sent(m.now, ro)
 
 
 def recent_lines(window: Window, n: int = 6) -> list[str]:

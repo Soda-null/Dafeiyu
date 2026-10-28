@@ -16,7 +16,8 @@ from fish.brain.leisure.book import BookActivity
 from fish.brain.leisure.cottage import CottageActivity
 from fish.brain.leisure.curious import CuriousActivity
 from fish.brain.leisure.feeds import FeedActivity
-from fish.brain.leisure.free import NOTHING, NOTHING_AT_HOME, Leisure, LeisurePolicy, moment_line, pastimes_line, away, render_menu
+from fish.brain.leisure.free import (NOTHING, NOTHING_AT_HOME, Leisure, LeisureNode, LeisurePolicy, away, moment_line,
+                                     pastimes_line, render_menu)
 
 
 def default_activities(rng: random.Random | None = None, cottage: Cottage | None = None) -> list[Activity]:
@@ -29,5 +30,5 @@ def default_activities(rng: random.Random | None = None, cottage: Cottage | None
 
 
 __all__ = ["NOTHING", "NOTHING_AT_HOME", "Activity", "BookActivity", "Choice", "CottageActivity", "CuriousActivity", "FeedActivity", "Kit",
-           "Leisure", "LeisurePolicy", "Material", "away", "default_activities", "moment_line", "pastimes_line",
+           "Leisure", "LeisureNode", "LeisurePolicy", "Material", "away", "default_activities", "moment_line", "pastimes_line",
            "render_menu"]
