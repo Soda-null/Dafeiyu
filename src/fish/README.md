@@ -12,7 +12,8 @@
 | `memory/` | 只有数据和数学，不调模型：`stability`（遗忘公式；决定 21 起牢固度从"说的是什么"和"多触动"算，一辈子的钉住）、`longterm`（长期条目：加 / 想起 / 改口 / 合并 / 底牌；`note` 是写之前挑：关于聊天本身的不记、重复的加固旧的、规律和相处方式各 20 条上限，决定 19；重复的事记次数、攒到 3 / 6 / 12 回夜里改写成大意，决定 20）、`retrieval`（召回：两道门 + 三项打分；`BigramEmbedder` 不用模型）、`window`（最近 N 轮 + 折叠）、`episodes`（一次聊天）、`prospective`（惦记）、`relationship`（关系账）、`diary` | 能用，30 个测试 |
 | `mood/` | 性格最快的一层（决定 13）：精力、无聊、饿每轮变，时钟加偏移不存，`log` 每轮记一行，`rest(tone, drive)` 夜里回到阶段定的基线；`stage_of` 按亲近值分档 | 能用 |
 | `memory/when.py` | 按时间想起（第二版第 5 步）："昨晚""上周三""一月初"读成日子，那几天的记忆算相关（时间越窄加得越多）；`TimeCued` 包在别的找法外面，第三版第 2 步起每轮聊天都用。第三版第 3 步加了反过来的：`day_of` 读一条笔记说的是哪天（"明天""下下周二"也认，填 `happened_on`）、`fix_weekday` 把和旁边"周X"对不上的日期挪过去、`spoken` 把日子说成"上周三 1月13日" | 能用 |
-| `memory/today.py` | 第三版第 3 步：每轮提示词里的"今天"那一节，纯代码：这周下周每天几号、生日今天或 3 天内、他说过今天 / 明天要做的事；星期几规律和"他几点来"两行先留着接口，第 6 步填 | 能用，`tests/test_v3_today.py` |
+| `memory/today.py` | 第三版第 3 步：每轮提示词里的"今天"那一节，纯代码：这周下周每天几号、生日今天或 3 天内、他说过今天 / 明天要做的事；加上第 6 步的星期几规律和"他几点来" | 能用，`tests/test_v3_today.py`、`tests/test_v3_patterns.py` |
+| `memory/patterns.py` | 第三版第 6 步：程序数他的习惯，不调模型。夜里数他某个星期几总说的话（小周周五的"糖醋排骨"、小林周三的"吉他课"），存进关系账的 `patterns`，带"还在 / 停了"；每轮从他每天第一条消息的钟点算"他一般几点来"那一行。只在那个星期几、或他问"一般 / 平时 / 每周"时给她看 | 能用，`tests/test_v3_patterns.py` |
 | `memory/scrub.py` | 第三版第 5 步：秘密过滤，纯规则。`secret` 认 6 位以上连着的数字和"密码、验证码、卡号"这类词，`redact` 去掉带它的那一句；笔记、改口、结果、惦记、摘要、日记的写入口都用 | 能用，`tests/test_v3_writing.py` |
 | `memory/pacts.py` | 第三版第 4 步：认承诺和外号的固定词（只认聊天里、收尾时写的笔记），谁答应的；`triggered` 看他这句碰到了哪条约定的标签。纯函数，`longterm.note` 和每轮的约定块用 | 能用，`tests/test_v3_pacts.py` |
 | `memory/phase.py` | 性格中间层：基调、劲头、在意的事、一句话，`update` 每晚八成旧两成新 | 能用 |
@@ -28,7 +29,7 @@
 | `brain/respond.py` 的图片部分 | 他发的图作为图片给模型（只能放在用户那条消息里）；`image_note` 存进对话；`keep_sticker` 收进相册；`sticker` 编号 → `Outgoing` 带图；`prompts/sticker_caption.md` 给 inbox 的图起叫法 | 能用，待真机验证 |
 | `world/` | 只管"看"，不调模型：`feeds`（RSS / Atom）、`bilibili`（热门、分区榜、热评）、`wiki`（中文维基查一下，`Searcher` 协议）、`reader`（网页 → 正文）、`files`（他分享的 PDF / Word / 文本 → 正文，决定 23）、`sources.json` + `sources.py`（订阅源、取今天的、点开一条）、`wikisource`（维基文库按书名找书、按段读，决定 24）、`days`（节气、节假日和调休，表缓存在 `data/home/`） | 能用 |
 | `world/place.py` + `routines/outside.py` | 她住哪（决定 15）：定位到街区、每天天气、附近的店、街区地图拼图并让她看一次 | 能用 |
-| `routines/` | `nightly.py` 八步，一个"鱼日"（03:30 到次日 03:30）只跑一次；`browse.py` 只剩手动的 `fish browse`（决定 24 起她空闲时想逛才逛）；`outside.py` 天气和节假日表，微信服务每小时看一眼、一天真取一次；`export.py` 写 `data/notebook_export.md`；`runs.py` 记每个例行做到哪天 | 能用 |
+| `routines/` | `nightly.py` 八步（第三版加了 6b：数星期几规律），一个"鱼日"（03:30 到次日 03:30）只跑一次；`browse.py` 只剩手动的 `fish browse`（决定 24 起她空闲时想逛才逛）；`outside.py` 天气和节假日表，微信服务每小时看一眼、一天真取一次；`export.py` 写 `data/notebook_export.md`；`runs.py` 记每个例行做到哪天 | 能用 |
 | `messages.py` | 电话线和大脑之间传的 `Incoming(text, image, file)` / `Outgoing(text, sticker)`，和图片类型探测、data URL | 能用 |
 | `channels/` | `terminal.py`；`ilink.py` 腾讯 ClawBot 的 HTTP 协议（照官方插件 2.4.10：扫码登录、长轮询 `getupdates`、`sendmessage`、正在输入；收图下载解密、上传发图，AES-128-ECB），`wechat.py` 微信电话线（`login` 扫码存凭证；`WeChatChannel` 只回主人、去重、每行一个气泡、文字后发表情包、出错退避、-14 提示重扫；每轮轮询之间 `tick` 让她有机会先开口，`push` 用上次的对话凭证发） | 文字真机验证过；图片待验证 |
 | `memory/stickers.py` | 表情包相册：存图、起叫法、按用过次数排、记用过；同一张图按指纹只收一次；`offer` 每轮给她看常用的 12 张加随机换的其余，相册再大也轮得到没用过的 | 能用 |

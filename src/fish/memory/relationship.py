@@ -3,6 +3,7 @@ closeness, which moves over days (decision 13 put it here, out of the hour-scale
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import date, datetime, timedelta
 
@@ -57,6 +58,18 @@ class Relationship:
     def quiet_day(self, now: datetime | None = None) -> float:
         """A day without him: a little less close."""
         return self.set_closeness(self.closeness - CLOSENESS_DECAY_PER_QUIET_DAY, now)
+
+    # --- weekday patterns (memory v3 §B6), counted at night by patterns.py ------------------
+
+    def patterns(self) -> list[dict]:
+        try:
+            value = json.loads(self.get("patterns") or "[]")
+        except ValueError:
+            return []
+        return value if isinstance(value, list) else []
+
+    def set_patterns(self, patterns: list[dict], now: datetime | None = None) -> None:
+        self.set("patterns", json.dumps(patterns, ensure_ascii=False), now)
 
     def get(self, key: str, default: str | None = None) -> str | None:
         row = self.conn.execute("SELECT value FROM relationship WHERE key = ?", (key,)).fetchone()

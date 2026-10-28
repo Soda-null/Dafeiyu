@@ -9,6 +9,7 @@ Steps (model steps need a Brain; without one only the mechanical ones run):
   2. merge near-duplicates (model)           6. old episodes lose detail
   3. new facts that replace old ones (model) 7. follow-ups she never got to ask are let go
   4. weekly reflection (model)               8. export data/notebook_export.md
+  6b. what he says on one weekday, counted (code, memory v3 §B6)
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from typing import TYPE_CHECKING
 from fish.brain.consolidate import Consolidator, similarity
 from fish.brain.leisure import moment_line
 from fish.memory import (Diary, EpisodeManager, Memory, MemoryStore, Pastimes, PhaseStore,
-                         ProspectiveStore, Relationship, TraitStore, overlap)
+                         ProspectiveStore, Relationship, TraitStore, count_patterns, overlap)
 from fish.mood import MoodStore
 from fish.routines.export import export_notebook
 from fish.routines.runs import claim_run, last_run, mark_run
@@ -259,6 +260,11 @@ def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
     if not talked:
         rel.quiet_day(now)
     report["compressed"] = episodes.compress(now)
+    # 6b. what he says on one weekday ("今天食堂有糖醋排骨" six Fridays running), counted by code
+    #     and shown to her on that weekday; never an insight she saw herself (memory v3 §B6)
+    patterns = count_patterns(conn, now, rel.patterns())
+    rel.set_patterns(patterns, now)
+    report["weekday_patterns"] = sum(p["status"] == "active" for p in patterns)
     # a follow-up she never got to ask is let go, not written down as "我一直没问成他" (memory v3:
     # those events crowded out what he said)
     report["expired"] = len(ProspectiveStore(conn).expire(now))

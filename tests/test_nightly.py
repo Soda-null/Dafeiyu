@@ -129,7 +129,7 @@ def test_a_bad_model_reply_leaves_the_night_to_the_mechanical_steps(tmp_path):
 def test_without_a_brain_only_mechanical_steps_run(tmp_path):
     conn, _ = make(tmp_path, scripted())
     report = run_nightly(conn, NIGHT)
-    assert set(report) == {"skipped", "day", "compressed", "expired", "phase"}
+    assert set(report) == {"skipped", "day", "compressed", "expired", "phase", "weekday_patterns"}
 
 
 def test_no_diary_for_days_before_the_first_chat(tmp_path):

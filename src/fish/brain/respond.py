@@ -4,7 +4,6 @@ nothing else. Every model call in the chat path lives here.
 
 from __future__ import annotations
 
-import json
 import re
 import sqlite3
 from datetime import datetime, timedelta
@@ -22,7 +21,8 @@ from fish.config import Settings, owner_words
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
 from fish.memory import (BigramEmbedder, Diary, Episode, EpisodeManager, MemoryStore, Moment, Pastimes,
                          PhaseStore, ProspectiveStore, Relationship, StickerAlbum, TimeCued, TraitStore,
-                         Window, cue_for, mentioned, recall, today_section, triggered)
+                         Window, arrival_line, asks_habit, cue_for, mentioned, recall, today_section,
+                         triggered)
 from fish.memory.prospective import DUE_SHOWN
 from fish.memory.window import FOLD_BATCH
 from fish.mood import MoodStore, stage_of
@@ -87,15 +87,14 @@ class Brain:
                 "pastimes_line": pastimes_line(self.pastimes, now),
                 "today_line": "你今天空闲时：" + "；".join(done) + "。" if done else ""}
 
-    def today_lines(self, now: datetime, profile: list) -> str:
-        """Dates, his birthday soon, what he planned for today and tomorrow, worked out by code
-        (memory v3 §B3). The weekday patterns are counted at night from memory v3 step 6 on."""
+    def today_lines(self, now: datetime, profile: list, said: str = "") -> str:
+        """Dates, his birthday soon, what he planned for today and tomorrow, what he does on
+        this weekday (counted at night) and when he usually comes, all worked out by code
+        (memory v3 §B3, §B6). His line asking what he usually does shows every pattern."""
         plans = self.store.planned_for([now.date(), now.date() + timedelta(days=1)])
-        try:
-            patterns = json.loads(self.relationship.get("patterns") or "[]")
-        except ValueError:
-            patterns = []
-        return today_section(now, profile, plans, patterns=patterns, him=owner_words("他"))
+        return today_section(now, profile, plans, patterns=self.relationship.patterns(),
+                             arrival=arrival_line(self.conn, now), asked=asks_habit(said),
+                             him=owner_words("他"))
 
     def growth_lines(self) -> list[str]:
         lines = self.traits.describe()
@@ -141,7 +140,7 @@ class Brain:
         recalled = recall(self.store, cue_for(user_text, last_fish), now,
                           embedder=TimeCued(BigramEmbedder(), now),
                           skip={m.id for m in profile + pacts})
-        today = self.today_lines(now, profile)
+        today = self.today_lines(now, profile, user_text)
         shared, shared_note = self.open_shared(incoming)
         ctx = PromptContext(
             persona=self.persona, now=now, mood=mood,

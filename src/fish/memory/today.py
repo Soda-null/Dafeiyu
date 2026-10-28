@@ -7,8 +7,9 @@ next to "他的生日是3月14日" without noticing it was his birthday. So the 
 - a date table: yesterday, the day before, every day of this week and next, 下下周二;
 - his birthday (or an anniversary on her card) today or within 3 days;
 - what he said would happen today or tomorrow (`happened_on`, said before the day);
-- a line for a weekday pattern the night counted, if today is its day (memory v3 step 6);
-- when he usually comes, if the caller has that line (memory v3 step 6).
+- a line for a weekday pattern the night counted (patterns.py), if today is its day or he asks
+  what he usually does;
+- when he usually comes, worked out from his first messages (patterns.py).
 
 No model, no database: respond.py hands in what it already picked.
 """
@@ -19,6 +20,7 @@ import re
 from datetime import date, datetime, timedelta
 
 from fish.memory.longterm import Memory
+from fish.memory.patterns import pattern_lines
 from fish.memory.when import WEEKDAYS_CN, spoken
 
 SOON_DAYS = 3  # a birthday this many days ahead is mentioned
@@ -123,26 +125,15 @@ def planned(memories: list[Memory], today: date) -> list[str]:
     return lines
 
 
-def pattern_lines(patterns: list[dict], today: date) -> list[str]:
-    """A weekday pattern counted at night (memory v3 step 6), on its own weekday only.
-    Each pattern: {"weekday": 0-6, "phrase", "weeks", "sample", "status": active | lapsed}."""
-    lines = []
-    for p in patterns:
-        if p.get("status") != "active" or p.get("weekday") != today.weekday():
-            continue
-        day = f"周{WEEKDAYS_CN[today.weekday()]}"
-        line = f"今天{day}：前几个{day}他都说到「{p['phrase']}」（{p.get('weeks', 3)} 个{day}）"
-        lines.append(line + (f"，比如「{p['sample']}」。" if p.get("sample") else "。"))
-    return lines
-
-
 def section(now: datetime, card: list[Memory], plans: list[Memory], *, patterns: list[dict] = (),
-            arrival: str = "", him: str = "他") -> str:
+            arrival: str = "", asked: bool = False, him: str = "他") -> str:
     """The whole section. card: her card (the birthday is on it); plans: what the store says is
-    planned for today and tomorrow; arrival: the "when he usually comes" line, if any."""
+    planned for today and tomorrow; patterns: the night's weekday count, shown on their weekday,
+    or all of them when he asks about a habit (`asked`); arrival: the "when he usually comes"
+    line, if any."""
     today = now.date()
     lines = [calendar(today), *yearly(card, today, him), *planned(plans, today),
-             *pattern_lines(list(patterns), today)]
+             *pattern_lines(list(patterns), today, asked=asked)]
     if arrival:
         lines.append(arrival)
     return "\n".join(lines)

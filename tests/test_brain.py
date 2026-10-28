@@ -149,7 +149,7 @@ def test_stale_episode_is_closed_with_a_summary(tmp_path):
 
 def test_budget_drops_recalled_memories_first(tmp_path):
     llm = scripted()
-    brain, conn = make_brain(tmp_path, llm, prompt_chars=4000)  # fixed part is ~3900 (v3 "today" section, pacts, what to note)
+    brain, conn = make_brain(tmp_path, llm, prompt_chars=4050)  # fixed part is ~3950 (v3 "today" section, pacts, what to note, patterns)
     store = MemoryStore(conn)
     for i in range(6):
         store.add("event", f"第{i}次聊考试，他说很慌" + "，细节" * 20, importance=5, tags=["考试"], now=T0)

@@ -10,7 +10,7 @@ from fish.brain import Brain, FakeLLM
 from fish.brain.prompt import build_close_messages, render_recalled
 from fish.config import Settings
 from fish.memory import MemoryStore, recall, today_section
-from fish.memory.today import calendar, pattern_lines, yearly
+from fish.memory.today import calendar, yearly
 from fish.memory.when import day_of, days_of, fix_weekday, spoken, told_day
 from fish.storage import connect
 
@@ -229,17 +229,6 @@ def test_what_he_planned_comes_up_on_the_day(tmp_path):
     # news from today is not a plan: the chat it came from is in front of her
     store.note("event", "他今天去深圳了", importance=5, now=datetime(2027, 9, 28, 8, 0))
     assert [m.id for m in store.planned_for([date(2027, 9, 28)])] == [trip.id]
-
-
-def test_a_weekday_pattern_shows_on_its_day_only():
-    friday = [{"weekday": 4, "phrase": "糖醋排骨", "weeks": 6, "sample": "今天食堂有糖醋排骨，爽",
-               "status": "active"}]
-    assert pattern_lines(friday, date(2027, 1, 22)) == [
-        "今天周五：前几个周五他都说到「糖醋排骨」（6 个周五），比如「今天食堂有糖醋排骨，爽」。"]
-    assert pattern_lines(friday, date(2027, 1, 21)) == []
-    assert pattern_lines([dict(friday[0], status="lapsed")], date(2027, 1, 22)) == []
-    text = today_section(datetime(2027, 1, 22, 12, 0), [], [], patterns=friday, arrival="他最近都是中午来。")
-    assert text.endswith("比如「今天食堂有糖醋排骨，爽」。\n他最近都是中午来。")
 
 
 def test_the_close_sees_the_weekday_of_the_chat():
