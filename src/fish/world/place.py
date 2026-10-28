@@ -49,7 +49,7 @@ class Home:
     area: str  # neighbourhood / quarter, may be ""
     lat: float  # rounded to COORD_DECIMALS
     lon: float
-    tz: str = ""  # the place's timezone (America/Chicago); her clock when .env has no TZ
+    tz: str = ""  # the place's timezone (Europe/Berlin); her clock when .env has no TZ
 
     def line(self) -> str:
         where = f"{self.city}（{self.region}）" if self.region else self.city

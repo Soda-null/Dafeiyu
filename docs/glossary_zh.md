@@ -51,7 +51,7 @@
 | context_token | 微信每条来信带的一串码，回信时要原样带回去，消息才会落在同一个对话里 |
 | get_updates_buf / 游标 | 收消息接口的书签：每次服务器给一个新的，下次带上就只拿新消息；存在 `data/wechat.json` |
 | `data/wechat.json` | 微信凭证：bot_token、她的 id、主人的 id、服务器地址、游标、context_token；不进 git |
-| box / young-ubuntu | 寝室里一直开着的 Ubuntu 笔记本，她住在那（决定 8）；Mac 上 SSH 别名 `ubuntu-tailscale` |
+| box | 寝室里一直开着的 Ubuntu 笔记本，她住在那（决定 8）；SSH 别名写在本地 `.env` 的 `BOX=` |
 | systemd 用户服务 | Linux 上让程序开机自动跑、挂了自动重启的机制；"用户"级的不用 sudo |
 | linger | 让用户服务在没人登录时也跑的开关（`loginctl enable-linger`） |
 | 三行卡片 | 每份文档开头的 是什么 / 地位 / 读法 |

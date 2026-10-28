@@ -19,8 +19,9 @@
 #   scripts/fish.sh stickers <folder>   give her every picture in a folder on this Mac; she names each now
 #   scripts/fish.sh cottage [put 鸡蛋 [顿数] | sill 一盆薄荷]   her cottage as it is now, or put something in (decision 26)
 set -eu
-BOX="${BOX:-ubuntu-tailscale}"
 cd "$(dirname "$0")/.."
+BOX="${BOX:-$(sed -n 's/^BOX=//p' .env 2>/dev/null | tail -1)}"
+BOX="${BOX:-box}"  # your SSH alias for the box: BOX= in .env
 TZ_USER="$(sed -n 's/^TZ=//p' .env 2>/dev/null | tail -1)"
 TZ_USER="${TZ_USER:-UTC}"
 case "${1:-life}" in

@@ -7,9 +7,11 @@
 #   scripts/deploy_box.sh --start      ALSO enable linger, start the WeChat service and timer
 #   scripts/deploy_box.sh --restart    ALSO restart the WeChat service (after a code change)
 #
-# Needs: SSH alias BOX (default ubuntu-tailscale), git remote BOX pointing at ~/Dafeiyu there.
+# Needs: an SSH alias for the box (BOX= in .env, default `box`); the git remote `box` is added here.
 set -eu
-BOX="${BOX:-ubuntu-tailscale}"
+cd "$(dirname "$0")/.."
+BOX="${BOX:-$(sed -n 's/^BOX=//p' .env 2>/dev/null | tail -1)}"
+BOX="${BOX:-box}"
 REMOTE_DIR="Dafeiyu"
 WITH_DATA=0; START=0; RESTART=0
 for arg in "$@"; do
@@ -20,7 +22,6 @@ for arg in "$@"; do
         *) echo "unknown option: $arg" >&2; exit 2 ;;
     esac
 done
-cd "$(dirname "$0")/.."
 
 if [ -n "$(git status --porcelain)" ]; then
     echo "working tree is dirty; commit first (the box gets what is committed)" >&2

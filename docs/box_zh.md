@@ -1,6 +1,6 @@
 # 她住在寝室的 Ubuntu 机上：怎么部署、看日志、重扫码、备份
 
-> **是什么：** 大肥鱼常驻在寝室 Ubuntu 笔记本（`young-ubuntu`，Tailscale，SSH 别名 `ubuntu-tailscale`）上的操作规程。
+> **是什么：** 大肥鱼常驻在寝室 Ubuntu 笔记本上的操作规程。下面的 `box` 是你在 `~/.ssh/config` 里给它起的 SSH 别名；别名不叫 `box` 就在本地 `.env` 写一行 `BOX=你的别名`，脚本都从那读。
 > **地位：** 规程（决定 8，2026-10-26）。`scripts/deploy_box.sh` 和 `scripts/systemd/` 按它写。
 > **读法：** 查你要做的那件事。
 
@@ -17,21 +17,21 @@
 | 要做的事 | 命令 |
 |---|---|
 | 改了代码，推上去并重启她 | `scripts/deploy_box.sh --restart` |
-| 看她在干嘛（实时日志） | `ssh ubuntu-tailscale journalctl --user -u dafeiyu-wechat -f` |
-| 看她的状态 | `ssh ubuntu-tailscale systemctl --user status dafeiyu-wechat` |
-| 看她记了什么 | `ssh ubuntu-tailscale 'cd Dafeiyu && .venv/bin/python -m fish show'` |
-| 手动跑一次夜间整理 | `ssh ubuntu-tailscale 'cd Dafeiyu && .venv/bin/python -m fish nightly'`（同一天跑两次第二次会跳过） |
-| 看她的小本本（夜里导出的） | `ssh ubuntu-tailscale cat Dafeiyu/data/notebook_export.md` |
-| 看昨晚整理的日志 | `ssh ubuntu-tailscale journalctl --user -u dafeiyu-nightly -n 20` |
+| 看她在干嘛（实时日志） | `ssh box journalctl --user -u dafeiyu-wechat -f` |
+| 看她的状态 | `ssh box systemctl --user status dafeiyu-wechat` |
+| 看她记了什么 | `ssh box 'cd Dafeiyu && .venv/bin/python -m fish show'` |
+| 手动跑一次夜间整理 | `ssh box 'cd Dafeiyu && .venv/bin/python -m fish nightly'`（同一天跑两次第二次会跳过） |
+| 看她的小本本（夜里导出的） | `ssh box cat Dafeiyu/data/notebook_export.md` |
+| 看昨晚整理的日志 | `ssh box journalctl --user -u dafeiyu-nightly -n 20` |
 | 看她空闲时干了什么 | `fish show` 的"空闲"一节（两周里每样选了几回、最近几段、在读的书）；见闻本身在 `fish show` 或导出文件里 |
-| 让她现在就逛一次 | `ssh ubuntu-tailscale 'cd Dafeiyu && .venv/bin/python -m fish browse'`（手动的，一天一次，第二次跳过；平时她想逛才逛） |
-| 微信说过期了，重扫码 | 先 `ssh ubuntu-tailscale systemctl --user stop dafeiyu-wechat`，再 `ssh -t ubuntu-tailscale 'cd Dafeiyu && .venv/bin/python -m fish wechat login'`（二维码画在 Mac 的终端里），再 `ssh ubuntu-tailscale systemctl --user start dafeiyu-wechat` |
+| 让她现在就逛一次 | `ssh box 'cd Dafeiyu && .venv/bin/python -m fish browse'`（手动的，一天一次，第二次跳过；平时她想逛才逛） |
+| 微信说过期了，重扫码 | 先 `ssh box systemctl --user stop dafeiyu-wechat`，再 `ssh -t box 'cd Dafeiyu && .venv/bin/python -m fish wechat login'`（二维码画在 Mac 的终端里），再 `ssh box systemctl --user start dafeiyu-wechat` |
 | 导出她的记忆给试算脚本（`scripts/memory_v2_trial.py`，只读） | 在 box 上 `cd Dafeiyu && .venv/bin/python -c "import json; from dataclasses import asdict; from fish.config import load_settings; from fish.storage import connect; from fish.memory import MemoryStore; c = connect(load_settings().db_path); print(json.dumps({'memories': [asdict(m) for m in MemoryStore(c).alive()], 'episodes': [dict(r) for r in c.execute('SELECT id, started, ended, gist, importance, valence FROM episodes')]}, ensure_ascii=False))" > her_memories.json`，再 scp 到 Mac |
-| 备份她的记忆到 Mac | `rsync -az ubuntu-tailscale:Dafeiyu/data/ ~/Dafeiyu/backups/$(date +%F)/` |
-| 停掉她 | `ssh ubuntu-tailscale systemctl --user stop dafeiyu-wechat` |
+| 备份她的记忆到 Mac | `rsync -az box:Dafeiyu/data/ ~/Dafeiyu/backups/$(date +%F)/` |
+| 停掉她 | `ssh box systemctl --user stop dafeiyu-wechat` |
 | 不让她先开口 / 改每天上限 | box 的 `~/Dafeiyu/.env` 里加 `FISH_REACH_OUT=0` 或 `FISH_REACH_MAX=1`，然后 `systemctl --user restart dafeiyu-wechat` |
 | 送她表情包 | 攒进 Mac 上一个文件夹，`scripts/fish.sh stickers ~/某个文件夹`：只传图片，她当场一张张看、起叫法收进相册，相册里已有的同一张不重复收；一张问一次模型。也可以 `scp` 进 `Dafeiyu/data/stickers/inbox/` 等她夜里看（一晚最多 10 张），或者直接在微信里发给她，她觉得好玩会自己留 |
-| 看她的相册 | `ssh ubuntu-tailscale 'cd Dafeiyu && .venv/bin/python -c "from fish.storage import connect; from fish.memory import StickerAlbum; from pathlib import Path; [print(s.id, s.caption, s.uses) for s in StickerAlbum(connect(Path(\"data/fish.db\")), Path(\"data/stickers\")).all()]"'` |
+| 看她的相册 | `ssh box 'cd Dafeiyu && .venv/bin/python -c "from fish.storage import connect; from fish.memory import StickerAlbum; from pathlib import Path; [print(s.id, s.caption, s.uses) for s in StickerAlbum(connect(Path(\"data/fish.db\")), Path(\"data/stickers\")).all()]"'` |
 
 ## 2. 第一次搬家怎么做的（2026-10-26）
 
