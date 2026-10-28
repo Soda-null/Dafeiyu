@@ -21,8 +21,8 @@ from fish.config import Settings, owner_words
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
 from fish.memory import (BigramEmbedder, Diary, Episode, EpisodeManager, MemoryStore, Moment, Pastimes,
                          PhaseStore, ProspectiveStore, Relationship, StickerAlbum, TimeCued, TraitStore,
-                         Window, arrival_line, asks_habit, cue_for, mentioned, recall, today_section,
-                         triggered)
+                         Window, arrival_line, asks_habit, cue_for, keys_of, mentioned, recall,
+                         today_section, triggered, turn_back)
 from fish.memory.prospective import DUE_SHOWN
 from fish.memory.window import FOLD_BATCH
 from fish.mood import MoodStore, stage_of
@@ -138,9 +138,13 @@ class Brain:
         # The promises still open are always in front of her too; one whose trigger his line
         # says ("驾照") is starred (memory v3 §B3).
         pacts = self.store.pacts()
-        recalled = recall(self.store, cue_for(user_text, last_fish), now,
-                          embedder=TimeCued(BigramEmbedder(), now),
+        cue = cue_for(user_text, last_fish)
+        recalled = recall(self.store, cue, now, embedder=TimeCued(BigramEmbedder(), now),
                           skip={m.id for m in profile + pacts})
+        # When he asks her to remember or names a day, she may look back at what is left of
+        # those chats, never their messages (memory v3 §B3, waiting for the user: FISH_PAGES).
+        pages = (turn_back(self.episodes.closed(), user_text, now, cue=cue, skip={ep.id})
+                 if self.settings.pages else [])
         today = self.today_lines(now, profile, user_text)
         shared, shared_note = self.open_shared(incoming)
         ctx = PromptContext(
@@ -157,6 +161,7 @@ class Brain:
             **self.day_fields(now),
             stickers=self.album.offer(), user_image=data_url(image) if image else None,
             shared=shared, today_section=today, pacts=pacts, stars=triggered(user_text, pacts),
+            pages=pages,
         )
         messages = build_chat_messages(ctx)
         reply = self.ask(messages)
@@ -351,7 +356,8 @@ class Brain:
         next message, or the night, can be hours later). It hears how things he mentioned
         turned out (memory v3 §B2): a result goes onto the event it belongs to when that is one
         it was shown, else it is noted as an event of its own. A reply that does not parse still
-        keeps the summary."""
+        keeps the summary. What its notes are about (and the events it told the result of) is kept
+        as the chat's keys, to find it again by (pages.py)."""
         turns = self.window.unfolded(ep.id)
         at = datetime.fromisoformat(ep.last_active)
         already = [m.text for m in self.store.alive() if m.source_episode == ep.id]
@@ -377,9 +383,11 @@ class Brain:
         for f in closed.followups:
             self.add_followup(f.text, f.due, at, ep.id)
         shown_events = {m.id for m in waiting}  # only an event she was shown, still current, gets it
+        told = []
         for memory_id, text in closed.outcomes:
             if memory_id in shown_events and self.store.get(memory_id).alive:
-                self.store.set_outcome(memory_id, text, now=at)
+                if (hung := self.store.set_outcome(memory_id, text, now=at)) is not None:
+                    told.append(hung)
             else:
                 said = text if text.startswith(("他", "我")) else owner_words("他说") + text
                 self.store.note("event", said, importance=5, about="日常", source_episode=ep.id, now=at,
@@ -388,5 +396,7 @@ class Brain:
         for pact_id, state in closed.pact_done:
             if pact_id in shown:
                 self.store.settle(pact_id, state, now=at)
+        left = [m for m in self.store.alive() if m.source_episode == ep.id]
+        self.episodes.set_keys(ep.id, keys_of(left + told))
         return self.episodes.close(ep.id, summary=closed.summary, gist=closed.gist,
                                    importance=closed.importance, valence=closed.valence, now=now)

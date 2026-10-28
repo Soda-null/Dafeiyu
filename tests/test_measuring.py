@@ -137,3 +137,20 @@ def test_coverage_runs_on_both_scripted_friends(db, capsys):
     for name in ("xiaozhou_90d", "xiaolin_60d"):
         cover.main([str(db), str(ROOT / "evals" / f"{name}.json")])
         assert "每件事写到了哪一层" in capsys.readouterr().out
+
+
+def test_pages_bring_back_what_only_a_chat_summary_kept(db, capsys):
+    # memory v3 step 8: the zoo trip and the score were never noted, but the day-2 summary has
+    # both; "我昨天去哪了" names that day and "期中考得咋样" asks. The pie is in no summary.
+    script = {**SCRIPT, "facts": SCRIPT["facts"] + [EXAM]}
+    res = bench.bench(db, script, cue="his", pages=True, out=lambda *_: None)
+    assert res["missing"] == 3 and res["rescued"] == 2
+    found = res["with_pages"]["按字面 + 按时间"]
+    assert found == res["totals"]["按字面 + 按时间"] + 2
+    gate = res["gate"]
+    assert gate["lines"] == 9 and gate["secrets"] == 0  # 门禁 8642 is in his words, never in a page
+    # 叫啥来着, 昨天 twice, 咋样; not "考考你", "我期中考的啥", nor his "今天去动物园了" (today is not
+    # a day to think back to)
+    assert gate["opened"] == 4
+    bench.main([str(db), str(ROOT / "evals" / "xiaozhou_90d.json"), "--cue", "chat", "--skip-card", "--pages"])
+    assert "翻出来的东西里秘密 0 处" in capsys.readouterr().out

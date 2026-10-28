@@ -3,10 +3,13 @@
 A new episode starts when the last message is more than GAP_MINUTES old or on another
 calendar day. Closing an episode needs a summary from the brain; this module only keeps
 the records, without a sentence that holds a secret (scrub.py). Levels: 0 full (messages still cited), 1 summary only, 2 gist only.
+`keys` are the tags and names of the notes a chat left (memory v3 §B1), written when it closes:
+what finds the chat again when she turns back to it (pages.py).
 """
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -33,6 +36,7 @@ class Episode:
     importance: int | None
     valence: float | None
     level: int
+    keys: tuple[str, ...] = ()
 
     @property
     def open(self) -> bool:
@@ -40,10 +44,11 @@ class Episode:
 
 
 def _from_row(r: sqlite3.Row) -> Episode:
+    keys = r["keys"] if "keys" in r.keys() else None  # a database from before memory v3 step 8
     return Episode(
         r["id"], r["started"], r["last_active"], r["ended"], r["channel"],
         r["running_summary"] or "", r["summary"] or "", r["gist"] or "",
-        r["importance"], r["valence"], r["level"],
+        r["importance"], r["valence"], r["level"], tuple(json.loads(keys)) if keys else (),
     )
 
 
@@ -104,6 +109,16 @@ class EpisodeManager:
         )
         self.conn.commit()
         return self.get(episode_id)
+
+    def set_keys(self, episode_id: int, keys: list[str]) -> None:
+        self.conn.execute("UPDATE episodes SET keys = ? WHERE id = ?",
+                          (json.dumps(keys, ensure_ascii=False), episode_id))
+        self.conn.commit()
+
+    def closed(self) -> list[Episode]:
+        """Every chat that is over, oldest first."""
+        rows = self.conn.execute("SELECT * FROM episodes WHERE ended IS NOT NULL ORDER BY id")
+        return [_from_row(r) for r in rows]
 
     def recent(self, n: int = 5) -> list[Episode]:
         rows = self.conn.execute(

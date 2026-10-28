@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fish.brain import budget
 from fish.config import owner_words
-from fish.memory import Followup, Memory, Phase, Recalled, Sticker, Turn, spoken, told_day
+from fish.memory import Followup, Memory, Page, Phase, Recalled, Sticker, Turn, spoken, told_day
 from fish.mood import Mood
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -62,6 +62,7 @@ class PromptContext:
     today_section: str = ""  # dates, birthday soon, plans for today (memory/today.py)
     pacts: list[Memory] = field(default_factory=list)  # promises between them still open
     stars: dict[int, str] = field(default_factory=dict)  # pact id -> the trigger his line said
+    pages: list[Page] = field(default_factory=list)  # old chats she looked back at (memory/pages.py)
 
 
 def state_line(ctx: PromptContext) -> str:
@@ -151,6 +152,16 @@ def render_recalled(recalled: list[Recalled], today: date | None = None) -> str:
     return "\n".join(lines) or "（什么也没想起来。他要是问你记不记得，答案又不在你一直记得的那些里，那就是不记得了）"
 
 
+def render_pages(pages: list[Page], today: date) -> str:
+    """What is left of the chats she looked back at, each marked as the gist of that chat and
+    not his words: "【那次聊天的大意，上周五 1月8日，不是原话】……" (memory v3 §B3)."""
+    lines = []
+    for p in pages:
+        what = "只剩一句的大意" if p.gist_only else "大意"
+        lines.append(f"- 【那次聊天的{what}，{spoken(p.day, today)}，不是原话】{p.text}")
+    return "\n".join(lines) or "（没翻）"
+
+
 def render_followups(followups: list[Followup]) -> str:
     return "\n".join(f"- [#{f.id}] {f.text}（{f.due} 到的）" for f in followups) or "（没有）"
 
@@ -176,13 +187,14 @@ def build_chat_messages(ctx: PromptContext) -> list[dict[str, str]]:
         home=(ctx.home_line + "。" if ctx.home_line else "（还不知道）")
         + (f"附近：{ctx.places}" if ctx.places else ""),
         shared=ctx.shared or "（没有）", today=ctx.today_section or "（没算）",
-        pacts=render_pacts(ctx.pacts, ctx.stars),
+        pacts=render_pacts(ctx.pacts, ctx.stars), pages=render_pages(ctx.pages, ctx.now.date()),
     )
     today = ctx.now.date()
     fixed = render(template, recalled="", followups="", summary="", **fixed_fields)
     recalled, summary, window, followups_text = budget.fit(
         ctx.recalled, ctx.summary, ctx.window, render_followups(ctx.followups),
-        len(fixed), ctx.user_text, limit=ctx.limit + len(ctx.shared),  # sharing never costs memories
+        # sharing never costs memories, nor do the pages she looked back at (their own two places)
+        len(fixed), ctx.user_text, limit=ctx.limit + len(ctx.shared) + len(fixed_fields["pages"]) - len("（没翻）"),
         render_recalled=lambda rs: render_recalled(rs, today),
     )
     system = render(

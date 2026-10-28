@@ -28,6 +28,9 @@ class Settings:
     leisure: bool = True  # free moments where she may do something or nothing (decision 24)
     leisure_max_per_day: int = 3
     home_at: str = ""  # "lat,lon" where she lives, when not the machine's own city (decision 15)
+    # may she turn back to old chats' summaries (memory v3 step 8; on here on the memory-v3
+    # branch, waiting for the user's approval: docs/memory_v3_zh.md §11 item 1)
+    pages: bool = True
 
 
 def owner_words(text: str) -> str:
@@ -75,4 +78,5 @@ def load_settings(env_file: Path | None = None) -> Settings:
         leisure=os.environ.get("FISH_LEISURE", "1") not in ("0", "false", "no", ""),
         leisure_max_per_day=int(os.environ.get("FISH_LEISURE_MAX", "3")),
         home_at=os.environ.get("FISH_HOME", "").replace(" ", ""),
+        pages=os.environ.get("FISH_PAGES", "1") not in ("0", "false", "no", ""),
     )
