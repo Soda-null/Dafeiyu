@@ -7,7 +7,7 @@ done, so the 03:30 timer and a catch-up at the next start never do the same day 
 Steps (model steps need a Brain; without one only the mechanical ones run):
   1. close a stale open episode (model)      5. write her diary, keep her life threads (model)
   2. merge near-duplicates (model)           6. old episodes lose detail
-  3. new facts that replace old ones (model) 7. follow-ups she never got to ask become events
+  3. new facts that replace old ones (model) 7. follow-ups she never got to ask are let go
   4. weekly reflection (model)               8. export data/notebook_export.md
 """
 
@@ -21,7 +21,6 @@ from typing import TYPE_CHECKING
 
 from fish.brain.consolidate import Consolidator, similarity
 from fish.brain.leisure import moment_line
-from fish.config import owner_words
 from fish.memory import (Diary, EpisodeManager, Memory, MemoryStore, Pastimes, PhaseStore,
                          ProspectiveStore, Relationship, TraitStore, overlap)
 from fish.mood import MoodStore
@@ -33,7 +32,6 @@ if TYPE_CHECKING:
     from fish.brain.respond import Brain
 
 NIGHT_BOUNDARY = time(3, 30)
-EXPIRED_IMPORTANCE = 3
 MERGE_SIMILARITY = 0.4  # bigram Dice; the model makes the final call, this only picks candidates
 # "住 3 号楼" and "搬到了七号楼" must look alike to the update check: numerals become digits.
 _NUMERALS = str.maketrans("〇零一二两三四五六七八九", "001223456789")
@@ -135,7 +133,7 @@ def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
         done = 0
         for u in updates:
             if store.get(u.old_id).alive and store.get(u.new_id).alive:
-                store.supersede(u.old_id, u.new_id)
+                store.supersede(u.old_id, u.new_id, why="update")
                 done += 1
         report["updated"] = done
 
@@ -163,10 +161,19 @@ def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
             facts = store.profile() + [m for m in store.alive("fact") if m not in store.profile()][:20]
             old = store.alive("insight")  # all of them (at most 20): she may see some are outdated
             old_howto = store.alive("howto")
-            insights, howtos, outdated = thinker.reflect(gists, facts, old, old_howto)
+            # rules written during (or after) the chats she now looks back on are that evidence
+            # itself: she can neither call them outdated nor see them "again" (memory v3 step 1)
+            looked_back = (date.fromisoformat(last_reflect) if last_reflect else
+                           min(fish_day(datetime.fromisoformat(e.started)) for e in since) - timedelta(days=1))
+            newer = {m.id for m in old + old_howto
+                     if fish_day(datetime.fromisoformat(m.created)) > looked_back}
+            insights, howtos, outdated, confirms = thinker.reflect(gists, facts, old, old_howto, newer=newer)
             for memory_id in outdated:
                 store.weaken(memory_id, now)
+            for memory_id in confirms:
+                store.happened_again(memory_id, now)
             report["outdated"] = len(outdated)
+            report["confirmed"] = len(confirms)
             for text, importance in insights:
                 store.note("insight", text, importance=importance, now=now)
             for text, importance in howtos:
@@ -241,10 +248,9 @@ def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
     if not talked:
         rel.quiet_day(now)
     report["compressed"] = episodes.compress(now)
-    expired = ProspectiveStore(conn).expire(now)
-    for f in expired:
-        store.add("event", owner_words("我一直没问成他：") + f.text, importance=EXPIRED_IMPORTANCE, valence=-0.2, now=now)
-    report["expired"] = len(expired)
+    # a follow-up she never got to ask is let go, not written down as "我一直没问成他" (memory v3:
+    # those events crowded out what he said)
+    report["expired"] = len(ProspectiveStore(conn).expire(now))
 
     # 8. the readable export
     if export_path is not None:

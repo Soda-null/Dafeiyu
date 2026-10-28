@@ -77,7 +77,8 @@ class ProspectiveStore:
         self.conn.commit()
 
     def expire(self, now: datetime | None = None, grace_days: int = GRACE_DAYS) -> list[Followup]:
-        """Nightly: give up on follow-ups she never got to ask; returns them so they can become events."""
+        """Nightly: give up on follow-ups she never got to ask; returns them. They are only closed,
+        never turned into memories (memory v3)."""
         cutoff = ((now or datetime.now()).date() - timedelta(days=grace_days)).isoformat()
         rows = self.conn.execute(
             "SELECT * FROM prospective WHERE status = 'open' AND due < ? ORDER BY due, id", (cutoff,)

@@ -112,7 +112,7 @@ def test_claim_run_is_taken_once_even_across_connections(tmp_path):
     assert claim_run(b, "browse", "2026-10-27") is True
 
 
-def test_nightly_runs_once_a_day_and_turns_missed_followups_into_events(conn):
+def test_nightly_runs_once_a_day_and_lets_missed_followups_go(conn):
     ps = ProspectiveStore(conn)
     ps.add("问他演示怎么样", "2026-10-31", now=T0)
     em = EpisodeManager(conn)
@@ -124,6 +124,6 @@ def test_nightly_runs_once_a_day_and_turns_missed_followups_into_events(conn):
     assert (first["skipped"], first["expired"], first["compressed"], first["day"]) == \
         (False, 1, 1, "2026-11-04")
     assert run_nightly(conn, night + timedelta(hours=5)) == {"skipped": True}
-    events = MemoryStore(conn).alive("event")
-    assert len(events) == 1 and "没问成" in events[0].text
+    assert MemoryStore(conn).alive() == []  # memory v3: no "我一直没问成他" event
+    assert ps.open() == []
     assert em.get(ep.id).level == 1

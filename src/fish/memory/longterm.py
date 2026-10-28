@@ -38,6 +38,19 @@ UNCONFIRMED = "待印证"
 # Words that make a "him himself" note a passing state (a sore throat last week), not who he is.
 FOR_NOW = re.compile(r"最近|这几天|这阵子|这周|上周|今天|昨天|刚才|还没好|这次|暂时|目前|这两天")
 _DATE = re.compile(r"\d{4}\s*[-年/.]\s*\d{1,2}\s*[-月/.]\s*\d{1,2}\s*日?")
+# Why a memory stopped being current (memory v3). Only a correction he made and an update the
+# night found are "what she used to think"; a memory merged away or pushed out by a cap is not.
+WHYS = ("correct", "update", "merge", "cap", "expired")
+SHOWN_AS_FORMER = ("correct", "update")
+
+
+def strongest_about(abouts: list[str | None]) -> str | None:
+    """What a merged memory is about: the strongest of its sources (一辈子 > 本人 > 日常 > 路过).
+    It stays unconfirmed only when every source was; a merge is not evidence."""
+    known = [a for a in abouts if a in st.ABOUTS]
+    if known:
+        return max(known, key=st.ABOUTS.index)
+    return UNCONFIRMED if abouts and all(a == UNCONFIRMED for a in abouts) else None
 
 
 def _bigrams(text: str) -> set[str]:
@@ -83,6 +96,7 @@ class Memory:
     pattern: str | None = None  # how one time of it was worded, kept when the text became a gist
     about: str | None = None  # 路过 / 日常 / 本人 / 一辈子, or 待印证 for a rule not yet confirmed
     last_time: str | None = None  # YYYY-MM-DD it last happened; a day counts once
+    why: str | None = None  # why it was superseded (WHYS); None while current, or before v3
 
     @property
     def unconfirmed(self) -> bool:
@@ -129,7 +143,19 @@ def _from_row(r: sqlite3.Row) -> Memory:
         pattern=r["pattern"] if "pattern" in r.keys() else None,
         about=r["about"] if "about" in r.keys() else None,
         last_time=r["last_time"] if "last_time" in r.keys() else None,
+        why=r["why"] if "why" in r.keys() else None,
     )
+
+
+def _why_before_v3(old: Memory, new: Memory) -> str:
+    """A memory superseded before the `why` column existed: guessed the way the v3 migration
+    does (docs/memory_v3_zh.md §8). A source of a merge was merged; a rule replaced by another
+    rule, not merged, was pushed out by the cap; anything else was an update."""
+    if old.id in new.merged_from:
+        return "merge"
+    if old.kind in RULE_KINDS and new.kind == old.kind:
+        return "cap"
+    return "update"
 
 
 class MemoryStore:
@@ -210,7 +236,7 @@ class MemoryStore:
         if cap is not None:
             others = [m for m in self.alive(kind) if m.id != new.id and not m.pinned]
             for weakest in sorted(others, key=lambda m: (m.stability, m.id))[:max(0, len(others) + 1 - cap)]:
-                self.supersede(weakest.id, new.id)
+                self.supersede(weakest.id, new.id, why="cap")
         return new
 
     def repeat_of(self, kind: str, text: str, now: datetime, *, lifelong: bool = False) -> Memory | None:
@@ -281,15 +307,19 @@ class MemoryStore:
         self.conn.commit()
         return self.get(memory_id)
 
-    def supersede(self, old_id: int, new_id: int) -> None:
-        self.conn.execute("UPDATE memories SET superseded_by = ? WHERE id = ?", (new_id, old_id))
+    def supersede(self, old_id: int, new_id: int, *, why: str) -> None:
+        if why not in WHYS:
+            raise ValueError(f"why must be one of {WHYS}, got {why!r}")
+        self.conn.execute("UPDATE memories SET superseded_by = ?, why = ? WHERE id = ?",
+                          (new_id, why, old_id))
         self.conn.commit()
 
     def correct(
         self, old_id: int, text: str, *, importance: int | None = None,
         now: datetime | None = None,
     ) -> Memory:
-        """He corrected her: a new memory replaces the old one, which stays as 'what she used to think'."""
+        """He corrected her: a new memory replaces the old one, which stays as 'what she used to think'.
+        It keeps what the old one was about (his major corrected is still about him himself)."""
         old = self.get(old_id)
         now = now or datetime.now()
         importance = old.importance if importance is None else importance
@@ -300,11 +330,14 @@ class MemoryStore:
             source_episode=old.source_episode, tags=old.tags, pinned=old.pinned,
             stability=stability, now=now,
         )
-        self.supersede(old_id, new.id)
-        return new
+        self.conn.execute("UPDATE memories SET about = ?, last_time = ? WHERE id = ?",
+                          (old.about, iso(now)[:10], new.id))
+        self.supersede(old_id, new.id, why="correct")
+        return self.get(new.id)
 
     def merge(self, ids: list[int], text: str, *, now: datetime | None = None) -> Memory:
-        """Nightly: several near-duplicates become one, more stable, with its sources noted."""
+        """Nightly: several near-duplicates become one, more stable, with its sources noted.
+        What it is about, whether it is pinned and the day it last happened carry over."""
         olds = [self.get(i) for i in ids]
         if not olds:
             raise ValueError("merge needs at least one memory")
@@ -323,9 +356,11 @@ class MemoryStore:
             merged_from=ids, now=now,
         )
         for o in olds:
-            self.supersede(o.id, new.id)
+            self.supersede(o.id, new.id, why="merge")
         times = sum(o.times for o in olds)  # both counts carry over (decision 20)
-        self.conn.execute("UPDATE memories SET times = ? WHERE id = ?", (times, new.id))
+        last = max((o.last_time for o in olds if o.last_time), default=None)
+        self.conn.execute("UPDATE memories SET times = ?, about = ?, last_time = ? WHERE id = ?",
+                          (times, strongest_about([o.about for o in olds]), last, new.id))
         self.conn.commit()
         return self.get(new.id)
 
@@ -357,10 +392,11 @@ class MemoryStore:
         return [_from_row(r) for r in rows]
 
     def howto_card(self, limit: int = 8) -> list[Memory]:
-        """How to get along with him: the rules she has drawn, always in mind (decision 11)."""
+        """How to get along with him: the rules she has drawn, always in mind (decision 11).
+        A rule she saw is outdated (weakened) leaves the card until it is seen again."""
         rows = self.conn.execute(
-            "SELECT * FROM memories WHERE superseded_by IS NULL AND kind = 'howto'"
-            " ORDER BY importance DESC, stability DESC, id DESC LIMIT ?", (limit,)
+            "SELECT * FROM memories WHERE superseded_by IS NULL AND kind = 'howto' AND stability > ?"
+            " ORDER BY importance DESC, stability DESC, id DESC LIMIT ?", (st.WEAKENED_DAYS, limit)
         )
         return [_from_row(r) for r in rows]
 
@@ -373,11 +409,16 @@ class MemoryStore:
         return [_from_row(r) for r in rows]
 
     def former(self, memory_id: int) -> Memory | None:
-        """The memory this one replaced, if any ('你之前说是周五来着')."""
-        row = self.conn.execute(
-            "SELECT * FROM memories WHERE superseded_by = ? ORDER BY id DESC LIMIT 1", (memory_id,)
-        ).fetchone()
-        return _from_row(row) if row else None
+        """The memory this one replaced, if any ('你之前说是周五来着'): only a correction or an
+        update, never a source it was merged from or a rule a cap pushed out."""
+        rows = self.conn.execute(
+            "SELECT * FROM memories WHERE superseded_by = ? ORDER BY id DESC", (memory_id,)
+        ).fetchall()
+        new = self.get(memory_id) if rows else None
+        for old in map(_from_row, rows):
+            if (old.why or _why_before_v3(old, new)) in SHOWN_AS_FORMER:
+                return old
+        return None
 
     def count(self) -> int:
         return self.conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]

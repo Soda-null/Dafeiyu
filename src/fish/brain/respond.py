@@ -29,7 +29,6 @@ from fish.world import Searcher, read_file
 from fish.world.days import day_line
 
 FALLBACK_SAY = "……（走神了，你刚说什么？）"
-CLOSE_TURNS = 12  # how many last turns the close prompt sees
 SEEN_DAYS, SEEN_SHOWN = 2, 3  # recent world memories offered in the prompt
 SHARED_CHARS = 2500  # how much of a page or file he shared she reads (decision 23)
 URL = re.compile(r"https?://[^\s，。！？、；（）()【】<>\"']+")
@@ -312,7 +311,11 @@ class Brain:
         return True
 
     def close_episode(self, ep: Episode, now: datetime) -> Episode:
-        turns = self.window.recent(ep.id)[-CLOSE_TURNS:]
+        """Sum up a chat that is over. It sees every turn not yet folded into the running
+        summary, and what it writes is dated when the chat was, not when it is closed (the
+        next message, or the night, can be hours later)."""
+        turns = self.window.unfolded(ep.id)
+        at = datetime.fromisoformat(ep.last_active)
         already = [m.text for m in self.store.alive() if m.source_episode == ep.id]
         if not turns and not ep.running_summary:
             return self.episodes.close(ep.id, summary="", gist="", importance=1, valence=0.0, now=now)
@@ -325,8 +328,8 @@ class Brain:
         closed = parse_episode_close(raw, fallback)
         for n in closed.notes:
             self.store.note(n.kind, n.text, importance=n.importance, valence=n.valence,
-                            arousal=n.arousal, about=n.about, source_episode=ep.id, tags=n.tags, now=now)
+                            arousal=n.arousal, about=n.about, source_episode=ep.id, tags=n.tags, now=at)
         for f in closed.followups:
-            self.prospective.add(f.text, f.due, now=now)
+            self.prospective.add(f.text, f.due, now=at)
         return self.episodes.close(ep.id, summary=closed.summary, gist=closed.gist,
                                    importance=closed.importance, valence=closed.valence, now=now)

@@ -29,6 +29,15 @@ def _lines(items: list[str], empty: str) -> str:
     return "\n".join(f"- {i}" for i in items) or empty
 
 
+def keeps_subject(sources: tuple[Memory, ...], merged: str) -> bool:
+    """A merge must not hand her own doings to him: her life threads, or two notes that both
+    start with 我 ("我一直没问成他"), never come back as "他……" (memory v3 step 1)."""
+    if not merged.lstrip().startswith(("他", "她")):
+        return True
+    return not (any(m.kind == "self" for m in sources)
+                or all(m.text.lstrip().startswith("我") for m in sources))
+
+
 @dataclass(frozen=True)
 class Merge:
     ids: tuple[int, ...]
@@ -62,7 +71,7 @@ class Consolidator:
         text = "\n\n".join(f"对 {i + 1}：\n- [#{a.id}] {a.text}\n- [#{b.id}] {b.text}"
                            for i, (a, b) in enumerate(pairs))
         data = self._ask("merge", pairs=text)
-        allowed = {frozenset((a.id, b.id)) for a, b in pairs}
+        allowed = {frozenset((a.id, b.id)): (a, b) for a, b in pairs}
         merges: list[Merge] = []
         for item in (data or {}).get("merges") or []:
             if not isinstance(item, dict):
@@ -70,7 +79,8 @@ class Consolidator:
             ids = item.get("ids")
             merged = str(item.get("text", "")).strip()
             if (isinstance(ids, list) and len(ids) == 2 and all(isinstance(i, int) for i in ids)
-                    and frozenset(ids) in allowed and merged):
+                    and frozenset(ids) in allowed and merged
+                    and keeps_subject(allowed[frozenset(ids)], merged)):
                 merges.append(Merge(tuple(ids), merged[:200]))
         return merges
 
@@ -103,17 +113,31 @@ class Consolidator:
         return updates
 
     def reflect(self, gists: list[str], facts: list[Memory], old_insights: list[Memory],
-                old_howto: list[Memory] | None = None
-                ) -> tuple[list[tuple[str, int]], list[tuple[str, int]], list[int]]:
-        """Returns (insights, howto rules, outdated): new ones as (text, importance), and the
-        ids of old rules she now sees are no longer true (decision 21)."""
+                old_howto: list[Memory] | None = None, *, newer: set[int] | frozenset[int] = frozenset()
+                ) -> tuple[list[tuple[str, int]], list[tuple[str, int]], list[int], list[int]]:
+        """Returns (insights, howto rules, outdated, confirms): new ones as (text, importance),
+        the ids of old rules she now sees are no longer true (decision 21), and the ids of old
+        rules she saw again in other words. `newer`: rules written during the chats she is
+        looking back on; they are that same evidence, so they are neither outdated nor confirmed."""
         old_howto = old_howto or []
+
+        def listed(ms: list[Memory]) -> str:
+            return _lines([f"[#{m.id}] {m.line()}" + ("（新记的）" if m.id in newer else "") for m in ms],
+                          "（还没有）")
+
         data = self._ask("reflect", persona=self.persona, gists=_lines(gists, "（最近没怎么聊）"),
                          facts=_lines([f.line() for f in facts], "（还不多）"),
-                         old_insights=_lines([f"[#{m.id}] {m.line()}" for m in old_insights], "（还没有）"),
-                         old_howto=_lines([f"[#{m.id}] {m.line()}" for m in old_howto], "（还没有）"))
-        known = {m.id for m in old_insights} | {m.id for m in old_howto}
-        outdated = [i for i in ((data or {}).get("outdated") or []) if isinstance(i, int) and i in known]
+                         old_insights=listed(old_insights), old_howto=listed(old_howto))
+        known = ({m.id for m in old_insights} | {m.id for m in old_howto}) - set(newer)
+
+        def ids(key: str) -> list[int]:
+            got = (data or {}).get(key)
+            if not isinstance(got, list):
+                return []
+            return list(dict.fromkeys(i for i in got if isinstance(i, int) and i in known))
+
+        outdated = ids("outdated")
+        confirms = [i for i in ids("confirms") if i not in outdated]
 
         def take(key: str, limit: int) -> list[tuple[str, int]]:
             out: list[tuple[str, int]] = []
@@ -123,7 +147,7 @@ class Consolidator:
                                 _clamp(item.get("importance"), *INSIGHT_IMPORTANCE, default=6)))
             return out[:limit]
 
-        return take("insights", 3), take("howto", 2), outdated
+        return take("insights", 3), take("howto", 2), outdated, confirms
 
     def diary(self, day: str, mood: str, threads: list[str], gists: list[str],
               yesterday: str, seen: list[str] | None = None, *, phase_line: str = "",

@@ -56,6 +56,14 @@ class Window:
         rows = self.conn.execute(sql + " ORDER BY id DESC LIMIT ?", args + (self.size,)).fetchall()
         return _turns(reversed(rows))
 
+    def unfolded(self, episode_id: int) -> list[Turn]:
+        """Every turn of the episode not yet folded into its running summary, oldest first."""
+        rows = self.conn.execute(
+            "SELECT id, role, text, ts FROM messages WHERE folded = 0 AND episode_id = ? ORDER BY id",
+            (episode_id,),
+        )
+        return _turns(rows)
+
     def to_fold(self, episode_id: int) -> list[Turn]:
         """The oldest turns to summarize away, or [] while the episode still fits."""
         count = self.conn.execute(
