@@ -170,10 +170,10 @@ def test_budget_drops_the_weakest_memories_first(tmp_path):
     assert len(system) <= limit + 60
 
 
-def test_the_best_memory_outlives_the_older_turns_of_the_chat(tmp_path):
-    """The first paid v3 checkups: the fixed part had grown to near the limit, every recalled
-    memory was cut before a single old turn, and she said she had forgotten what she had found.
-    The older turns go first now (down to MIN_TURNS); the best memory is never cut."""
+def test_the_day_is_never_cut_for_the_budget(tmp_path):
+    """Decision 32: over the budget, only recalled memories go, and the best one stays; what was
+    said today, earlier and in this chat, is all still there (10-28: with four lines left she
+    denied what she had said four minutes before)."""
     from types import SimpleNamespace
 
     from fish.brain import budget
@@ -181,13 +181,44 @@ def test_the_best_memory_outlives_the_older_turns_of_the_chat(tmp_path):
     found = [SimpleNamespace(text=f"记忆{i}" + "长" * 60) for i in range(4)]
     window = [SimpleNamespace(text="前面聊的一句话" * 3) for _ in range(12)]
     render = lambda rs: "\n".join(r.text for r in rs)  # noqa: E731
-    kept, summary, turns, _ = budget.fit(found, "前面的摘要" * 10, window, "要问他的", 5900, "还记得吗",
+    kept, earlier, turns, _ = budget.fit(found, "早些时候聊的" * 10, window, "要问他的", 5900, "还记得吗",
                                          limit=6000, render_recalled=render)
-    assert kept == found[:1] and summary == "" and len(turns) == budget.MIN_TURNS
-    # with room for two and four turns, the summary and the old turns go, the second memory stays
-    kept, summary, turns, _ = budget.fit(found, "前面的摘要" * 10, window, "", 5750, "还记得吗",
-                                         limit=6000, render_recalled=render)
-    assert kept == found[:2] and summary == "" and len(turns) == budget.MIN_TURNS
+    assert kept == found[:1] and earlier == "早些时候聊的" * 10 and turns == window
+
+
+def test_she_sees_the_whole_day_she_said_it_herself(tmp_path):
+    """Decision 32: the earlier chats of today are in front of her word for word, under the time
+    each began, and this chat is whole even past the old 20-turn window."""
+    llm = FakeLLM(lambda messages, json_mode: json.dumps({"say": "嗯"}, ensure_ascii=False))
+    brain, conn = make_brain(tmp_path, llm)
+    morning = datetime(2026, 10, 28, 14, 2)
+    brain.respond("你在干嘛", now=morning)
+    brain.window.append("fish", "那我去眯一会儿，醒了再说买菜的事", "terminal", brain.episodes.open_episode().id, morning)
+    evening = datetime(2026, 10, 28, 18, 0)
+    for k in range(15):  # 30 turns in this chat: more than the old window held
+        brain.respond(f"第{k}句", now=evening + timedelta(minutes=k))
+    llm.calls.clear()
+    brain.respond("你刚才说啥来着", now=evening + timedelta(minutes=20))
+    msgs = llm.calls[0][0]
+    system = msgs[0]["content"]
+    assert "—— 14:02 ——" in system and "你：那我去眯一会儿，醒了再说买菜的事" in system
+    assert "（下面是这次聊天，从 18:00 开始，一句不少）" in system
+    assert msgs[1]["content"] == "第0句" and len(msgs) == 1 + 30 + 1
+    # yesterday is not here: it is in her diary and memories now
+    assert "第0句" not in system
+
+
+def test_a_very_long_day_keeps_the_gist_of_its_oldest_chats():
+    from fish.brain.prompt import fit_day
+    from fish.memory import Turn
+
+    def turns(hhmm, n, text):
+        return [Turn(i, "user" if i % 2 == 0 else "fish", text, f"2026-10-28T{hhmm}") for i in range(n)]
+
+    early, mid, now_ = turns("09:00", 10, "早" * 100), turns("13:00", 10, "午" * 100), turns("18:00", 4, "晚")
+    text, current = fit_day([(1, early), (2, mid)], now_, {1: "他说报告要重写"}, limit=1500)
+    assert "—— 09:00–09:00，只记得大意：他说报告要重写 ——" in text and "早" * 100 not in text
+    assert "午" * 100 in text and current == now_
 
 
 def test_the_fixed_part_leaves_room_for_what_she_remembers(tmp_path):
@@ -212,7 +243,7 @@ def test_the_fixed_part_leaves_room_for_what_she_remembers(tmp_path):
             profile=add("fact", "他在 Springfield 读大三，学的专业、长期的喜好和家里的事", 10),
             diary=[("2026-10-24", "今天他说考完了，我陪他吐槽了半天老师，最后他说要去吃火锅，我也饿了。"),
                    ("2026-10-25", "下雨，他没怎么来，我翻了几页书，又发了会儿呆，想着他明天是不是要早起。")],
-            recalled=[], followups=[], summary="", window=[], user_text="",
+            recalled=[], followups=[], earlier="", window=[], user_text="",
             stage="熟了", stage_rules=load_stages().get("熟了", ""),
             howto=add("howto", "他累的时候别追问，回一句短的陪着就行", 6),
             phase=Phase("2026-10-25", 0.2, 0.1, ("他的考试",), "这阵子懒洋洋的，但挺想听他说学校的事"),

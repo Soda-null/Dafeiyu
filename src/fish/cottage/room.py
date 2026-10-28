@@ -17,7 +17,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from fish.config import owner_words
-from fish.cottage.rules import (ACTIONS, ATE_RECENTLY_HOURS, CARRY, FRIDGE_SLOTS, GOODS, HUNGER_PER_HOUR,
+from fish.cottage.rules import (ACTIONS, ATE_RECENTLY_HOURS, CARRY, ENERGY_PER_HOUR, FRIDGE_SLOTS, GOODS, HUNGER_PER_HOUR,
                                 HUNGRY, RICE, RICE_FULL, SHOP_WALK_MINUTES, SINK_LIMIT, TIRED, WAKE_AT, Good,
                                 asleep_hours, in_stock, mealtime, shop_open)
 
@@ -52,6 +52,7 @@ class Room:
     sill: list[str] = field(default_factory=list)  # what he put on the windowsill
     meals: list[str] = field(default_factory=list)  # "2026-10-28 午饭": that mealtime is done with
     ate: str = ""  # when she last ate
+    pending: dict = field(default_factory=dict)  # a meal on the stove: {"hunger", "line", "routine"} at `until`
     events: list[dict] = field(default_factory=list)  # {"ts", "line"}, the last two days
     last: str = ""  # up to when time has moved the room
 
@@ -160,11 +161,18 @@ class Cottage:
         last = datetime.fromisoformat(room.last) if room.last else now
         if now <= last:
             return change
-        change.hunger += HUNGER_PER_HOUR * _awake_hours(last, now)
+        awake = _awake_hours(last, now)
+        change.hunger += HUNGER_PER_HOUR * awake
+        change.energy -= ENERGY_PER_HOUR * awake
 
         if room.until and datetime.fromisoformat(room.until) <= now:
+            done = datetime.fromisoformat(room.until)
             if room.doing == ACTIONS["nap"].doing:
                 room.bed = "乱"
+            if room.pending:  # the meal is ready: she eats now, not when she started cooking
+                self.note(room, done, room.pending["line"], change, routine=room.pending.get("routine", False))
+                change.hunger += room.pending["hunger"]
+                room.ate, room.pending = _iso(done), {}
             room.doing, room.until = "", ""
         if asleep_hours(now):
             if not room.doing:
@@ -241,17 +249,21 @@ class Cottage:
                routine: bool = False) -> Change:
         action = ACTIONS[key]
         change = Change(hunger=action.hunger, energy=action.energy)
-        if key == "rice":
+        if key in ("rice", "cook"):
+            # Two steps (decision 32): now she starts; when `until` comes the meal is ready and
+            # she eats (advance). Until then she is not fed, and has not eaten.
+            change.hunger = 0.0
             room.rice -= 1
-            room.sink.append("电饭煲内胆")
-            room.ate = _iso(now)
-            line = f"{meal}煮了白饭吃" if meal else "煮了锅白饭吃"
-        elif key == "cook":
-            used = self._take_for_meal(room, now.date())
-            room.rice -= 1
-            room.sink.append("锅")
-            room.ate = _iso(now)
-            line = f"{meal or ''}做了饭，用了{'、'.join(used)}" if meal else f"做了顿饭，用了{'、'.join(used)}"
+            if key == "rice":
+                room.sink.append("电饭煲内胆")
+                line = f"开始煮{meal}的白饭" if meal else "开始煮一锅白饭"
+                done = f"{meal}的白饭煮好了，吃了" if meal else "白饭煮好了，吃了"
+            else:
+                used = self._take_for_meal(room, now.date())
+                room.sink.append("锅")
+                line = f"开始做{meal or '饭'}，用{'、'.join(used)}"
+                done = f"{meal}做好了，吃了" if meal else "饭做好了，吃了"
+            room.pending = {"hunger": action.hunger, "line": done, "routine": routine}
         elif key == "wash":
             room.sink.clear()
             line = "洗了碗"

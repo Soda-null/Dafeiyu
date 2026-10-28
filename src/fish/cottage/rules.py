@@ -18,6 +18,7 @@ SINK_LIMIT = 3  # more unwashed than this and she washes up before cooking
 HUNGRY = 50  # cooking is on her menu from here
 TIRED = 50  # a nap is on her menu below this
 HUNGER_PER_HOUR = 3.0  # awake hours make her hungry; eating is what undoes it
+ENERGY_PER_HOUR = 2.5  # awake hours tire her; a nap or the night's sleep is what undoes it
 SLEEP_FROM, WAKE_AT = time(0, 0), time(8, 0)
 MEALS = (("午饭", time(11, 30), time(13, 30)), ("晚饭", time(17, 30), time(19, 30)))
 ATE_RECENTLY_HOURS = 2.5  # a meal she cooked herself this close to mealtime counts as that meal

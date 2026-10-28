@@ -18,7 +18,7 @@ class CottageActivity(Activity):
         self.cottage = cottage
 
     def offer(self, kit: Kit) -> list[Choice]:
-        mood = MoodStore.apply_clock(MoodStore(kit.conn).load(), kit.now)
+        mood = MoodStore.apply_clock(MoodStore(kit.conn).load(), kit.now, kitchen=True)
         return [Choice(KEY, o.line, arg_hint=o.arg_hint, payload={"action": o.key})
                 for o in self.cottage.offers(kit.now, mood.hunger, mood.energy)]
 

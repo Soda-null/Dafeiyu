@@ -110,7 +110,7 @@ class Leisure:
         moment_id = kit.pastimes.begin_moment(now)
         choices = self.menu(kit)
         data = ask_json(brain.llm, "leisure_choose", persona=brain.persona, now=self.when(now),
-                        mood=MoodStore.apply_clock(brain.moods.load(), now).describe(),
+                        mood=MoodStore.apply_clock(brain.moods.load(), now, kitchen=brain.cottage is not None).describe(),
                         threads="\n".join(f"- {m.line()}" for m in kit.store.alive("self")[-5:]) or "（没什么特别的）",
                         earlier=self.earlier(kit, now), home=self.home(now), menu=render_menu(choices),
                         temperature=1.0)

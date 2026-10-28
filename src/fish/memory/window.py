@@ -69,6 +69,20 @@ class Window:
         rows = self.conn.execute(sql + " ORDER BY id DESC LIMIT ?", args + (self.size,)).fetchall()
         return _turns(reversed(rows))
 
+    def since(self, start: datetime) -> list[tuple[int | None, Turn]]:
+        """Every turn from `start` on, folded ones too, with its episode: the day so far
+        (decision 32). Oldest first."""
+        rows = self.conn.execute(
+            "SELECT id, role, text, ts, episode_id FROM messages WHERE ts >= ? ORDER BY id", (iso(start),)
+        ).fetchall()
+        return [(r["episode_id"], Turn(r["id"], r["role"], r["text"], r["ts"])) for r in rows]
+
+    def episode(self, episode_id: int) -> list[Turn]:
+        """Every turn of one episode, folded ones too, oldest first."""
+        rows = self.conn.execute(
+            "SELECT id, role, text, ts FROM messages WHERE episode_id = ? ORDER BY id", (episode_id,))
+        return _turns(rows)
+
     def unfolded(self, episode_id: int) -> list[Turn]:
         """Every turn of the episode not yet folded into its running summary, oldest first."""
         rows = self.conn.execute(

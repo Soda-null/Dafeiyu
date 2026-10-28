@@ -18,7 +18,6 @@ from fish.memory.longterm import iso
 KEYS = ("energy", "boredom", "hunger")
 DEFAULTS = {"energy": 70.0, "boredom": 20.0, "hunger": 40.0}
 FOOD_WORDS = ("吃", "饭", "喂", "零食", "夜宵")
-FOOD_TALK_WITH_KITCHEN = 3  # decision 26: talking about food is not eating
 # What each reported mood word says about her tone that turn, -1..1 (layer B reads these).
 WORD_TONE = {"开心": 1.0, "好奇": 0.5, "平静": 0.1, "无聊": -0.3, "困": -0.2, "饿": -0.2,
              "烦": -0.7, "难过": -1.0}
@@ -79,16 +78,17 @@ class MoodStore:
         self.conn.commit()
 
     @staticmethod
-    def apply_clock(mood: Mood, now: datetime | None = None) -> Mood:
+    def apply_clock(mood: Mood, now: datetime | None = None, *, kitchen: bool = False) -> Mood:
         """How she feels right now: the stored baseline plus the time of day.
-        Returns a copy; the offset is never saved."""
+        Returns a copy; the offset is never saved. With a kitchen, mealtimes are real meals in
+        the cottage, so the clock does not make her hungry on top of them."""
         hour = (now or datetime.now()).hour
         shown = replace(mood)
         if 0 <= hour < 6:
             shown.energy = _clamp(mood.energy - 45)
         elif 9 <= hour < 12:
             shown.energy = _clamp(mood.energy + 10)
-        if hour in (11, 12, 17, 18):
+        if not kitchen and hour in (11, 12, 17, 18):
             shown.hunger = _clamp(mood.hunger + 20)
         return shown
 
@@ -96,10 +96,11 @@ class MoodStore:
     def after_turn(mood: Mood, user_text: str, fish_text: str, *, reported: str | None = None,
                    topic: str | None = None, last_topic: str | None = None, kitchen: bool = False) -> Mood:
         """How one exchange moves her: the mood she reported, whether the topic repeats,
-        and whether he brought up food. With a kitchen (decision 26) only eating feeds her;
-        talk of food makes her hungrier."""
-        mood.energy = _clamp(mood.energy - 1)
-        mood.hunger = _clamp(mood.hunger + 2)  # time passes; food words below undo it
+        and whether he brought up food. With a kitchen (decisions 26, 32) hunger and energy
+        are the cottage's: time, meals and sleep move them, talking does not."""
+        if not kitchen:
+            mood.energy = _clamp(mood.energy - 1)
+            mood.hunger = _clamp(mood.hunger + 2)  # time passes; food words below undo it
         if topic and last_topic and topic == last_topic:
             mood.boredom = _clamp(mood.boredom + 8)
         else:
@@ -108,8 +109,8 @@ class MoodStore:
             mood.boredom = _clamp(mood.boredom + 10)
         elif reported in ("开心", "好奇"):
             mood.boredom = _clamp(mood.boredom - 8)
-        if any(k in user_text for k in FOOD_WORDS):
-            mood.hunger = _clamp(mood.hunger + (FOOD_TALK_WITH_KITCHEN if kitchen else -20))
+        if not kitchen and any(k in user_text for k in FOOD_WORDS):
+            mood.hunger = _clamp(mood.hunger - 20)
         return mood
 
     def log(self, mood: Mood, word: str | None, now: datetime | None = None) -> None:

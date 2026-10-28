@@ -89,5 +89,5 @@
 ?looked_up ## 你刚查到的
 ?looked_up {looked_up}
 
-## 这次聊天前面的部分
-{summary}
+## 今天你们聊过的（原文，按时间；说过的话以这里为准）
+{earlier}

@@ -54,10 +54,30 @@ def test_at_mealtime_she_eats_what_there_is_once(tmp_path):
     rice = c.load().rice
     change = c.advance(datetime(2026, 11, 2, 12, 0))
     room = c.load()
-    assert change.lines == ["午饭做了饭，用了青菜、鸡蛋"]  # what goes off first goes first
-    assert change.hunger < 0 and room.rice == rice - 1 and room.sink == ["锅"]
-    assert [i["name"] for i in room.fridge] == ["鸡蛋"] and room.doing == "做饭"
-    assert c.advance(datetime(2026, 11, 2, 13, 0)).lines == []  # one lunch, not two
+    assert change.lines == ["开始做午饭，用青菜、鸡蛋"]  # what goes off first goes first
+    assert change.hunger > 0 and room.rice == rice - 1 and room.sink == ["锅"]  # not fed yet
+    assert [i["name"] for i in room.fridge] == ["鸡蛋"] and room.doing == "做饭" and not room.ate
+    later = c.advance(datetime(2026, 11, 2, 13, 0))  # one lunch, not two; ready at 12:40
+    assert later.lines == ["午饭做好了，吃了"] and later.hunger < 0
+    room = c.load()
+    assert room.ate == "2026-11-02T12:40" and room.doing == "" and not room.pending
+    assert c.today(room, datetime(2026, 11, 2, 13, 0)) == ["12:00 开始做午饭，用青菜、鸡蛋", "12:40 午饭做好了，吃了"]
+
+
+def test_hunger_and_energy_follow_the_day_not_the_chat(tmp_path):
+    """Decision 32: in the cottage, talking moves neither; awake hours make her hungry and
+    tired, a meal feeds her when it is ready, the night's sleep gives her energy back."""
+    from fish.mood import Mood, MoodStore
+
+    before = Mood(energy=60, boredom=20, hunger=30)
+    after = MoodStore.after_turn(Mood(**before.__dict__), "吃饭了吗，我在吃面", "吃了", kitchen=True)
+    assert (after.energy, after.hunger) == (before.energy, before.hunger)
+    assert MoodStore.apply_clock(before, datetime(2026, 11, 2, 18, 0), kitchen=True).hunger == 30
+    c = home(tmp_path, datetime(2026, 11, 2, 8, 0))
+    change = c.advance(datetime(2026, 11, 2, 10, 0))
+    assert change.hunger == 6 and change.energy == -5  # two awake hours
+    c.advance(datetime(2026, 11, 2, 22, 0))
+    assert c.advance(datetime(2026, 11, 3, 8, 0)).energy == -5  # 22:00–24:00 awake, then asleep
 
 
 def test_an_empty_kitchen_means_going_hungry(tmp_path):
@@ -122,7 +142,7 @@ def test_what_she_says_changes_nothing_in_the_room(tmp_path):
     system = llm.calls[0][0][0]["content"]
     assert "你住在湖边的小屋" in system and "屋里：冰箱里有鸡蛋" in system
     assert "你说的话变不出东西" in system and "那家离我这儿不远" not in system
-    assert brain.moods.load().hunger > hunger  # talking about food is not eating
+    assert brain.moods.load().hunger == hunger  # talking about food is not eating (decision 32)
 
 
 def test_free_time_at_home_goes_through_the_rules(tmp_path):

@@ -112,7 +112,7 @@ def life(conn: sqlite3.Connection, settings: Settings, days: int = 3, now: datet
         for line in home.lines(room).values():
             print(f"  {line}")
         events = home.today(room, now)
-    mood = MoodStore.apply_clock(MoodStore(conn).load(), now)
+    mood = MoodStore.apply_clock(MoodStore(conn).load(), now, kitchen=settings.cottage)
     print(f"  心情：{mood.describe()}")
     phase = PhaseStore(conn).current()
     if phase.line:

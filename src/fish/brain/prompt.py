@@ -63,8 +63,8 @@ class PromptContext:
     diary: list[tuple[str, str]]
     recalled: list[Recalled]
     followups: list[Followup]
-    summary: str
-    window: list[Turn]
+    earlier: str  # what came before this chat today, already laid out (fit_day)
+    window: list[Turn]  # this chat so far, whole
     user_text: str
     limit: int = budget.DEFAULT_LIMIT
     extra_state: list[str] = field(default_factory=list)
@@ -108,6 +108,9 @@ def state_line(ctx: PromptContext) -> str:
     return " ".join(parts + ctx.extra_state)
 
 
+HIS_SHOPS = 6
+
+
 def render_home(ctx: PromptContext) -> str:
     """Where she lives. With her cottage (decision 26) that is the lakeside room, and the real
     city and its shops (decision 15) are where he is; without it, the real city is hers."""
@@ -116,6 +119,11 @@ def render_home(ctx: PromptContext) -> str:
         return town or "（还不知道）"
     from fish.cottage import summary
 
+    # his city, not hers: "你住在 X 一带" read under 他那边 made her live in two places; and a
+    # handful of his shops is enough to recognise one he names
+    his = (ctx.home_line.replace("你住在", "在", 1) + "。" if ctx.home_line else "")
+    shops = "；".join(ctx.places.split("；")[:HIS_SHOPS]) if ctx.places else ""
+    town = his + (f"附近：{shops}" if shops else "")
     mine = "你住在湖边的小屋：" + summary() + "\n" + ctx.cottage
     return mine + ("\n" + owner_words("他那边：") + town if town else "")
 
@@ -250,16 +258,16 @@ def build_chat_messages(ctx: PromptContext) -> list[dict[str, str]]:
         pacts=render_pacts(ctx.pacts, ctx.stars), pages=render_pages(ctx.pages, ctx.now.date()),
     )
     today = ctx.now.date()
-    fixed = render(template, recalled="", followups="", summary="", **fixed_fields)
-    recalled, summary, window, followups_text = budget.fit(
-        ctx.recalled, ctx.summary, ctx.window, render_followups(ctx.followups),
+    fixed = render(template, recalled="", followups="", earlier="", **fixed_fields)
+    recalled, earlier, window, followups_text = budget.fit(
+        ctx.recalled, ctx.earlier, ctx.window, render_followups(ctx.followups),
         # sharing never costs memories, nor do the pages she looked back at (their own two places)
         len(fixed), ctx.user_text, limit=ctx.limit + len(ctx.shared) + len(fixed_fields["pages"]) - len("（没翻）"),
         render_recalled=lambda rs: render_recalled(rs, today),
     )
     system = render(
         template, recalled=render_recalled(recalled, today), followups=followups_text or "（没有）",
-        summary=summary or "（这是开头）", **fixed_fields,
+        earlier=earlier or "（今天这是第一次聊）", **fixed_fields,
     )
     messages: list[dict] = [{"role": "system", "content": system}]
     for t in window:
@@ -278,6 +286,42 @@ def build_chat_messages(ctx: PromptContext) -> list[dict[str, str]]:
     else:
         messages.append({"role": "user", "content": f"{user_text}\n{JSON_REMINDER}"})
     return messages
+
+
+def fit_day(earlier: list[tuple[int | None, list[Turn]]], current: list[Turn], gists: dict[int, str],
+            running_summary: str = "", limit: int = budget.DAY_LIMIT) -> tuple[str, list[Turn]]:
+    """The day so far (decision 32): the earlier chats of today word for word, each under the
+    time it began, then this chat whole. A very long day over `limit` keeps only the gist of its
+    oldest chats, and if this chat alone is too long, the gist of its start; the latest words
+    are always there as they were said."""
+    def size(turns: list[Turn]) -> int:
+        return sum(len(t.text) + budget.TURN_OVERHEAD for t in turns)
+
+    blocks: list[tuple[int | None, list[Turn], str | None]] = [(e, ts, None) for e, ts in earlier if ts]
+    total = sum(size(ts) for _, ts, _ in blocks) + size(current)
+    for i, (e, ts, _) in enumerate(blocks):
+        if total <= limit:
+            break
+        gist = gists.get(e or -1, "") or "（聊了些家常）"
+        total += len(gist) + 20 - size(ts)
+        blocks[i] = (e, ts, gist)
+    head = ""
+    if total > limit and current:
+        while total > limit and len(current) > 10:
+            total -= size(current[:1])
+            current = current[1:]
+        head = f"（这次聊天开头的大意：{running_summary}）" if running_summary else "（这次聊天开头的记不太清了）"
+    who = owner_words("他")
+    lines: list[str] = []
+    for _, ts, gist in blocks:
+        if gist is not None:
+            lines.append(f"—— {ts[0].ts[11:16]}–{ts[-1].ts[11:16]}，只记得大意：{gist} ——")
+            continue
+        lines.append(f"—— {ts[0].ts[11:16]} ——")
+        lines += [f"{who if t.role == 'user' else '你'}：{t.text}" for t in ts]
+    if current:
+        lines.append(head + f"（下面是这次聊天，从 {current[0].ts[11:16]} 开始，一句不少）")
+    return "\n".join(lines), current
 
 
 def render_turns(turns: list[Turn]) -> str:

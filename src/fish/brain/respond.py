@@ -14,7 +14,7 @@ from typing import Callable
 from fish.brain.leisure import Leisure, away, default_activities, moment_line, pastimes_line
 from fish.brain.llm import LLM
 from fish.brain.parse import Reply, parse_episode_close, parse_reply, parse_retry
-from fish.brain.prompt import (JSON_REMINDER, PromptContext, build_chat_messages, build_close_messages,
+from fish.brain.prompt import (JSON_REMINDER, PromptContext, build_chat_messages, build_close_messages, fit_day,
                                build_fold_messages)
 from fish.brain.reach import HOME_LATELY, Reacher, ReachOut, ReachPolicy, recent_lines
 from fish.config import Settings, owner_words
@@ -22,10 +22,11 @@ from fish.cottage import Cottage, invented_act
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
 from fish.memory import (ABOUT_HIM_KINDS, BigramEmbedder, Diary, Episode, EpisodeManager, Memory, MemoryStore,
                          Moment, Pastimes, PhaseStore, ProspectiveStore, Relationship, StickerAlbum, TimeCued,
-                         TraitStore, Window, arrival_line, asks_habit, asks_pact, asks_recall, cue_for,
+                         TraitStore, Turn, Window, arrival_line, asks_habit, asks_pact, asks_recall, cue_for,
                          echoes_her, his_line, keys_of, may_answer, mentioned, overlap, promised_in_words, recall,
                          today_section, triggered, turn_back)
 from fish.memory.longterm import PACT_LINK
+from fish.memory.patterns import DAY_ENDS, day_of
 from fish.memory.retrieval import TOUCH_RELEVANCE
 from fish.memory.prospective import DUE_SHOWN
 from fish.memory.window import FOLD_BATCH
@@ -140,6 +141,20 @@ class Brain:
             base.energy += change.energy
             self.moods.save(base)  # save clamps
 
+    def day_so_far(self, now: datetime, ep: Episode) -> tuple[str, list[Turn]]:
+        """Today's chat in full (decision 32): the earlier chats of her day (it starts at 03:30)
+        laid out word for word, and this one whole. The night sorts the day into memories."""
+        start = datetime.combine(day_of(now), DAY_ENDS)
+        earlier: list[tuple[int | None, list[Turn]]] = []
+        for episode_id, turn in self.window.since(start):
+            if episode_id == ep.id:
+                continue
+            if not earlier or earlier[-1][0] != episode_id:
+                earlier.append((episode_id, []))
+            earlier[-1][1].append(turn)
+        gists = {e.id: e.gist for e in self.episodes.closed() if e.id in {i for i, _ in earlier}}
+        return fit_day(earlier, self.window.episode(ep.id), gists, ep.running_summary)
+
     def home_lately(self, now: datetime) -> list[str]:
         """What happened in her cottage in the last few hours: a reason to text him (decision
         26). Only recent, so one event does not knock on the gate all day; never a meal eaten on
@@ -203,11 +218,11 @@ class Brain:
 
         self.move_time(now)
         base = self.moods.load()
-        mood = MoodStore.apply_clock(base, now)  # what she feels now; the baseline is what we save
+        mood = MoodStore.apply_clock(base, now, kitchen=self.cottage is not None)  # what she feels now; the baseline is what we save
         stage = self.stage()
         self.relationship.note_active_day(now)
 
-        window = self.window.recent(ep.id)
+        earlier, window = self.day_so_far(now, ep)
         last_fish = next((t.text for t in reversed(window) if t.role == "fish"), "")
         # Her card is in front of her anyway: it takes none of the places of what his line brings
         # back, and a card fact his line touches is marked and used, but grows no stronger: being
@@ -245,7 +260,7 @@ class Brain:
             profile=profile, mentioned={m.id for m in touched}, formers=formers,
             diary=self.diary.recent(2),
             recalled=recalled, followups=self.prospective.due(now)[:DUE_SHOWN],
-            summary=ep.running_summary, window=window, user_text=user_text,
+            earlier=earlier, window=window, user_text=user_text,
             limit=self.settings.prompt_chars,
             seen=self.store.seen_recently(now, SEEN_DAYS)[:SEEN_SHOWN],
             stage=stage, stage_rules=self.stages.get(stage, ""), howto=self.store.howto_card(),
@@ -436,7 +451,7 @@ class Brain:
                              max_per_day=self.settings.reach_max_per_day)
         if policy.refused(now) is not None:
             return None
-        mood = MoodStore.apply_clock(self.moods.load(), now)
+        mood = MoodStore.apply_clock(self.moods.load(), now, kitchen=self.cottage is not None)
         trig = policy.triggers(now, mood, home=self.home_lately(now))
         if not trig.any:
             return None
