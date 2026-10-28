@@ -66,8 +66,9 @@ OUTCOME_WORDS = re.compile(r"考(?!虑)|面试|述职|答辩|演示|汇报|比�
 OUTCOME_DAYS = 30  # how far back an event can still get its result at the close
 OUTCOMES_SHOWN = 3
 # The follow-ups she let go were written as events before memory v3 step 1; they fade within
-# weeks (stability.UNASKED_MAX_DAYS), whoever the merge made the subject.
-UNASKED = re.compile(r"一直没问成")
+# weeks (stability.UNASKED_MAX_DAYS), whoever the merge made the subject. Only that row shape
+# ("我/他一直没问成他……"): his own "他一直没问成导师……" is an ordinary thing about him.
+UNASKED = re.compile(r"^[我他]一直没问成他")
 
 
 def strongest_about(abouts: list[str | None]) -> str | None:

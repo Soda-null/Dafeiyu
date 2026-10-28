@@ -4,8 +4,8 @@ Two gates, then a score. A memory must first be retrievable: R >= FREE_RECALL_R 
 or R >= CUED_RECALL_R when the cue is strong (recognition beats recall). Survivors are
 scored relevance x recency x importance, the Generative Agents triple, and the top few
 within a character budget are returned. Only the ones that really have to do with the line
-(TOUCH_RELEVANCE, or from the days it names) are touched (recall makes memories stronger); the
-rest she only glanced at, and a glance changes nothing (memory v3 §B4).
+(TOUCH_RELEVANCE, or from the day or week it names) are touched (recall makes memories
+stronger); the rest she only glanced at, and a glance changes nothing (memory v3 §B4).
 What is already in front of her every turn (her card of facts about him) is passed as `skip`
 and takes none of the few places (memory v3 §B3).
 
@@ -159,7 +159,8 @@ def recall(
 
 
 def really_about(embedder: Embedder, cue: str, memory: Memory, rel: float) -> bool:
-    """A recall that counts (memory v3 §B4): enough in common with the line, or from the days
-    it names (when the embedder knows about time: when.TimeCued)."""
-    named = getattr(embedder, "on_named_day", None)
-    return rel >= TOUCH_RELEVANCE or bool(named and named(cue, memory))
+    """A recall that counts (memory v3 §B4): enough in common with the line, or from the day
+    or week it names (when the embedder knows about time: when.TimeCued). "上个月" or "去年"
+    brings back everything from then; that is a glance, like a shared word or two."""
+    named = getattr(embedder, "named_hit", None)
+    return rel >= TOUCH_RELEVANCE or bool(named and named(cue, memory) >= TOUCH_RELEVANCE)

@@ -321,15 +321,20 @@ class TimeCued:
 
     def relevance(self, cue: str, memory: Memory) -> float:
         rel = self.base.relevance(cue, memory)
-        if not self.on_named_day(cue, memory):
-            return rel
-        lo, hi = self._window
-        hit = time_hit((hi - lo).days + 1)
+        hit = self.named_hit(cue, memory)
         return rel + hit * (1 - rel)
 
+    def named_hit(self, cue: str, memory: Memory) -> float:
+        """How much naming its days says about the memory (0 when it is not from them). A day
+        or a week is a real reason to think of it, however few words they share (recall
+        strengthens it, memory v3 §B4); a month or a year is a glance."""
+        if not self.on_named_day(cue, memory):
+            return 0.0
+        lo, hi = self._window
+        return time_hit((hi - lo).days + 1)
+
     def on_named_day(self, cue: str, memory: Memory) -> bool:
-        """The memory is from the days the cue names: a real reason to think of it, however
-        few words they share (recall strengthens it, memory v3 §B4)."""
+        """The memory is from the days the cue names."""
         if cue != self._cue:
             self._cue, self._window = cue, window(cue, self.now)
         if self._window is None:

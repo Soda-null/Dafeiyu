@@ -47,6 +47,18 @@ def test_a_memory_from_the_day_he_names_counts_as_recalled(tmp_path):
     assert store.get(dinner.id).recall_count == 1  # the day he named is a real reason
 
 
+def test_a_month_he_names_brings_things_back_but_only_as_a_glance(tmp_path):
+    store = store_at(tmp_path)
+    game = store.add("event", "他和室友去看了一场篮球赛", importance=4, stability=19.4,
+                     now=datetime(2026, 12, 15, 21, 0))
+    cue = "上个月我过得好累"
+    timed = TimeCued(BigramEmbedder(), T0)
+    assert BigramEmbedder().relevance(cue, game) == 0 and timed.on_named_day(cue, game)
+    got = recall(store, cue, T0, embedder=timed)
+    assert [r.memory.id for r in got] == [game.id]  # in front of her: it was last month
+    assert store.get(game.id) == game  # but a whole month in common is not a reason
+
+
 # --- ceilings ------------------------------------------------------------------------------
 
 def test_a_passing_thing_never_gets_past_two_weeks_however_often_it_comes_back(tmp_path):
@@ -92,6 +104,12 @@ def test_an_old_unasked_event_fades_within_weeks_and_rows_from_before_are_not_cu
             store.touch(m.id, T0 + timedelta(days=30 * i))
     assert store.get(unasked.id).stability == st.UNASKED_MAX_DAYS
     assert store.get(old_bbq.id).stability == 112.1  # above its ceiling already: no higher, no lower
+    his = store.note("event", "他一直没问成导师能不能延期答辩，挺焦虑的", importance=5, about="日常",
+                     now=T0)
+    assert his.ceiling == st.INFINITE  # his own worry, not one of her old let-go follow-ups
+    for i in range(1, 6):
+        store.touch(his.id, T0 + timedelta(days=30 * i))
+    assert store.get(his.id).stability > st.UNASKED_MAX_DAYS
     life = store.note("fact", "他生日是3月14日", importance=10, about="一辈子", now=T0)
     assert store.touch(life.id, T0 + timedelta(days=9)).stability == st.INFINITE
 
