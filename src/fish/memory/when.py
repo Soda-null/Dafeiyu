@@ -47,6 +47,15 @@ def _month(year: int, month: int, part: str = "") -> tuple[date, date]:
     return date(year, month, lo), date(year, month, hi)
 
 
+# The time words `window` reads, to take them out of a cue when what is asked about is wanted:
+# "我上周考的啥来着" asks about an exam, and "上周" is in every chat that retells an older one.
+TIME_WORDS = re.compile(
+    rf"{LAST_WEEK}[一二三四五六日天]?|{THIS_WEEK}|大前天|前天|前晚|昨[天晚儿日早]|{N}天前"
+    rf"|前几天|前两天|这几天|最近几天|{N}月{N}[号日]|{N}月份?[初中底末]?|上个月|这个月|本月|去年"
+    rf"|今[天晚早儿]|{WEEK}[一二三四五六日天]"
+)
+
+
 def window(cue: str, now: datetime) -> tuple[date, date] | None:
     """The days a cue points at, or None when it names no time."""
     if HABIT.search(cue):

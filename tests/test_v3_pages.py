@@ -11,7 +11,7 @@ from pathlib import Path
 from fish.brain import Brain, FakeLLM
 from fish.config import Settings
 from fish.memory import EpisodeManager, MemoryStore, Window, keys_of, turn_back
-from fish.memory.pages import PAGE_CHARS, PAGE_MIN, opens, relevance
+from fish.memory.pages import PAGE_CHARS, PAGE_MIN, answered, asked_about, opens, relevance
 from fish.storage import connect
 
 PERSONA = "你是大肥鱼。"
@@ -163,6 +163,37 @@ def test_the_close_keeps_each_chat_s_keys_and_a_result_finds_its_chat_by_them(tm
     ask, now = "我上次期中考考得咋样", datetime(2027, 2, 12, 12, 30)  # day 40
     assert relevance(ask, second.summary, ()) < PAGE_MIN <= relevance(ask, second.summary, second.keys)
     assert turn_back(eps.closed(), ask, now)[0].episode == second.id
+
+
+def test_the_days_he_names_are_not_what_he_asks_about():
+    for line, left in (("我上周考的啥来着", "我 考的"), ("上周五我看的那部烂片叫啥来着", "我看的那部烂片"),
+                       ("昨晚吃了麻辣烫", "吃了麻辣烫"), ("一月份我看过一部烂片，叫啥", "我看过一部烂片，"),
+                       ("我上周搬去哪了你记得不", "我 搬去哪了你"), ("考考你，我生日几号", "，我生日")):
+        assert asked_about(line).split() == left.split(), line
+    # a summary that only says "上周" again shares nothing with what he asks about
+    assert relevance("我上周考的啥来着", "又问我上周五他看的烂片叫什么。", ()) == 0.0
+
+
+def test_what_she_could_not_answer_is_not_a_page(tmp_path):
+    """小周 day 17, "我上周考的啥来着": last week's chats where she failed his quizzes say "上周" too.
+    They are not shown ahead of the exam and the score, and nothing shown tells her "他好像没跟我说过"
+    (§B5). Here the exam chat left the notes' keys; the score chat left none."""
+    eps = EpisodeManager(connect(tmp_path / "fish.db"))
+    exam = add_chat(eps, datetime(2027, 1, 11, 12, 5), "他提到周三有机械设计期中考，觉得头大。",
+                    keys=["机械设计", "期中考"])
+    score = add_chat(eps, datetime(2027, 1, 14, 9, 0), "小周考完试，说考得还行估计八十来分，我问他海边还去不去。")
+    add_chat(eps, datetime(2027, 1, 13, 20, 0), "小周问我上周三晚上他吃的什么，我答不上来，说忘了、他好像没跟我说过。")
+    add_chat(eps, datetime(2027, 1, 15, 12, 0),
+             "小周说今天食堂有糖醋排骨，吃得很爽；又问我上周五他看的烂片叫什么，我没记住，他也没再说。")
+    add_chat(eps, datetime(2027, 1, 16, 9, 0), "周末他睡到自然醒，又考我记不记得他最爱吃啥，我答了牛肉面。")
+    pages = turn_back(eps.closed(), "我上周考的啥来着", datetime(2027, 1, 20, 20, 10))
+    assert [p.episode for p in pages] == [exam.id, score.id]
+    # the rest of a chat she failed in is still a page; the sentence she failed in is not
+    assert answered("小周说今天食堂有糖醋排骨，吃得很爽；又问我上周五他看的烂片叫什么，我没记住。") == (
+        "小周说今天食堂有糖醋排骨，吃得很爽；")
+    assert answered("他考我记性，我没接住。") == ""
+    for p in turn_back(eps.closed(), "上周我都跟你聊了啥，你还记得吗", datetime(2027, 1, 20, 20, 10), k=9):
+        assert not any(w in p.text for w in ("没记住", "答不上", "没跟我说过")), p.text
 
 
 def test_keys_are_tags_and_names_in_book_title_marks_never_a_secret():
