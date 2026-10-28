@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from fish.memory.episodes import GIST_ONLY_AFTER_DAYS, GIST_ONLY_BELOW_IMPORTANCE, Episode
-from fish.memory.longterm import Memory, days_between, iso
+from fish.memory.longterm import Memory, content_words, days_between, iso
 from fish.memory.retrieval import FILLER
 from fish.memory.scrub import redact, secret
 from fish.memory.when import TIME_WORDS, time_hit, window
@@ -58,6 +58,25 @@ PRONOUNS = set("我你他她")
 
 def asks_recall(line: str) -> bool:
     return bool(ASKS_RECALL.search(line))
+
+
+# What a remember-question says besides what it is about: how he asks (a space, so no two-character
+# run reaches across it: "学啥乐器" is 学 and 乐器), and the words any question has. Only the clause
+# that asks counts: "我门锁密码多少来着，在门口进不去了" asks about the lock, not about 进不去.
+_HOW_ASKED_HERE = re.compile(rf"{HOW_ASKED.pattern}|{ASKS_RECALL.pattern}|啥|什么|谁|哪|几|怎么|多少|跟你|和你|对你"
+                             r"|说过|讲过|提过")
+_ANY_QUESTION = {"最近", "之前", "以前", "上次", "那次", "那天", "那时", "时候", "那个", "这个", "那件", "这件",
+                 "东西", "事情", "知道", "一下", "今天", "昨天", "前天", "上周", "这周", "上个", "个月"}
+_CLAUSE = re.compile(r"[，,。！？!?；;\s~～]+")
+
+
+def may_answer(line: str, text: str) -> bool:
+    """A memory she was reminded of shares a word (two characters) with what his question is
+    about: the answer may be in it, however low its relevance ("我跟谁去吃的火锅来着" and "他和室友
+    一起去吃了火锅"). "最近" or "那个" in common is not enough."""
+    clauses = [c for c in _CLAUSE.split(line) if _HOW_ASKED_HERE.search(c)] or [line]
+    asked = content_words(" ".join(_HOW_ASKED_HERE.sub(" ", c) for c in clauses))
+    return bool(asked & content_words(text) - _ANY_QUESTION)
 
 
 @dataclass(frozen=True)

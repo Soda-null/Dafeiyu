@@ -16,6 +16,8 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
+from fish.memory.when import HABIT
+
 HEARD = ("chat", "close")  # where a note can be a pact or a nickname from
 PROMISE_KINDS = ("fact", "event", "self")
 WHO = ("him", "her", "both")  # who promised: he did, she did, they agreed together
@@ -75,7 +77,8 @@ def promise(text: str, kind: str) -> str | None:
     worded = any(not TO_SOMEONE_ELSE.match(text, m.start())
                  and not WITH_SOMEONE_ELSE.search(text[max(0, m.start() - 12):m.start()])
                  for m in PROMISE.finditer(text))
-    if not (worded and (kind == "self" or TO_HER.search(text)) or WAIT_THEN.search(text)):
+    waits = WAIT_THEN.search(text) and not HABIT.search(text)  # "他总是等忙完给我回" is a habit
+    if not (worded and (kind == "self" or TO_HER.search(text)) or waits):
         return None
     if HERS.search(text):
         return "her"
@@ -86,27 +89,51 @@ def promise(text: str, kind: str) -> str | None:
 
 def ruled_promise(text: str) -> bool:
     """An insight or a howto that is a promise between them, to be kept as a fact (a rule would
-    start unconfirmed and fade in weeks)."""
-    return bool(OPENS_AS_PROMISE.match(text.strip()) or WAIT_THEN.search(text)) and promise(text, "fact") is not None
+    start unconfirmed and fade in weeks). Only one that opens by saying they agreed: "等…给我…"
+    alone in a rule is mostly what he usually does ("他总是等忙完以后给我回消息")."""
+    return bool(OPENS_AS_PROMISE.match(text.strip())) and not HABIT.search(text) and promise(text, "fact") is not None
 
 
 # --- his own line (memory v3 §14) -------------------------------------------------------------
 # His words, not a note: "我" is him and "你" is her. A promise he makes or asks of her, said in so
 # many words. Not a question about one ("你答应过我啥来着"), not one already made (答应过), not one
-# he cannot make (保证不了), not one to or from somebody else (我答应室友, 我妈让我保证).
+# he cannot make (保证不了), not one to or from somebody else (我答应室友, 我答应我妈, 我妈让我保证,
+# 我爸答应我……), not one of a group he is in (我们班说好了, 咱们宿舍约好), not an everyday "等我到家
+# 给你发消息".
 LINE_WORD = r"答应|承诺|说好|说定|约好|约定|保证|发誓|一言为定|拉钩|不许赖|不准赖|说话算话"
 LINE_PROMISE = re.compile(rf"(?:{LINE_WORD})(?![过的不])")
 LINE_ASKING = re.compile(r"[?？]\s*$|(?:吗|啥|什么|来着|是啥|没有)[。！!…~～\s]*$|还记得|记不记得")
 LINE_SURE = re.compile(r"说定了|一言为定|拉钩|不许赖|不准赖")  # said like this it is no question
-LINE_ELSE = re.compile(rf"(?:{LINE_WORD})(?:了|过)?(?:要)?(?:[他她]的?)?(?:{THIRD})"
-                       rf"|(?:跟|和|对|向|与)(?:[他她]的?)?(?:{THIRD})[^，。！？]{{0,4}}(?:{LINE_WORD})"
+LINE_ELSE = re.compile(rf"(?:{LINE_WORD})(?:了|过)?(?:要)?(?:[他她我]的?)?(?:{THIRD})"
+                       rf"|(?:跟|和|对|向|与)(?:[他她我]的?)?(?:{THIRD})[^，。！？]{{0,4}}(?:{LINE_WORD})"
                        rf"|(?:{THIRD})[^，。！？]{{0,3}}[让叫要]我")
-LINE_HERS = re.compile(r"你答应|答应我|你保证|你发誓|你承诺|你得|你要给我|你给我|你帮我|你陪我|你带我|你先"
-                       r"|说好了?你|你可别忘|你记得给我")
+# a group he is in: "我们班", "咱们宿舍", "我家", "大家"
+GROUP = re.compile(r"(?:我们|咱们|我|咱)(?:班|组|宿舍|寝室|公司|部门|家|队|社团|实验室|项目组|课题组|几个|全家)|大家")
+# Who makes the promise is said in its own clause, before the promise word: 你 or 我 (or nobody,
+# "答应我，……"), never somebody else ("我爸答应我", "老张说好了").
+CLAUSE = re.compile(r"[^，,。！？!?；;\s~～]*$")
+FILLER_WORDS = "那就这么样好行嗯哦啊呀吧都已经之前上次反正总之也还可得一定真的"
+LINE_HERS = re.compile(r"你答应|(?<![^，,。！？!?；;\s~～])答应我|你[^，。！？]{0,3}答应我|你保证|你发誓|你承诺|你得"
+                       r"|你要给我|你给我|你帮我|你陪我|你带我|你先|说好了?你|你可别忘|你记得给我")
 LINE_HIS = re.compile(r"我答应你|我向你保证|我保证|我发誓|我承诺|答应你|我给你|我带你|我陪你|我帮你|说好了?我")
-LINE_BOTH = re.compile(r"咱俩|我俩|咱们|我们|一起")
-LINE_WAIT = re.compile(r"等(?![了着过])[^，。！？；等]{1,15}?(?:完|到|好|以后|之后|那天|那时|的时候|回来|了(?=[，,\s]))"
-                       r"[^。！？；]{0,24}?(?:(我给你|给你|带你|陪你)|(你给我|你带我|你陪我))[^\s，。！？；](?![了过])")
+# the two of them: "咱俩", "我们俩", or 我们 / 咱们 right before the promise word ("我们说好了"), not a group
+LINE_BOTH = re.compile(rf"咱俩|我俩|我们俩|咱们俩|(?:我们|咱们)(?=(?:都|已经|之前|上次|那天)?(?:{LINE_WORD}))")
+# "等我考完，给你拍……" without a promise word. Not about his day ("等我到家", "等我下班"), not a
+# message ("给你发消息", "跟你说"), not a habit ("我一般等忙完给你回").
+SAME_DAY = r"[我你]?(?:到家|回家|回宿舍|回寝室|吃完|吃好|下班|下课|洗完|洗好|睡醒|醒了|起床|一会|会儿)"
+MESSAGE = r"发(?:个)?(?:消息|微信|信息|语音|照片|图)|回(?:消息|信息|你|个)|打(?:个)?(?:电话|视频)|说|讲|聊"
+LINE_WAIT = re.compile(rf"等(?![了着过])(?!{SAME_DAY})[^，。！？；等]{{1,15}}?(?:完|到|好|以后|之后|那天|那时|的时候|回来|了(?=[，,\s]))"
+                       rf"[^。！？；]{{0,24}}?(?:(我给你|给你|带你|陪你)|(你给我|你带我|你陪我))(?!{MESSAGE})[^\s，。！？；](?![了过])")
+
+
+def _other_maker(line: str, at: int) -> bool:
+    """Somebody else, or a group he is in, makes the promise of the clause that ends at `at`; or the
+    clause names someone who is neither of them before it."""
+    clause = CLAUSE.search(line[:at]).group(0)
+    if re.search(THIRD, clause) or GROUP.search(clause):
+        return True
+    named = clause.strip(FILLER_WORDS)  # "那就说好了" names nobody; "老张说好了" does
+    return bool(named) and not re.search(r"[你我咱俩]", named)
 
 
 def his_line(line: str) -> str | None:
@@ -116,15 +143,24 @@ def his_line(line: str) -> str | None:
         return None
     if LINE_ASKING.search(line) and not LINE_SURE.search(line):
         return None
-    if LINE_PROMISE.search(line):
+    if (m := LINE_PROMISE.search(line)) is not None:
+        if _other_maker(line, m.start()) and not LINE_SURE.match(line, m.start()):
+            return None
         if LINE_HERS.search(line):
             return "her"
         if LINE_HIS.search(line):
             return "him"
         return "both" if LINE_BOTH.search(line) else None
-    if (m := LINE_WAIT.search(line)) is not None:
-        return "him" if m.group(1) else "her"
+    if HABIT.search(line):
+        return None
+    if (w := LINE_WAIT.search(line)) is not None:
+        return "him" if w.group(1) else "her"
     return None
+
+
+def promised_in_words(line: str) -> bool:
+    """His line says the promise in so many words ("我答应你", "说定了"), not only "等…给你…"."""
+    return his_line(line) is not None and LINE_PROMISE.search(line.strip()) is not None
 
 
 # "你答应过我什么来着", "我欠你个啥": he asks what was promised. Then the promises already kept or

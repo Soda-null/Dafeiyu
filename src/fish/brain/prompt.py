@@ -137,8 +137,8 @@ def render_profile(profile: list[Memory], mentioned: set[int] = frozenset(),
 
 # Checkup round two (memory v3 §14): asked "我新家有啥毛病来着" with nothing recalled, she went along
 # with the question and named two faults he never had; the close then wrote them down as his.
-NOTHING_FOUND = ("（这件你什么也没想起来：答案要是也不在“你一直记得的”里，就直说忘了、让他提醒你；"
-                 "别说任何具体的东西，也别顺着他问法里的说法往下编）")
+NOTHING_FOUND = ("（这件你好像什么也没想起来：上面“你一直记得的”“这句话让你想起的”和这次聊天里都没有的话，"
+                 "就直说忘了、让他提醒你；别说任何具体的东西，也别顺着他问法里的说法往下编）")
 
 PACT_SAYS = {"him": "他答应过你", "her": "你答应过他", "both": "你们说好的"}
 

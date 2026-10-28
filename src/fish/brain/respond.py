@@ -22,8 +22,8 @@ from fish.messages import Incoming, Outgoing, data_url, sniff_mime
 from fish.memory import (ABOUT_HIM_KINDS, BigramEmbedder, Diary, Episode, EpisodeManager, Memory, MemoryStore,
                          Moment, Pastimes, PhaseStore, ProspectiveStore, Relationship, StickerAlbum, TimeCued,
                          TraitStore, Window, arrival_line, asks_habit, asks_pact, asks_recall, cue_for,
-                         echoes_her, his_line, keys_of, mentioned, overlap, recall, today_section, triggered,
-                         turn_back)
+                         echoes_her, his_line, keys_of, may_answer, mentioned, overlap, promised_in_words, recall,
+                         today_section, triggered, turn_back)
 from fish.memory.longterm import PACT_LINK
 from fish.memory.retrieval import TOUCH_RELEVANCE
 from fish.memory.prospective import DUE_SHOWN
@@ -48,8 +48,17 @@ PageReader = Callable[[str], tuple[str, str]]  # url -> (title, text); world.rea
 
 def echoed(kind: str, text: str, his: str, hers: str) -> bool:
     """A note about him whose words are hers in this chat, not his (longterm.echoes_her). Her own
-    doings and promises ("我答应他……") are hers to write."""
+    doings and promises ("我答应他……") are hers to write. Asked only in a chat where he asked her to
+    remember (`echo_checked`)."""
     return kind in ABOUT_HIM_KINDS and not text.lstrip().startswith("我") and echoes_her(text, his, hers)
+
+
+def echo_checked(his_lines: list[str]) -> bool:
+    """Her guesses are written down as his only when he asked her to remember something ("我新家有
+    啥毛病来着"): there she answers with what she thinks he said, and a wrong guess would become a
+    memory. Anywhere else her words in a note are a follow-up he answered ("面试怎么样了？" "过了！")
+    or his news said back to him. (A made-up turn of his already drops the reply's notes: parse.py.)"""
+    return any(asks_recall(line) for line in his_lines)
 
 
 def plain_text(messages: list[dict]) -> list[dict]:
@@ -178,10 +187,12 @@ class Brain:
         pages = (turn_back(self.episodes.closed(), user_text, now, cue=cue, skip={ep.id})
                  if self.settings.pages else [])
         today = self.today_lines(now, profile, user_text)
-        # he asks if she remembers and nothing his line touches came back (memory v3 §14)
+        # he asks if she remembers and nothing his line touches came back (memory v3 §14): no
+        # memory she was reminded of is close to his line or shares a word with what he asks about
         nothing_found = (asks_recall(user_text) and not pages and not touched and not stars
                          and not (pacts and asks_pact(user_text))  # the answer is in that block
-                         and all(r.relevance < TOUCH_RELEVANCE for r in recalled))
+                         and not any(r.relevance >= TOUCH_RELEVANCE or may_answer(user_text, r.memory.text)
+                                     for r in recalled))
         shared, shared_note = self.open_shared(incoming)
         ctx = PromptContext(
             persona=self.persona, now=now, mood=mood,
@@ -301,9 +312,10 @@ class Brain:
         A note that only says what she said in this chat is not written (memory v3 §14); a promise
         his line makes is kept even when no note was taken for one."""
         his, hers = self.window.said_in(episode_id)
+        checked = echo_checked(self.window.his_lines(episode_id))
         written = []
         for n in reply.notes:
-            if echoed(n.kind, n.text, his, hers):
+            if checked and echoed(n.kind, n.text, his, hers):
                 continue
             m = self.store.note(n.kind, n.text, importance=n.importance, valence=n.valence,
                                 arousal=n.arousal, about=n.about, source_episode=episode_id, tags=n.tags,
@@ -332,13 +344,17 @@ class Brain:
                          now: datetime) -> None:
         """His line makes a promise between them (pacts.his_line) and no note of this turn became
         one: the model filed it as an insight, or the reply that held it did not parse (memory v3
-        §14). The note of it this turn becomes the pact; with none, his words are kept as one."""
+        §14). The note of it this turn becomes the pact; with none, his words are kept as one, but
+        only when he said the promise in so many words ("我答应你……", "说定了"): a kept pact is
+        pinned and shown every turn, and "等我考完给你……" alone is too often only a plan."""
         who = his_line(said) if said else None
         if who is None or any(m.pact_state is not None for m in written):
             return
         best = max(written, key=lambda m: overlap(said, m.text), default=None)
         if best is not None and overlap(said, best.text) >= PACT_LINK:
             self.store.make_pact(best.id, who)
+            return
+        if not promised_in_words(said):
             return
         kept = self.store.note("fact", owner_words("他说") + f"：「{said.strip()[:PROMISE_CHARS]}」", importance=9,
                                about="一辈子", source_episode=episode_id, tags=list(dict.fromkeys(tags))[:6],
@@ -444,8 +460,9 @@ class Brain:
         fallback = "；".join(filter(None, [ep.running_summary, "、".join(t.text for t in turns)]))[:200]
         closed = parse_episode_close(raw, fallback)
         his, hers = self.window.said_in(ep.id)
+        checked = echo_checked(self.window.his_lines(ep.id))
         for n in closed.notes:
-            if echoed(n.kind, n.text, his, hers):
+            if checked and echoed(n.kind, n.text, his, hers):
                 continue  # what she guessed or made up in the chat, not what he said
             self.store.note(n.kind, n.text, importance=n.importance, valence=n.valence,
                             arousal=n.arousal, about=n.about, source_episode=ep.id, tags=n.tags, now=at,

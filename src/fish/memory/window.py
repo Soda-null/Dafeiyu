@@ -7,6 +7,7 @@ forever as evidence but leave the prompt.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
@@ -15,6 +16,18 @@ from fish.memory.longterm import iso
 
 DEFAULT_SIZE = 20
 FOLD_BATCH = 10
+# Her question he answers in a word ("面试怎么样了？" "过了！", "是下周三吧？" "对"): what she asked
+# is his to say as well (said_in). A short answer, not a no, a laugh or a question back.
+SHORT_ANSWER = 12
+_QUESTION = re.compile(r"[^。！!？?…\n]*(?:[?？]|[吗呢](?=[。！!…~～\s]*$))")
+_NOT_AN_ANSWER = re.compile(r"^\s*(?:不|没|错|才不|哪|瞎|乱|你猜|猜|忘|哈|呵|嘿|嗯？|[?？])|[?？吗]\s*$")
+
+
+def answered(question: str, answer: str) -> str:
+    """The questions of her line that his next line answers in a word; "" when none."""
+    if len(answer.strip()) > SHORT_ANSWER or _NOT_AN_ANSWER.search(answer):
+        return ""
+    return "".join(_QUESTION.findall(question))
 
 
 @dataclass(frozen=True)
@@ -65,11 +78,24 @@ class Window:
         return _turns(rows)
 
     def said_in(self, episode_id: int) -> tuple[str, str]:
-        """What he said and what she said in the whole episode, folded turns too."""
+        """What he said and what she said in the whole episode, folded turns too. Her question
+        he answered in a word (`answered`) counts as said by him as well."""
         rows = self.conn.execute("SELECT role, text FROM messages WHERE episode_id = ? ORDER BY id",
                                  (episode_id,)).fetchall()
-        return ("\n".join(r["text"] for r in rows if r["role"] == "user"),
-                "\n".join(r["text"] for r in rows if r["role"] != "user"))
+        his, hers = [], []
+        for before, r in zip([None, *rows], rows):
+            if r["role"] != "user":
+                hers.append(r["text"])
+                continue
+            his.append(r["text"])
+            if before is not None and before["role"] != "user" and (asked := answered(before["text"], r["text"])):
+                his.append(asked)
+        return "\n".join(his), "\n".join(hers)
+
+    def his_lines(self, episode_id: int) -> list[str]:
+        """His lines of the whole episode, folded turns too."""
+        return [r["text"] for r in self.conn.execute(
+            "SELECT text FROM messages WHERE episode_id = ? AND role = 'user' ORDER BY id", (episode_id,))]
 
     def to_fold(self, episode_id: int) -> list[Turn]:
         """The oldest turns to summarize away, or [] while the episode still fits."""
