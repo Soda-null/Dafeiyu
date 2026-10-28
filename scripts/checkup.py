@@ -4,7 +4,7 @@ with a hand-turned clock, ask her later what she remembers, let a judge model gr
 answer, and write a report against the pass lines.
 
   .venv/bin/python scripts/checkup.py evals/xiaozhou_90d.json [--days 90] [--no-final]
-                                      [--out evals/results] [--label v1]
+                                      [--out evals/results] [--label v1] [--cottage]
 
 Runs in a temporary directory with a fresh database and the real persona; never touches
 data/. Needs DEEPSEEK_API_KEY in .env. A full run is about a thousand model calls.
@@ -385,6 +385,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--no-final", action="store_true", help="不拨到最后一天问最后一轮")
     ap.add_argument("--out", type=Path, default=ROOT / "evals" / "results")
     ap.add_argument("--label", default="v1", help="这版叫什么，进报告的文件名")
+    ap.add_argument("--cottage", action="store_true", help="开着小屋跑（决定 26）：看屋里的事挤不挤掉记忆")
     ap.add_argument("--rejudge", type=Path, default=None,
                     help="不重跑她，只用新的裁判规则给这份结果 JSON 重新打分")
     ap.add_argument("--only-broken", action="store_true",
@@ -416,7 +417,7 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit("需要 .env 里的 DEEPSEEK_API_KEY")
     workdir = Path(tempfile.mkdtemp(prefix="checkup-"))
     settings = Settings(api_key=base.api_key, base_url=base.base_url, model=base.model,
-                        db_path=workdir / "fish.db", reach_out=False)
+                        db_path=workdir / "fish.db", reach_out=False, cottage=args.cottage)
     llm = DeepSeekLLM(settings)
     cu = Checkup(script, llm, llm, workdir, settings=settings)
     print(f"临时目录 {workdir}；跑 {days} 天" + (f"，最后拨到第 {final_day} 天" if final_day else ""))

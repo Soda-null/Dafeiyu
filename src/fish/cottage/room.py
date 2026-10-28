@@ -143,8 +143,9 @@ class Cottage:
         os.replace(tmp, self.path)  # the service and `fish cottage` never see half a file
 
     @staticmethod
-    def note(room: Room, now: datetime, line: str, change: Change | None = None) -> None:
-        room.events.append({"ts": _iso(now), "line": line})
+    def note(room: Room, now: datetime, line: str, change: Change | None = None, *, routine: bool = False) -> None:
+        """routine: a meal eaten on time, the day going as days go; not news worth telling."""
+        room.events.append({"ts": _iso(now), "line": line} | ({"routine": True} if routine else {}))
         if change is not None:
             change.lines.append(line)
 
@@ -185,9 +186,9 @@ class Cottage:
             if room.ate and now - datetime.fromisoformat(room.ate) < timedelta(hours=ATE_RECENTLY_HOURS):
                 pass  # she cooked a little while ago; that was this meal
             elif can_cook(room):
-                change += self._apply(room, "cook", now, meal=meal)
+                change += self._apply(room, "cook", now, meal=meal, routine=True)
             elif room.rice > 0:
-                change += self._apply(room, "rice", now, meal=meal)
+                change += self._apply(room, "rice", now, meal=meal, routine=True)
             else:
                 self.note(room, now, f"到{meal}的点了，家里没东西吃，饿着", change)
 
@@ -236,7 +237,8 @@ class Cottage:
         return {"cook": can_cook(room), "rice": room.rice > 0, "wash": bool(room.sink),
                 "bed": room.bed == "乱", "nap": True, "shop": shop_open(now)}[key]
 
-    def _apply(self, room: Room, key: str, now: datetime, *, arg: str = "", meal: str | None = None) -> Change:
+    def _apply(self, room: Room, key: str, now: datetime, *, arg: str = "", meal: str | None = None,
+               routine: bool = False) -> Change:
         action = ACTIONS[key]
         change = Change(hunger=action.hunger, energy=action.energy)
         if key == "rice":
@@ -262,7 +264,7 @@ class Cottage:
         else:
             line = self._buy(room, arg, now)
         room.doing, room.until = action.doing, _iso(now + timedelta(minutes=action.minutes))
-        self.note(room, now, line, change)
+        self.note(room, now, line, change, routine=routine)
         return change
 
     @staticmethod
@@ -404,8 +406,9 @@ class Cottage:
             out.append("你今天在家：" + "；".join(done))
         return "\n".join(f"- {x}" for x in out)
 
-    def between(self, start: datetime, end: datetime) -> list[str]:
-        """What happened at home in a stretch of time, for her diary."""
+    def between(self, start: datetime, end: datetime, *, routine: bool = True) -> list[str]:
+        """What happened at home in a stretch of time, for her diary; routine=False leaves out
+        the meals eaten on time."""
         room = self.load(end)
         return [f"{e['ts'][11:16]} {e['line']}" for e in room.events
-                if start <= datetime.fromisoformat(e["ts"]) < end]
+                if start <= datetime.fromisoformat(e["ts"]) < end and (routine or not e.get("routine"))]

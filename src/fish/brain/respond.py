@@ -142,12 +142,13 @@ class Brain:
 
     def home_lately(self, now: datetime) -> list[str]:
         """What happened in her cottage in the last few hours: a reason to text him (decision
-        26). Only recent, so one event does not knock on the gate all day."""
+        26). Only recent, so one event does not knock on the gate all day; never a meal eaten on
+        time, or she texts "饭做好了" twice a day (the 10-28 trial)."""
         if self.cottage is None:
             return []
         try:
             # the room was just brought up to now (tick): what happened this very minute counts
-            return self.cottage.between(now - RECONSIDER_AFTER, now + timedelta(minutes=1))
+            return self.cottage.between(now - RECONSIDER_AFTER, now + timedelta(minutes=1), routine=False)
         except ValueError:
             return []
 
@@ -517,9 +518,14 @@ class Brain:
         closed = parse_episode_close(raw, fallback)
         his, hers = self.window.said_in(ep.id)
         checked = echo_checked(self.window.his_lines(ep.id))
+        he_spoke = bool(his.strip())
         for n in closed.notes:
             if checked and echoed(n.kind, n.text, his, hers):
                 continue  # what she guessed or made up in the chat, not what he said
+            if not he_spoke and n.kind != "self":
+                # she texted first and he never answered: nothing here came from him. A cottage
+                # trial wrote her "中午做了西红柿炒蛋" down as "他……做了西红柿炒蛋" (10-28)
+                continue
             if self.cottage is not None and n.kind == "self" and invented_act(n.text):
                 continue
             self.store.note(n.kind, n.text, importance=n.importance, valence=n.valence,
@@ -529,7 +535,7 @@ class Brain:
             self.add_followup(f.text, f.due, at, ep.id)
         shown_events = {m.id for m in waiting}  # only an event she was shown, still current, gets it
         told = []
-        for memory_id, text in closed.outcomes:
+        for memory_id, text in (closed.outcomes if he_spoke else []):
             if memory_id in shown_events and self.store.get(memory_id).alive:
                 if (hung := self.store.set_outcome(memory_id, text, now=at)) is not None:
                     told.append(hung)
@@ -541,7 +547,7 @@ class Brain:
         # event never replaces "他戒烟了" (only a new fact does, at night). Only one she was
         # shown, still current; the old one stays as what she used to think
         on_card = {m.id for m in card}
-        for c in closed.corrections:
+        for c in (closed.corrections if he_spoke else []):
             if c.old_id in on_card and self.store.get(c.old_id).alive:
                 self.store.correct(c.old_id, c.text, now=at)
         shown = {p.id for p in pacts}  # only a promise she was shown can be settled

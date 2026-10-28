@@ -257,3 +257,26 @@ def test_what_happened_at_home_is_a_reason_to_text_him(tmp_path):
     assert "- 家里的事：10:00 青菜放坏了，扔了" in prompts[-1]
     later = MON + timedelta(hours=4)
     assert ReachPolicy(conn).triggers(later, brain.moods.load(), home=brain.home_lately(later)).home == []
+
+
+def test_a_meal_on_time_is_not_news_and_her_lone_message_is_not_his(tmp_path):
+    """The 10-28 live trial: she texted "饭做好了" after every meal, and a chat where only she spoke
+    ("中午做了西红柿炒蛋", no answer) was closed into "他……做了西红柿炒蛋"."""
+    conn = connect(tmp_path / "fish.db")
+    s = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db", cottage=True)
+
+    def respond(messages, json_mode):
+        return json.dumps({"summary": "她说中午做了西红柿炒蛋", "gist": "她做了饭", "importance": 3, "notes": [
+            {"text": "他中午做了西红柿炒蛋", "kind": "event", "about": "路过"},
+            {"text": "想再买点西红柿", "kind": "self", "about": "日常"}]}, ensure_ascii=False)
+
+    brain = Brain(conn, s, FakeLLM(respond), persona_text="你是大肥鱼。")
+    brain.cottage.load(datetime(2026, 11, 2, 11, 0))
+    assert brain.cottage.advance(datetime(2026, 11, 2, 12, 0)).lines  # lunch, on time
+    assert brain.home_lately(datetime(2026, 11, 2, 12, 0)) == []
+    assert brain.cottage.between(datetime(2026, 11, 2), datetime(2026, 11, 3))  # the diary still sees it
+
+    ep = brain.episodes.start("wechat", datetime(2026, 11, 2, 12, 5))
+    brain.window.append("fish", "中午做了西红柿炒蛋", "wechat", ep.id, datetime(2026, 11, 2, 12, 5))
+    brain.close_episode(brain.episodes.open_episode(), datetime(2026, 11, 2, 16, 0))
+    assert [m.text for m in brain.store.alive()] == ["想再买点西红柿"]
