@@ -242,8 +242,11 @@ def test_the_picture_and_sharing_rules_are_in_the_prompt_only_when_he_sends_one(
     brain, _ = make_brain(tmp_path, llm)
     brain.respond("在吗", now=T0)
     plain = system_of(llm)
-    assert "不要描述图" not in plain and "别总结全文" not in plain and "?picture" not in plain
-    assert "相册还是空的" in plain  # an empty album still says what to do when he asks for one
+    assert "别描述图" not in plain and "别总结全文" not in plain and "?picture" not in plain
+    assert "你还没有表情包" in plain  # an empty album still says what to do when he asks for one
+    # sections and rules for what is not there are not there either (the room is for memories)
+    for absent in ("## 你们之间的约定", "## 你想问他的", "## 你最近在网上看到的", "## 你刚查到的", "## 翻到的以前聊天"):
+        assert absent not in plain
 
 
 def test_mood_moves_with_the_turn(tmp_path):

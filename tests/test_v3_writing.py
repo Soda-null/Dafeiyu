@@ -234,7 +234,7 @@ def test_the_prompts_ask_for_results_named_things_people_and_what_she_said_she_w
     chat = (PROMPTS_DIR / "chat.md").read_text(encoding="utf-8")
     close = (PROMPTS_DIR / "close_episode.md").read_text(encoding="utf-8")
     for words in ("事情的**结果**", "**带名字的小事**", "名字＋跟他什么关系", "名字像的人分开写",
-                  "notes 里就必须有这一条", "杨枝甘露、芒果班戟"):
+                  "notes 里就必须有", "芒果过敏放杨枝甘露"):
         assert words in chat
     for words in ("事情的结果和分数", "带名字的小事", "名字＋跟他什么关系", "以前 X，现在 Y",
                   '"outcomes"', "等结果的事", "这次你问过他的", "他让你帮他记着也不写", "gist 里留着专名"):

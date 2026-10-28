@@ -2,6 +2,6 @@
 the brain or the channels."""
 
 from fish.cottage.room import Change, Cottage, Offer, Room, invented_act
-from fish.cottage.rules import layout
+from fish.cottage.rules import layout, summary
 
-__all__ = ["Change", "Cottage", "Offer", "Room", "invented_act", "layout"]
+__all__ = ["Change", "Cottage", "Offer", "Room", "invented_act", "layout", "summary"]

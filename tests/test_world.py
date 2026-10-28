@@ -158,7 +158,7 @@ def test_chat_lookup_uses_the_searcher_and_keeps_facts_from_the_first_reply(tmp_
     conn, brain = make_brain(tmp_path, FakeLLM(respond), searcher=WikiSearcher(fake_fetch))
     answer = brain.respond("鲸落是什么？我在读海洋的书", now=T)
     assert answer == "鲸落就是鲸鱼沉到海底，养活一堆小东西。"
-    assert len(calls) == 2 and "（没查）" in calls[0]
+    assert len(calls) == 2 and "## 你刚查到的" not in calls[0] and "## 你刚查到的" in calls[1]
     store = MemoryStore(conn)
     assert [m.text for m in store.alive("fact")] == ["2026-10-27 他说在读海洋的书"]  # not the web's "fact"
     (seen,) = store.alive("world")

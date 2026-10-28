@@ -204,7 +204,7 @@ def test_when_he_asks_what_was_promised_the_kept_ones_are_shown_too(tmp_path):
     block = section(llm.calls[-1][0][0]["content"], "你们之间的约定")
     assert "写张贺卡（兑现了）" in block
     brain.respond("今天吃了碗面", now=T0 + timedelta(days=5, minutes=1))
-    assert "（没有）" in section(llm.calls[-1][0][0]["content"], "你们之间的约定")
+    assert "## 你们之间的约定" not in llm.calls[-1][0][0]["content"]  # nothing open: no section
     assert "（兑现了）" in render_pacts(store.pacts(settled=True))
 
 

@@ -48,7 +48,9 @@ def close_with(summary: str, gist: str = "聊了几句", **extra) -> str:
 
 
 def pages_part(llm: FakeLLM) -> str:
-    return llm.calls[-1][0][0]["content"].split("## 翻到的以前聊天")[1].split("\n## ")[0]
+    """The pages section, or "" when she did not look back (the section is then left out)."""
+    parts = llm.calls[-1][0][0]["content"].split("## 翻到的以前聊天")
+    return parts[1].split("\n## ")[0] if len(parts) > 1 else ""
 
 
 def add_chat(eps: EpisodeManager, start: datetime, summary: str, gist: str = "", importance: int = 3,
@@ -80,7 +82,7 @@ def test_the_film_never_noted_comes_back_from_the_summary_of_that_chat(tmp_path)
     assert pages_part(llm).strip().endswith(f"- 【那次聊天的大意，昨天 1月8日，不是原话】{FILM}")
 
     brain.respond("今天好困", now=FILM_ASK + timedelta(minutes=1))  # neither asks nor names a day
-    assert pages_part(llm).strip().endswith("（没翻）")
+    assert pages_part(llm) == ""
 
 
 def test_with_pages_turned_off_she_does_not_look_back(tmp_path):
@@ -88,7 +90,7 @@ def test_with_pages_turned_off_she_does_not_look_back(tmp_path):
     brain.respond("晚上看了部烂片《银河快递》，全是广告", now=FILM_NIGHT)
     brain.respond("昨天那部烂片叫啥来着", now=FILM_ASK)
     assert "银河快递" not in llm.calls[-1][0][0]["content"]
-    assert pages_part(llm).strip().endswith("（没翻）")
+    assert pages_part(llm) == ""
 
 
 def test_what_he_typed_is_never_a_page_and_a_page_is_scrubbed_on_the_way_out(tmp_path):

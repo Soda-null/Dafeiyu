@@ -43,7 +43,7 @@ def situational(template: str, on: set[str]) -> str:
             kept.append(line)
         elif m.group(1) in on:
             kept.append(line[m.end():])
-    return "\n".join(kept)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(kept))  # a section left out leaves no gap
 
 
 def render(template: str, **fields: str) -> str:
@@ -114,9 +114,9 @@ def render_home(ctx: PromptContext) -> str:
     town = (ctx.home_line + "。" if ctx.home_line else "") + (f"附近：{ctx.places}" if ctx.places else "")
     if not ctx.cottage:
         return town or "（还不知道）"
-    from fish.cottage import layout
+    from fish.cottage import summary
 
-    mine = "你住在湖边的小屋：\n" + layout() + "\n" + ctx.cottage
+    mine = "你住在湖边的小屋：" + summary() + "\n" + ctx.cottage
     return mine + ("\n" + owner_words("他那边：") + town if town else "")
 
 
@@ -225,10 +225,14 @@ def render_seen(seen: list[Memory]) -> str:
 
 
 def build_chat_messages(ctx: PromptContext) -> list[dict[str, str]]:
-    on = {name for name, there in (("picture", ctx.user_image), ("shared", ctx.shared),
-                                   ("pages", ctx.pages), ("pacts", ctx.pacts),
-                                   ("stickers", ctx.stickers), ("cottage", ctx.cottage),
-                                   ("town", not ctx.cottage)) if there}
+    # Each rule and section is there only when what it is about is there: rules for what is
+    # not in front of her would only take the room of what she remembers (memory v3 §13).
+    on = {name for name, there in (
+        ("picture", ctx.user_image), ("shared", ctx.shared), ("pages", ctx.pages), ("pacts", ctx.pacts),
+        ("stickers", ctx.stickers), ("nostickers", not ctx.stickers), ("cottage", ctx.cottage),
+        ("town", not ctx.cottage), ("growth", ctx.growth), ("howto", ctx.howto), ("followups", ctx.followups),
+        ("seen", ctx.seen), ("looked_up", ctx.looked_up), ("mentioned", ctx.mentioned),
+        ("fuzzy", any(r.fuzzy or r.cued for r in ctx.recalled))) if there}
     template = situational(load_template("chat"), on)
     fixed_fields = dict(
         persona=ctx.persona, profile=render_profile(ctx.profile, ctx.mentioned, ctx.formers),

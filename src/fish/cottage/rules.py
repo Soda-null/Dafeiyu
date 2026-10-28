@@ -84,13 +84,27 @@ def asleep_hours(t: datetime) -> bool:
     return SLEEP_FROM <= t.time() < WAKE_AT
 
 
-def layout(path=RULES_PATH) -> str:
-    """The room as she is told it: the bullets of §1 of the rules file, without the markup."""
+SUMMARY_MARK = "**一句话给她：**"
+
+
+def _section_one(path) -> list[str]:
     lines, inside = [], False
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.startswith("## "):
             inside = line.startswith("## 1.")
             continue
-        if inside and line.startswith("- "):
-            lines.append(line[2:].replace("**", "").replace("： ", "："))
-    return "\n".join(lines)
+        if inside:
+            lines.append(line)
+    return lines
+
+
+def layout(path=RULES_PATH) -> str:
+    """The room as she is told it when she decides what to do: the bullets of §1 of the
+    rules file, without the markup."""
+    return "\n".join(line[2:].replace("**", "").replace("： ", "：")
+                     for line in _section_one(path) if line.startswith("- "))
+
+
+def summary(path=RULES_PATH) -> str:
+    """One line for every chat turn: the layout costs more than it tells there."""
+    return next((line[len(SUMMARY_MARK):].strip() for line in _section_one(path) if line.startswith(SUMMARY_MARK)), "")

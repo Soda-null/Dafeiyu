@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from fish.brain.ask import ask_json
 from fish.brain.leisure.base import Activity, Choice, Kit, Material
 from fish.brain.leisure.cottage import KEY as COTTAGE_KEY
-from fish.cottage import invented_act
+from fish.cottage import invented_act, layout
 from fish.brain.prompt import WEEKDAYS
 from fish.brain.world import Browser
 from fish.memory import MemoryStore, Moment, Pastimes
@@ -182,7 +182,7 @@ class Leisure:
         if cottage is None:
             return ""
         try:
-            return "## 你的小屋（屋里现在就是这样）\n" + cottage.for_leisure(now) + "\n"
+            return "## 你的小屋\n" + layout() + "\n\n屋里现在：\n" + cottage.for_leisure(now) + "\n"
         except ValueError:
             return ""
 
