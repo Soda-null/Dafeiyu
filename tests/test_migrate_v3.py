@@ -184,3 +184,21 @@ def test_nothing_is_written_when_a_step_fails(v2, monkeypatch):
     assert conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 1
     assert conn.execute("SELECT COUNT(*) FROM memories WHERE why IS NOT NULL").fetchone()[0] == 0
     assert contents(v2.with_name("fish.db.bak-v2")) == original
+
+
+def test_a_follow_up_written_by_a_close_finds_the_chat_that_closed(v2):
+    """A close run by his next message writes at that message's time: the old chat's end and
+    the new chat's start are the same moment, and the follow-up is the old chat's."""
+    conn = sqlite3.connect(v2)
+    conn.execute("INSERT INTO episodes VALUES (3, '2027-03-04T21:30:00', '2027-03-04T22:00:00',"
+                 " '2027-03-05T03:30:00', 'terminal', '', '他说面试的事', '面试', 5, 0, 0)")
+    memory(conn, 14, "event", "他周五要去面试", "2027-03-04T21:30:00", ep=2, about="日常", tags=["面试"])
+    memory(conn, 15, "event", "他说面试改成线上", "2027-03-04T21:50:00", ep=3, about="日常", tags=["面试"])
+    conn.execute("INSERT INTO prospective (id, text, due, created, source_memory, status)"
+                 " VALUES (2, '问问他面试顺不顺利', '2027-03-07', '2027-03-04T21:30:00', NULL, 'open')")
+    conn.commit()
+    conn.close()
+    steps, _ = mig.run(v2, NOW, apply=True)
+    assert any("惦记 2" in line and "#14 " in line for line in step(steps, "8.").lines)
+    conn = open_db(v2)
+    assert conn.execute("SELECT source_memory FROM prospective WHERE id = 2").fetchone()[0] == 14

@@ -317,14 +317,18 @@ def lower_ceilings(conn: sqlite3.Connection, which: str | None) -> Step:
 
 def link_followups(conn: sqlite3.Connection) -> Step:
     """8. An open follow-up with no memory behind it: an open promise it overlaps, else the
-    note of the chat it was written in that it is about (as respond.add_followup does now)."""
+    note of the chat it was written in that it is about (as respond.add_followup does now).
+    A close run by the next message writes at that message's time, both the old chat's end and
+    the new chat's start: the chat that ended then wrote it, so it is asked first."""
     step = Step("8. 开着的惦记补上\"从哪条记忆来\"")
     store = MemoryStore(conn)
     eps = sorted(_episodes(conn).values(), key=lambda r: r["started"])
     for f in conn.execute("SELECT * FROM prospective WHERE status = 'open' AND source_memory IS NULL"
                           " ORDER BY id").fetchall():
-        ep = next((e for e in reversed(eps) if e["started"] <= f["created"] <= (e["ended"] or e["last_active"])), None)
-        about = store.pact_for(f["text"]) or (store.source_for(f["text"], ep["id"]) if ep is not None else None)
+        around = [e for e in reversed(eps) if e["started"] <= f["created"] <= (e["ended"] or e["last_active"])]
+        around.sort(key=lambda e: e["ended"] != f["created"])
+        about = store.pact_for(f["text"]) or next(
+            (m for m in (store.source_for(f["text"], e["id"]) for e in around) if m is not None), None)
         if about is not None:
             conn.execute("UPDATE prospective SET source_memory = ? WHERE id = ?", (about.id, f["id"]))
             step.lines.append(f"惦记 {f['id']}「{short(f['text'])}」→ #{about.id} {short(about.text)}")
