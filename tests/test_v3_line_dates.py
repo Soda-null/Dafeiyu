@@ -85,16 +85,16 @@ def test_only_a_near_miss_on_a_note_his_line_dates_is_moved():
     assert agree_with_line("他2028-01-01面试", "面试好紧张", today) == "他2028-01-01面试"
 
 
-def test_a_line_after_midnight_belongs_to_the_day_before(tmp_path):
+def test_a_line_after_midnight_counts_from_the_calendar_date(tmp_path):
     store = MemoryStore(connect(tmp_path / "fish.db"))
-    late = datetime(2028, 5, 5, 1, 0)  # Thursday night still: 明天 is Friday 5/5
-    m = store.note("event", "他2028-05-06考高数", importance=5, about="日常", now=late,
+    late = datetime(2028, 5, 5, 1, 0)  # after midnight: 明天 is 5/6, as her date table says
+    m = store.note("event", "他2028-05-07考高数", importance=5, about="日常", now=late,
                    said="明天考高数，睡不着", heard="chat")
-    assert m.text == "他2028-05-05考高数" and m.happened_on == "2028-05-05"
-    # the day he said it, by her day or by the clock, is not a miss
-    m = store.note("event", "他2028-05-04晚上说高数复习不完", importance=5, about="日常", now=late,
+    assert m.text == "他2028-05-06考高数" and m.happened_on == "2028-05-06"
+    # a note that already agrees with the date table is left alone
+    m = store.note("event", "他2028-05-06考高数", importance=5, about="日常", now=late,
                    said="明天考高数，复习不完", heard="chat")
-    assert m.text.startswith("他2028-05-04晚上")
+    assert m.text == "他2028-05-06考高数"
 
 
 def test_notes_not_heard_from_him_are_not_moved(tmp_path):

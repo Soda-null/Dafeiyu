@@ -16,7 +16,6 @@ from datetime import date, datetime, timedelta
 from fish.memory import pacts as pk
 from fish.memory import stability as st
 from fish.memory.scrub import secret
-from fish.memory.patterns import day_of as her_day
 from fish.memory.when import absolute, agree_with_line, day_of, fix_weekday, written_day
 
 KINDS = ("fact", "event", "howto", "insight", "self", "world")  # world: things she saw online
@@ -373,7 +372,9 @@ class MemoryStore:
             return None
         text = fix_weekday(text, now.date())
         if said and heard in pk.HEARD:  # "大后天" counted by the model as 05-08 is 05-07 (§14.3)
-            text = agree_with_line(text, said, her_day(now), told=now.date())
+            # the calendar date, as the date table she reads and absolute() count, so one turn
+            # after midnight does not save two different days
+            text = agree_with_line(text, said, now.date(), told=now.date())
         if kind in ABOUT_HIM_KINDS and ABOUT_THE_CHAT.search(text):
             return None
         said_as = text  # the words as said, for the day they name (two days named: no one day)
