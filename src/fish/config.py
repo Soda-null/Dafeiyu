@@ -61,12 +61,14 @@ def load_settings(env_file: Path | None = None) -> Settings:
     db = os.environ.get("FISH_DB_PATH", "data/fish.db")
     db_path = Path(db) if Path(db).is_absolute() else REPO_ROOT / db
     tz = os.environ.get("TZ") or home_timezone(db_path.parent / "home" / "home.json")
-    if tz:
+    if tz and hasattr(time, "tzset"):
         os.environ["TZ"] = tz
-        if hasattr(time, "tzset"):
-            time.tzset()
+        time.tzset()
     elif "TZ" in os.environ:
-        del os.environ["TZ"]  # an empty TZ= line would mean UTC to the C library
+        # An empty TZ= line would mean UTC to the C library; on Windows (no tzset) it cannot
+        # read "Asia/Shanghai" at all and would also fall back to UTC: there she keeps the
+        # machine's own clock, which on a home PC is already the user's.
+        del os.environ["TZ"]
     return Settings(
         api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
         base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),

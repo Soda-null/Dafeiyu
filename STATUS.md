@@ -35,7 +35,7 @@
 | 分享 | 他发的链接点开读正文，文件（PDF / Word / 文本）下载解密读开头 2500 字；朋友式地看，不替他干活，只当资料，不存 | 决定 23 |
 | 记忆体检 | 编的朋友的几十天剧本，隔几天问，裁判打五档，对及格线；`scripts/checkup.py`，结果在 `evals/results/`；第三版四个朋友及格 80–83%、记错加编造 3–4% | 决定 18、25 |
 | 小屋 | 湖边小屋和一家菜店：屋里的现状（`data/cottage/now.json`）只被他、规则、时间改；她空闲时挑做饭、买菜、叠被子，睡觉和饭点程序替她做；她是鲸鱼娘，记得自己以前是鱼缸里的鱼 | 决定 26、28 |
-| 开源 | MIT；`install.sh` 一键安装 / 更新 / 卸载（Linux systemd、macOS launchd）；`FISH_OWNER` 他 / 她、`FISH_HOME` 指定住哪；跟踪的文件里不写用户私事 | 决定 16 |
+| 开源 | MIT；`install.sh` 一键安装 / 更新 / 卸载（Linux systemd、macOS launchd），`install.ps1` 管 Windows（任务计划程序；10-28 加，GitHub Actions 在三种系统上跑安装和测试）；短命令 `./fish life`；`FISH_OWNER` 他 / 她、`FISH_HOME` 指定住哪；跟踪的文件里不写用户私事 | 决定 16 |
 
 ## 2. 建造顺序
 

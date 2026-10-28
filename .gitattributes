@@ -1,0 +1,10 @@
+# Same line endings on every machine: prompts and tests compare text, and install.sh must run
+# under bash even from a Windows checkout. Windows' own scripts keep CRLF.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.png binary
+*.jpg binary
+*.gif binary
+*.webp binary
+*.db binary

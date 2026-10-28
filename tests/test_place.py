@@ -2,9 +2,11 @@
 
 import io
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from fish.brain import Brain, FakeLLM
@@ -106,6 +108,7 @@ def test_home_can_be_set_by_hand_for_a_cloud_server():
     assert locate(fetch, at="39.9242,-83.8088") == Home("Springfield", "Ohio", "Downtown", 39.92, -83.81)
 
 
+@pytest.mark.skipif(not hasattr(time, "tzset"), reason="Windows keeps the machine's clock")
 def test_her_clock_follows_her_home_when_env_has_no_tz(tmp_path, monkeypatch):
     """No TZ in .env: once she knows where she lives, that place's timezone is her clock."""
     import os
@@ -129,3 +132,18 @@ def test_her_clock_follows_her_home_when_env_has_no_tz(tmp_path, monkeypatch):
             os.environ["TZ"] = orig
         if hasattr(time, "tzset"):
             time.tzset()
+
+
+def test_on_windows_she_keeps_the_machine_clock(tmp_path, monkeypatch):
+    """Windows' C library cannot read "Asia/Shanghai" and would count in UTC: drop TZ there."""
+    import os
+    import time
+
+    from fish.config import load_settings
+
+    monkeypatch.delattr(time, "tzset", raising=False)
+    monkeypatch.setenv("TZ", "Asia/Shanghai")
+    monkeypatch.setenv("FISH_DB_PATH", str(tmp_path / "fish.db"))
+    (tmp_path / ".env").write_text("", encoding="utf-8")
+    load_settings(tmp_path / ".env")
+    assert "TZ" not in os.environ

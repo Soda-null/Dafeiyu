@@ -14,6 +14,8 @@
 | `write_coverage.py` | 剧本里每件事写到了哪一层（第三版第 0 步）：笔记、聊天摘要、还是只在他的原话里，第几天第一次出现、问的时候笔记里有没有；某一问自己带了认法（比如"考得咋样"只认分数）就单独成一行，体检自己问的话不算他说过；不该记的词（密码）在她写的东西里几处；挂在事件上的结果（第 5 步）算笔记。把"没记下"和"没找到"分开 | 体检跑完手动跑，不花钱 |
 | `migrate_v3.py` | 把第二版的库搬成第三版（第三版第 9 步，`docs/memory_v3_zh.md` §8）：补新列、换掉的旧条补"为什么"、合并出来的补档、补"事情是哪天"（收尾记的挪回那次聊天）、惦记补来源、聊天补标签、先数一次规律；"他"改回"我"、设约定、日期校对、压牢固度只列候选，给编号（或 `all`）才做；默认只预演、文件不动，`--apply` 先备份成 `.bak-v2` 再一个事务写完，永远不删 | 用户点头后手动跑一次，先预演；不调模型、不花钱 |
 | `memory_v2_trial.py` | 记忆第二版的试算（`docs/memory_v2_zh.md` §6）：给一份她记忆的 JSON 导出，问模型一次打标签，按新旧规则推算几天后清楚 / 模糊 / 想不起 | 调规则时手动跑 |
+| `../install.ps1` | Windows 的一键安装：拿代码（没 git / Python 会问要不要用 winget 装）、建 `.venv`、问 key 和他还是她写 `.env`（不写 TZ，跟电脑时钟走）、自检、扫码绑微信、在任务计划程序里建两个自己用户下的任务（登录就启动的微信、每天 03:30 的整理）；`update`、`uninstall` | 新用户；README 里那一行 |
+| `windows/run_hidden.pyw` | Windows 上任务计划程序用 `pythonw` 跑它：没有窗口地跑 `fish wechat` / `fish nightly`，输出写 `data/logs/`，微信崩了 30 秒后自己再起来 | `install.ps1` 装 |
 | `../install.sh` | 一键安装（仓库根目录）：拿代码、建 `.venv`、问 key / 时区 / 他还是她写 `.env`、自检、扫码绑微信、装开机自启（Linux systemd 用户服务 / macOS launchd）；`update`、`uninstall` | 新用户；`curl … \| bash` 或 `./install.sh` |
 | `deploy_box.sh` | 把她推到寝室 Ubuntu 机：push 代码、装 venv、装服务文件和时区；`--with-data` 搬记忆（只在搬家时）、`--start` 启动、`--restart` 改完代码重启 | Mac 上，`docs/box_zh.md` |
 | `systemd/` | box 上的服务文件：`dafeiyu-wechat.service`（常驻）、`dafeiyu-nightly.service` + `.timer`（每天 03:30）；原来的 `dafeiyu-browse` 决定 24 撤了，两个脚本会清掉旧的 | `install.sh` 和 `deploy_box.sh` 装（路径换成实际文件夹） |

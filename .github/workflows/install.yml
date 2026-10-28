@@ -1,0 +1,65 @@
+# Tests and the one-step installers on real Linux, macOS and Windows machines. Offline: the
+# DeepSeek key is a placeholder and nothing is bound to WeChat.
+name: install
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install.sh (no services)
+        env:
+          DAFEIYU_SKIP_SERVICES: "1"
+        run: |
+          printf 'DEEPSEEK_API_KEY=placeholder\nTZ=Asia/Shanghai\n' > .env
+          bash install.sh </dev/null
+      - name: tests
+        run: .venv/bin/python -m pytest -q
+      - name: short command
+        run: ./fish life
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install.ps1 under Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          Set-Content -Path .env -Value "DEEPSEEK_API_KEY=placeholder" -Encoding ASCII
+          powershell -ExecutionPolicy Bypass -File install.ps1 install
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-ScheduledTask -TaskName "Dafeiyu nightly"
+      - name: tests
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+        run: .venv\Scripts\python.exe -m pytest -q
+      - name: short command and the hidden runner
+        shell: pwsh
+        run: |
+          .\fish.cmd life
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Start-ScheduledTask -TaskName "Dafeiyu nightly"
+          Start-Sleep -Seconds 20
+          Get-Content data\logs\nightly.log
+      - name: uninstall
+        shell: powershell
+        run: |
+          powershell -ExecutionPolicy Bypass -File install.ps1 uninstall
+          if (Get-ScheduledTask -TaskName "Dafeiyu nightly" -ErrorAction SilentlyContinue) { exit 1 }
