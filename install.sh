@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 一键养一条自己的大肥鱼。Linux（systemd）和 macOS（launchd）都行。
 #
-#   curl -fsSL https://raw.githubusercontent.com/Soda-null/Dafeiyu/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Soda-null/whale-be-friends/main/install.sh | bash
 #   ./install.sh             在已经 clone 下来的仓库里装（重复跑也安全：不覆盖已有的 .env 和记忆）
 #   ./install.sh update      拉新代码、装依赖、重启她（记忆不动）
 #   ./install.sh uninstall   停掉她、删掉开机自启（记忆和代码都留着）
@@ -11,7 +11,7 @@
 # 不想手动输入时可以预先给：DEEPSEEK_API_KEY=sk-... bash install.sh
 set -euo pipefail
 
-REPO_URL="${DAFEIYU_REPO:-https://github.com/Soda-null/Dafeiyu.git}"
+REPO_URL="${DAFEIYU_REPO:-https://github.com/Soda-null/whale-be-friends.git}"
 UNITS=(dafeiyu-wechat.service dafeiyu-nightly.service dafeiyu-nightly.timer)
 LAUNCH_DIR="$HOME/Library/LaunchAgents"
 LABELS=(com.dafeiyu.wechat com.dafeiyu.nightly)

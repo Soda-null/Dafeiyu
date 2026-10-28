@@ -305,3 +305,10 @@
 3. **小屋默认开**：取代决定 26 第 7 条"`FISH_COTTAGE` 默认关"。人设已经说她住在小屋，不开反而对不上；`.env` 写 `FISH_COTTAGE=0` 能关。体检也默认开着跑，`--no-cottage` 关。
 4. **部署前备份**：寝室机上她的数据用 SQLite 自带备份拷一份到 Mac 的 `backups/`。
 
+
+## 29（2026-10-28）项目叫 Whale Be Friends，README 英文为主
+
+用户："readme做一个英文的，然后项目换个名字……可以可爱幽默一点"；四个候选里选了 Whale Be Friends（谐音 "We'll be friends"：她是鲸鱼娘，项目要做的是朋友）。
+
+1. **改的**：GitHub 仓库 `Soda-null/Dafeiyu` 改名 `Soda-null/whale-be-friends`（旧地址 GitHub 会自动跳转）；安装脚本和 README 里的地址跟着换。`README.md` 换成英文、GitHub 首页默认显示，中文挪到 `README_zh.md`，两边顶上互相链接。
+2. **不改的**：她还叫大肥鱼；本地文件夹 `Dafeiyu`、Python 包和命令 `fish`、服务名 `dafeiyu-*`、`DAFEIYU_*` 环境变量都不动。改了会让已经装好的（包括寝室机上的她）更新时找不到自己。

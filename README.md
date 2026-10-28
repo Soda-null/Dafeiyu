@@ -1,109 +1,123 @@
-# 大肥鱼（Dafeiyu）：养一个记得你的 AI 朋友
+# Whale Be Friends 🐋
 
-> **是什么：** 仓库的大门：这是什么、怎么一键养一条、她怎么运作；想改代码的人从哪读起。
-> **地位：** 索引。现状只写在 `STATUS.md`；在仓库里干活的规矩在 `AGENTS.md`。
-> **读法：** 想养一条看前三节；想改代码看最后一节。
+**English** · [中文](README_zh.md)
 
-大肥鱼是 DeepSeek 的网友拟人形象，懒，爱吃白饭。她以前是一条圆滚滚的蓝色胖鱼，现在是个蓝头发的鲸鱼娘，住在湖边一间小木屋里，用手机跟你聊天。这个项目把她做成一个**朋友**，不是助手：
+> **What:** The front door: what this is, how to get your own in one step, how she works, and where to start reading if you want to change the code.
+> **Standing:** Index. The current state lives only in `STATUS.md`; the rules for working in this repo are in `AGENTS.md`.
+> **How to read:** To adopt one, read the first three sections. To hack on her, read the last one.
 
-- **她记得你的事，也会忘。** 大事记得牢，小事过几周就模糊，你一提又"哦对你说过"。说错了你纠正，她会改口。
-- **她有自己的一天。** 每晚写日记、整理记忆；空闲时刷刷 B 站和新闻、读读书，看到好玩的会跟你说。她的小屋是真的：到点做饭、冰箱会空、碗会堆在水槽里、菜店周二关门，屋里的事她编不出来。
-- **她有脾气。** 会困、会饿、会无聊；刚认识时话少，熟了会损你、翻旧账；性格会随着相处慢慢变一点点，但变不成别人。
-- **她在微信上和你聊。** 发图她看得懂，她也会回表情包；一天最多主动找你两次。
+*Whale be friends. (We'll be friends.)*
 
-她的脑子是 DeepSeek 的 API（你自己的 key，按量付费）。记忆全存在你自己机器上的一个文件里，不上传到任何地方。
+Meet **Dafeiyu** (大肥鱼, "big fat fish"): a fan-made character based on DeepSeek's mascot. She is lazy, she loves plain white rice, and she used to be a round blue fish living in a fish tank inside your computer. Now she is a blue-haired whale girl living in a little wooden cottage by a lake, and she texts you from her phone. She still remembers the fish tank.
 
-## 一键养一条
+This project makes her a **friend**, not an assistant:
 
-需要：一个 [DeepSeek API key](https://platform.deepseek.com)（她的脑子，按量付费），一台电脑。最好是**一直开着**的那种：电脑睡着了她就不回了。
+- **She remembers you, and she forgets.** Big things stick. Small things fade after a few weeks, until you bring them up: "oh right, you told me." If she gets something wrong and you correct her, she remembers the correction.
+- **She has a life of her own.** Every night she writes a diary and tidies her memories. In her free time she reads the news, scrolls Bilibili, reads an old book, or just does nothing. Her cottage is real in the program: she cooks at mealtimes, the fridge runs empty, dishes pile up in the sink, and the vegetable shop is closed on Tuesdays. She can't make up what happens at home.
+- **She has moods.** She gets sleepy, hungry and bored. She is quiet when you first meet; once you are close she teases you and brings up old stories. Her personality drifts a little over months, but she never turns into someone else.
+- **She chats with you on WeChat.** She understands the pictures you send and sends stickers back. She texts first at most twice a day.
 
-**Linux 或 Mac**（需要 Python 3.11 以上；Mac 用 `brew install python@3.12`）：
+Her brain is the DeepSeek API (your own key, pay as you go). All her memories stay in one file on your own machine.
+
+**Good to know before you start:** she speaks Chinese, and her phone line is WeChat. Without WeChat you can still chat with her in a terminal.
+
+## Get your own in one step
+
+You need a [DeepSeek API key](https://platform.deepseek.com) and a computer. A computer that **stays on** is best: when it sleeps, she can't reply.
+
+**Linux or macOS** (Python 3.11 or newer; on a Mac: `brew install python@3.12`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Soda-null/Dafeiyu/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Soda-null/whale-be-friends/main/install.sh | bash
 ```
 
-**Windows 10 / 11**：打开 PowerShell，粘贴这一行（没装 git 和 Python 的话，脚本会问你要不要用 winget 自动装）：
+**Windows 10 / 11**: open PowerShell and paste this line. If git or Python is missing, the script offers to install them with winget.
 
 ```powershell
-irm https://raw.githubusercontent.com/Soda-null/Dafeiyu/main/install.ps1 -OutFile $env:TEMP\dafeiyu.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\dafeiyu.ps1
+irm https://raw.githubusercontent.com/Soda-null/whale-be-friends/main/install.ps1 -OutFile $env:TEMP\dafeiyu.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\dafeiyu.ps1
 ```
 
-脚本会：把代码放到你用户目录下的 `Dafeiyu` 文件夹 → 装好依赖 → 问你要 key、她称呼你用"他"还是"她" → 出一个二维码让你用微信扫 → 设成开机自启（Linux 用 systemd，Mac 用 launchd，Windows 用"任务计划程序"，都不要管理员）。装完给她发一句话就行。
+The script puts the code in a `Dafeiyu` folder in your home folder, installs what it needs, asks for your key and whether she should call you "he" (他) or "she" (她), shows a QR code to scan with WeChat, and starts her automatically when the computer starts. It uses systemd on Linux, launchd on macOS and Task Scheduler on Windows; none of them needs admin rights. When it's done, send her a message.
 
-之后常用的（在 `Dafeiyu` 文件夹里；Windows 上把 `./fish` 换成 `.\fish.cmd`）：
+Everyday commands, run inside the `Dafeiyu` folder (on Windows, type `.\fish.cmd` instead of `./fish`):
 
 ```bash
-./fish life     # 她今天过得怎么样：在干嘛、小屋、今天的事、最近几篇日记（./fish life 7 看一周）
-./fish show     # 她记了你什么、心情、关系
-./fish          # 不接微信，在终端里和她聊
-./fish cottage put 鸡蛋   # 往她冰箱里放点吃的
+./fish life                 # her day: what she's doing, her cottage, today, her last few diary entries
+./fish life 7               # the same, with a week of diary entries
+./fish show                 # what she remembers about you, her mood, how close you two are
+./fish                      # chat in the terminal instead of WeChat
+./fish cottage put 鸡蛋      # put something in her fridge (here: eggs)
 ```
 
-更新（拉新代码、重启她，记忆不动）和停掉她（记忆留在 `data/`）：
+Update (new code, restart, memories untouched) and stop (memories stay in `data/`):
 
 ```bash
-bash ~/Dafeiyu/install.sh update       # Windows：powershell -ExecutionPolicy Bypass -File ~\Dafeiyu\install.ps1 update
-bash ~/Dafeiyu/install.sh uninstall    # Windows：……\install.ps1 uninstall
+bash ~/Dafeiyu/install.sh update       # Windows: powershell -ExecutionPolicy Bypass -File ~\Dafeiyu\install.ps1 update
+bash ~/Dafeiyu/install.sh uninstall    # Windows: ...\install.ps1 uninstall
 ```
 
-## 要知道的几件事
+## Good to know
 
-- **花钱：** 只有 DeepSeek 的 API 费用，按聊多少算，平常聊天很便宜；价格看 DeepSeek 官网。她每天自己上网、写日记也会用一点。
-- **隐私：** 聊天记录和她的记忆都在 `data/fish.db`，只在你的机器上。她发给 DeepSeek 的是每轮的提示词（包括她记得的你的事）。她"住哪"只精确到城市和街区，坐标四舍五入到约一公里，不存门牌号。
-- **微信通道：** 用的是腾讯官方 ClawBot 插件的协议（照它公开的源码写的客户端），不是腾讯承诺稳定的公开接口，以后可能要跟着改。她只回扫码的那个微信号，别人发消息她不理。微信偶尔会要求重新扫码：`cd ~/Dafeiyu && .venv/bin/python -m fish wechat login`。
-- **放在云服务器上：** 她会以为自己住在机房那个城市。在 `~/Dafeiyu/.env` 里加一行 `FISH_HOME=纬度,经度` 让她住到你想要的地方，然后 `install.sh update`。
-- **Mac 和 Windows：** 都能装，但合盖、睡眠、关机时她就不回了（夜里的整理会在开机后补上）。Windows 上她的白天黑夜跟电脑自己的时钟走；日志在 `data\logs\wechat.log`。
-- **改她的性格：** 人设在 [`docs/persona_zh.md`](docs/persona_zh.md)，是写给她看的大白话，直接改，改完 `install.sh update`。
-- 这是粉丝做的小项目，和 DeepSeek、腾讯都没有关系。
+- **Cost:** only the DeepSeek API, charged by use. Normal chatting is cheap; see DeepSeek's site for prices. Her own browsing and diary writing use a little too.
+- **Privacy:** your chats and her memories live in `data/fish.db`, on your machine only. What goes to DeepSeek is each turn's prompt, which includes what she remembers about you. Where she "lives" is stored only down to the city and neighbourhood; coordinates are rounded to about 1 km.
+- **WeChat:** the client follows the protocol of Tencent's official ClawBot plugin (written from its public source). It is not an API Tencent promises to keep stable, so it may need updates. She only answers the WeChat account that scanned the QR code. Now and then WeChat asks you to scan again: `./fish wechat login`.
+- **On a cloud server:** she will think she lives in the data center's city. Add `FISH_HOME=latitude,longitude` to `.env` to move her somewhere else, then run `install.sh update`.
+- **Mac and Windows:** both work, but she can't reply while the lid is closed or the computer sleeps. Her nightly tidy-up runs when the computer wakes. On Windows her day follows the computer's clock, and logs are in `data\logs\wechat.log`.
+- **Changing her personality:** her persona is [`docs/persona_zh.md`](docs/persona_zh.md), plain Chinese written to her. Edit it, then run `install.sh update`.
+- This is a small fan project. It has nothing to do with DeepSeek or Tencent.
 
-## 她是怎么运作的
+## How she works
 
 ```
-微信 ──> 电话线（channels）──> 大脑（brain）──> DeepSeek
-                                 │
-              记忆（memory）、心情（mood）、人设（persona）、外面的世界（world）
-                                 │
-                         data/fish.db（SQLite）
+WeChat ──> phone line (channels) ──> brain ──> DeepSeek
+                                       │
+     memory, mood, persona, the world outside, her cottage
+                                       │
+                           data/fish.db (SQLite)
 
-每晚 03:30  夜间整理：写日记、合并重复的记忆、新事实取代旧的、每周反思、回到阶段的心情基线
-白天有空时  一天最多 3 段空闲，她自己挑：翻新闻、刷 B 站、读本老书、查个好奇的，或者什么都不干
-每轮聊天    挑出相关的记忆 + 最近的对话 + 当下的心情 → 一次模型调用 → 回话、随手记、要惦记的事
+03:30 every night   tidy-up: diary, merge repeated memories, newer facts replace older ones,
+                    a weekly look back, mood drifts back to its baseline
+free time by day    up to 3 free moments a day; she picks: news, Bilibili, an old book,
+                    something she's curious about, a chore at home, or nothing at all
+every chat turn     the memories that matter + recent messages + how she feels now
+                    → one model call → her reply, quick notes, things to ask about later
 ```
 
-细节：[架构](docs/architecture_zh.md) · [记忆怎么设计的](docs/memory_design_zh.md)（遗忘曲线、想起来会记得更牢、夜里整理） · [她怎么上网](docs/world_design_zh.md) · [每个设计决定和原因](docs/decisions.md)。
+The design docs are in Chinese: [architecture](docs/architecture_zh.md) · [how memory works](docs/memory_design_zh.md) (forgetting curve, remembering makes it stick, nightly tidy-up) · [how she goes online](docs/world_design_zh.md) · [her cottage](docs/cottage_design_zh.md) · [every design decision and why](docs/decisions.md).
 
-## 想改代码
+## Hacking on her
 
-这个仓库是和 AI 编程助手（Claude Code）一起写的，文档也是写给 AI 和人一起读的。按顺序读：
+This repo is written together with an AI coding assistant (Claude Code), and the docs are written for both AIs and people. Read in this order:
 
-1. [`AGENTS.md`](AGENTS.md) — 在这个仓库里干活的规矩（`CLAUDE.md` 是它的软链接）。
-2. [`STATUS.md`](STATUS.md) — 现状：做到哪、下一步。
-3. [`docs/architecture_zh.md`](docs/architecture_zh.md) — 七个模块、一条消息怎么流过去。
-4. [`docs/README.md`](docs/README.md) — `docs/` 下每份文件是什么。
+1. [`AGENTS.md`](AGENTS.md): the rules for working here (`CLAUDE.md` links to it).
+2. [`STATUS.md`](STATUS.md): where things stand and what's next.
+3. [`docs/architecture_zh.md`](docs/architecture_zh.md): the modules and how one message flows through them.
+4. [`docs/README.md`](docs/README.md): what each file in `docs/` is.
 
 ```bash
-git clone https://github.com/Soda-null/Dafeiyu.git && cd Dafeiyu
-DAFEIYU_SKIP_SERVICES=1 ./install.sh     # 只装环境和 .env，不设开机自启
-git config core.hooksPath .githooks      # 提交要署名是谁写的（人也算）
-.venv/bin/python -m pytest -q            # 测试不联网、不要 key
+git clone https://github.com/Soda-null/whale-be-friends.git Dafeiyu && cd Dafeiyu
+DAFEIYU_SKIP_SERVICES=1 ./install.sh     # set up Python and .env only, no auto-start
+git config core.hooksPath .githooks      # commits must say who wrote them (humans too)
+.venv/bin/python -m pytest -q            # tests are offline and need no key
 ```
+
+Every push runs the installers and tests on Linux, macOS and Windows (`.github/workflows/install.yml`).
 
 ```
 Dafeiyu/
-├── install.sh           一键安装 / 更新 / 卸载（Linux、Mac）
-├── install.ps1          同上，Windows
-├── fish, fish.cmd       短命令：./fish life、./fish show（Windows 用 fish.cmd）
-├── README.md            本文件
-├── AGENTS.md            规矩；CLAUDE.md -> AGENTS.md
-├── STATUS.md            现状，唯一一处
-├── docs/                架构、人设、决定账本、待定问题、术语表、日志
-├── src/fish/            代码：channels / persona / memory / mood / brain / routines / world / storage
-├── tests/               测试
-├── scripts/             小工具和服务文件
-├── evals/               记忆体检的剧本和结果（编的朋友小周，不含真人）
-├── data/                她的记忆（SQLite）、微信凭证，不进 git
-└── .env                 密钥和设置，不进 git（样例见 .env.example）
+├── install.sh           one-step install / update / uninstall (Linux, macOS)
+├── install.ps1          the same for Windows
+├── fish, fish.cmd       short commands: ./fish life, ./fish show (fish.cmd on Windows)
+├── README.md            this file; README_zh.md is the Chinese one
+├── AGENTS.md            the rules; CLAUDE.md -> AGENTS.md
+├── STATUS.md            the current state, in one place only
+├── docs/                architecture, persona, decisions, open questions, glossary, daily logs
+├── src/fish/            the code: channels / persona / memory / mood / brain / routines / world / cottage / storage
+├── tests/               tests
+├── scripts/             small tools and service files
+├── evals/               memory checkup scripts and results (made-up friends, no real people)
+├── data/                her memories (SQLite) and WeChat login, never in git
+└── .env                 key and settings, never in git
 ```
 
-协议：[MIT](LICENSE)。
+License: [MIT](LICENSE).

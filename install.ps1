@@ -1,7 +1,7 @@
 ﻿# 一键在 Windows 上养一条大肥鱼（Windows 10 / 11，PowerShell 5.1 或 7 都行）。
 #
 #   在 PowerShell 里粘贴这一行：
-#   irm https://raw.githubusercontent.com/Soda-null/Dafeiyu/main/install.ps1 -OutFile $env:TEMP\dafeiyu.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\dafeiyu.ps1
+#   irm https://raw.githubusercontent.com/Soda-null/whale-be-friends/main/install.ps1 -OutFile $env:TEMP\dafeiyu.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\dafeiyu.ps1
 #
 #   已经 clone 下来的仓库里：
 #   powershell -ExecutionPolicy Bypass -File install.ps1             装（重复跑也安全：不覆盖已有的 .env 和记忆）
@@ -17,7 +17,7 @@ $ErrorActionPreference = "Stop"
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}
 $env:PYTHONUTF8 = "1"
 
-$RepoUrl = if ($env:DAFEIYU_REPO) { $env:DAFEIYU_REPO } else { "https://github.com/Soda-null/Dafeiyu.git" }
+$RepoUrl = if ($env:DAFEIYU_REPO) { $env:DAFEIYU_REPO } else { "https://github.com/Soda-null/whale-be-friends.git" }
 $TaskWechat = "Dafeiyu WeChat"
 $TaskNightly = "Dafeiyu nightly"
 
