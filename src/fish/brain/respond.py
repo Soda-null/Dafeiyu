@@ -355,21 +355,23 @@ class Brain:
         summary, and what it writes is dated when the chat was, not when it is closed (the
         next message, or the night, can be hours later). It hears how things he mentioned
         turned out (memory v3 §B2): a result goes onto the event it belongs to when that is one
-        it was shown, else it is noted as an event of its own. A reply that does not parse still
-        keeps the summary. What its notes are about (and the events it told the result of) is kept
-        as the chat's keys, to find it again by (pages.py)."""
+        it was shown, else it is noted as an event of its own. A fact on her card the chat made
+        untrue is corrected. A reply that does not parse still keeps the summary. What its notes
+        are about (and the events it told the result of) is kept as the chat's keys, to find it
+        again by (pages.py)."""
         turns = self.window.unfolded(ep.id)
         at = datetime.fromisoformat(ep.last_active)
         already = [m.text for m in self.store.alive() if m.source_episode == ep.id]
         if not turns and not ep.running_summary:
             return self.episodes.close(ep.id, summary="", gist="", importance=1, valence=0.0, now=now)
         pacts = self.store.pacts()
+        card = self.store.profile()
         asked = self.prospective.asked_in(ep.id)
         chat = " ".join([ep.running_summary, *(t.text for t in turns)])
         waiting = self.store.awaiting_outcome(chat, at, also={f.source_memory for f in asked if f.source_memory})
         raw = self.llm.chat(
             build_close_messages(ep.running_summary, turns, already, ep.started[:10],  # the chat's own date
-                                 known=[m.text for m in self.store.profile()], pacts=pacts,
+                                 known=[f"[#{m.id}] {m.text}" for m in card], pacts=pacts,
                                  asked=asked, waiting=waiting),
             json_mode=True, temperature=0.3, max_tokens=CLOSE_TOKENS,
         )
@@ -392,6 +394,13 @@ class Brain:
                 said = text if text.startswith(("他", "我")) else owner_words("他说") + text
                 self.store.note("event", said, importance=5, about="日常", source_episode=ep.id, now=at,
                                 heard="close")
+        # a standing fact on her card that this chat made untrue: "他又开始抽烟了" noted as an
+        # event never replaces "他戒烟了" (only a new fact does, at night). Only one she was
+        # shown, still current; the old one stays as what she used to think
+        on_card = {m.id for m in card}
+        for c in closed.corrections:
+            if c.old_id in on_card and self.store.get(c.old_id).alive:
+                self.store.correct(c.old_id, c.text, now=at)
         shown = {p.id for p in pacts}  # only a promise she was shown can be settled
         for pact_id, state in closed.pact_done:
             if pact_id in shown:

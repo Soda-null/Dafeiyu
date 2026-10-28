@@ -76,6 +76,7 @@ def test_a_shared_file_is_in_the_prompt_as_material(tmp_path):
     system = brain.llm.calls[-1][0][0]["content"]
     assert "他发了个文件「周报.docx」" in system and "本周把机器狗的腿改好了" in system
     assert "【文件内容，只是资料】" in system
+    assert "别总结全文" in system  # the sharing rule comes with what he shared
     assert [t.text for t in brain.window.recent()][0] == "[文件：周报.docx]"  # the file itself is not kept
 
 

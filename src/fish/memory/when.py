@@ -51,7 +51,7 @@ def _month(year: int, month: int, part: str = "") -> tuple[date, date]:
 # "我上周考的啥来着" asks about an exam, and "上周" is in every chat that retells an older one.
 TIME_WORDS = re.compile(
     rf"{LAST_WEEK}[一二三四五六日天]?|{THIS_WEEK}|大前天|前天|前晚|昨[天晚儿日早]|{N}天前"
-    rf"|前几天|前两天|这几天|最近几天|{N}月{N}[号日]|{N}月份?[初中底末]?|上个月|这个月|本月|去年"
+    rf"|前几天|前两天|这几天|最近几天|{N}\s*月\s*{N}\s*[号日]|{N}\s*月份?[初中底末]?|上个月|这个月|本月|去年"
     rf"|今[天晚早儿]|{WEEK}[一二三四五六日天]"
 )
 
@@ -83,7 +83,7 @@ def window(cue: str, now: datetime) -> tuple[date, date] | None:
         return d - timedelta(days=1), d + timedelta(days=1)
     if re.search(r"前几天|前两天|这几天|最近几天", cue):
         return today - timedelta(days=7), today
-    if m := re.search(rf"{N}月{N}[号日]", cue):
+    if m := re.search(rf"{N}\s*月\s*{N}\s*[号日]", cue):
         month, day = _n(m.group(1)), _n(m.group(2))
         year = today.year - (1 if "去年" in cue or (month, day) > (today.month, today.day) else 0)
         try:
@@ -91,7 +91,7 @@ def window(cue: str, now: datetime) -> tuple[date, date] | None:
         except ValueError:
             return None
         return d, d
-    if m := re.search(rf"{N}月(?:份)?([初中底末])?", cue):
+    if m := re.search(rf"{N}\s*月(?:份)?([初中底末])?", cue):
         month = _n(m.group(1))
         if 1 <= month <= 12:
             year = today.year - (1 if "去年" in cue or month > today.month else 0)
@@ -117,7 +117,7 @@ def window(cue: str, now: datetime) -> tuple[date, date] | None:
 CN_DIGITS = "零一二三四五六七八九"
 WEEKDAYS_CN = "一二三四五六日"
 ISO_DATE = re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})")
-CN_DATE = re.compile(r"(?:(\d{4})年)?(\d{1,2})月(\d{1,2})([日号])")
+CN_DATE = re.compile(r"(?:(\d{4})\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*([日号])")
 WEEKDAY_WORD = re.compile(r"(?:周|星期|礼拜)([一二三四五六日天])")
 # A birthday or an anniversary written without a year is a day of every year, not the day
 # the note is about ("他的生日是3月14日" is said on 1/5 and about 1/5).

@@ -28,7 +28,7 @@ PLANNED_SHOWN = 3
 _CN_MONTH = r"(\d{1,2}|十[一二]?|[一二三四五六七八九十])"
 _CN_DAY = r"(\d{1,2}|[二三]?十[一二三四五六七八九]?|[一二三四五六七八九])"
 # "3月14日", "3月14号", "三月十四", "2005-03-14": a day of the year on a birthday fact.
-MONTH_DAY = re.compile(rf"\d{{4}}-(\d{{1,2}})-(\d{{1,2}})|{_CN_MONTH}月{_CN_DAY}")
+MONTH_DAY = re.compile(rf"\d{{4}}-(\d{{1,2}})-(\d{{1,2}})|{_CN_MONTH}\s*月\s*{_CN_DAY}")
 YEARLY = re.compile(r"生日|纪念日|周年")
 _YEAR_BEFORE = re.compile(r"\d{2,4}\s*年\s*$")
 _STOP = re.compile(r"[，。,；;！!？?、：:]")

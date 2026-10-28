@@ -140,6 +140,7 @@ def test_she_sees_the_picture_keeps_it_and_sends_it_back_later(tmp_path):
         last = messages[-1]["content"]
         if isinstance(last, list):  # the picture turn
             assert last[0]["text"].startswith("看这个\n（照") and last[1]["image_url"]["url"].startswith("data:image/png;base64,")
+            assert "不要描述图" in messages[0]["content"]  # the picture rule comes with the picture
             return json.dumps({"say": "哈哈哈这鱼比我还胖", "image_note": "一条胖鱼的表情包",
                                "keep_sticker": "嘲笑他胖用的"}, ensure_ascii=False)
         return json.dumps({"say": "给你看个东西", "sticker": 1}, ensure_ascii=False)

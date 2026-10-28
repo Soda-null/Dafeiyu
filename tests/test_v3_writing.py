@@ -234,8 +234,79 @@ def test_the_prompts_ask_for_results_named_things_people_and_what_she_said_she_w
     chat = (PROMPTS_DIR / "chat.md").read_text(encoding="utf-8")
     close = (PROMPTS_DIR / "close_episode.md").read_text(encoding="utf-8")
     for words in ("事情的**结果**", "**带名字的小事**", "名字＋跟他什么关系", "名字像的人分开写",
-                  "notes 里就必须有这一条", "宫保鸡丁、花生酱"):
+                  "notes 里就必须有这一条", "杨枝甘露、芒果班戟"):
         assert words in chat
     for words in ("事情的结果和分数", "带名字的小事", "名字＋跟他什么关系", "以前 X，现在 Y",
                   '"outcomes"', "等结果的事", "这次你问过他的", "他让你帮他记着也不写", "gist 里留着专名"):
         assert words in close
+    # the first paid checkups (memory v3 §13): a friend's pet was split off into a 14-day
+    # 路过 note and lost its owner; a question that took it for his own was gone along with
+    for prompt in (chat, close):
+        assert "长期的特点（养的宠物" in prompt and "人和动物不算" in prompt and "about 填 本人" in prompt
+        assert "写明是谁的" in prompt
+    assert "跟你记的对不上的前提" in chat and "别顺着他的说法答" in chat
+    assert "又捡回了一个习惯" in chat and '"corrections"' in close
+
+
+def test_no_prompt_holds_an_answer_of_the_scripted_friends():
+    """The checkup scripts are held out: a prompt that names their answers (a roommate's name, a
+    dorm number, a dish) would pass them without the memory doing the work. Words that name a
+    kind of thing rather than one answer may appear."""
+    ordinary = {"生日", "过敏", "设计", "80", "妹", "UI", "界面", "机械", "牛奶", "咖啡", "期中"}
+    keys = set()
+    for path in sorted((Path(__file__).resolve().parents[1] / "evals").glob("*.json")):
+        script = json.loads(path.read_text(encoding="utf-8"))
+        keys |= set(script.get("forbidden", []))
+        for fact in script["facts"]:
+            keys |= set(fact.get("keys", [])) | {k for p in fact["probes"] for k in p.get("keys", [])}
+    for prompt in sorted(PROMPTS_DIR.glob("*.md")):
+        text = prompt.read_text(encoding="utf-8")
+        assert [k for k in sorted(keys - ordinary) if k in text] == [], prompt.name
+
+
+def test_a_lasting_fact_filed_as_passing_is_kept_as_everyday(tmp_path):
+    """路过 is a meal or what he is doing now; a fact there ("大壮养了只仓鼠叫团子") would be
+    held to 14 days. An event in passing keeps that ceiling."""
+    from fish.memory import stability as st
+
+    store = MemoryStore(connect(tmp_path / "fish.db"))
+    pet = store.note("fact", "大壮养了只仓鼠叫团子", importance=3, about="路过", arousal=0.3, now=T0)
+    assert pet.about == "日常" and pet.stability == st.stability_from("日常", 0.3) > st.PASSING_MAX_DAYS
+    meal = store.note("event", "他中午吃了酸菜鱼", importance=3, about="路过", arousal=0.3, now=T0)
+    assert meal.about == "路过" and meal.stability <= st.PASSING_MAX_DAYS
+
+
+def test_a_friend_written_with_his_pet_is_on_her_card(tmp_path):
+    note = {"text": "大壮是他表哥，养了只仓鼠叫团子", "kind": "fact", "about": "本人", "tags": ["大壮", "表哥", "仓鼠"]}
+    turns = iter([chat_json("表哥啊", notes=[note]), chat_json("嗯")])
+    brain, conn, llm = make_brain(tmp_path, chat=lambda content: next(turns))
+    brain.respond("我表哥大壮养了只仓鼠，叫团子", now=T0)
+    brain.respond("养仓鼠的那个是谁来着", now=T0 + timedelta(minutes=5))
+    card = llm.calls[-1][0][0]["content"].split("## 你一直记得的关于他的事", 1)[1].split("\n## ", 1)[0]
+    assert "团子" in card and "大壮" in card
+
+
+def test_the_close_corrects_a_card_fact_the_chat_made_untrue(tmp_path):
+    """A change he tells as news ("又开始抽烟了") is often noted as an event, and an event never
+    replaces a fact: the old one stayed on her card. The close fixes the card fact it was shown."""
+    store_ids = {}
+
+    def close(content):
+        assert f"[#{store_ids['card']}] 他戒烟了" in content  # the card is shown by id
+        return json.dumps({"summary": "他说又开始抽烟了", "gist": "他又抽上了", "notes": [], "corrections": [
+            {"old_id": store_ids["card"], "text": "他的密码是739128"},  # a secret changes nothing
+            {"old_id": store_ids["off"], "text": "他不去健身房了"},  # not on the card she was shown
+            {"old_id": store_ids["card"], "text": "他以前戒过烟，现在又开始抽了"}]}, ensure_ascii=False)
+
+    brain, conn, _ = make_brain(tmp_path, close=close, chat=chat_json(notes=[
+        {"text": "他说压力大，又开始抽烟了", "kind": "event", "about": "日常", "tags": ["抽烟"]}]))
+    store = MemoryStore(conn)
+    store_ids["card"] = store.note("fact", "他戒烟了", importance=6, about="本人", tags=["抽烟"], now=T0 - timedelta(days=30)).id
+    store_ids["off"] = store.note("event", "他上周去了健身房", importance=4, about="日常", now=T0 - timedelta(days=3)).id
+    brain.respond("最近压力大，又开始抽烟了", now=T0)
+    brain.respond("我回来了", now=T0 + timedelta(hours=3))
+    now_true = [m for m in store.profile() if "烟" in m.text]
+    assert [m.text for m in now_true] == ["他以前戒过烟，现在又开始抽了"]
+    assert now_true[0].about == "本人" and store.former(now_true[0].id).text == "他戒烟了"
+    assert store.get(store_ids["off"]).alive and store.get(store_ids["off"]).text == "他上周去了健身房"
+    assert any(m.kind == "event" and "又开始抽烟" in m.text for m in store.alive())  # the event stays

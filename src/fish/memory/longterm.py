@@ -298,6 +298,10 @@ class MemoryStore:
         # (the persona calls him 他 or 她, FISH_OWNER; she is never the subject in third person)
         if about == "本人" and FOR_NOW.search(text) and not LASTING.search(text):
             about = "日常"  # a state for now is not who he is; it does not go on his card
+        if kind == "fact" and about == "路过":
+            # 路过 is a meal, what he is doing now, today's plan: events. A lasting fact filed
+            # there ("his friend's cat is called X") would sit under the 14-day ceiling
+            about = "日常"
         same = self.repeat_of(kind, text, now, lifelong=about == "一辈子")
         if same is not None and not self.adds_detail(text, same):
             again = self.happened_again(same.id, now)

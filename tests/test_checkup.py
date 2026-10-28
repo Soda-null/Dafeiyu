@@ -115,6 +115,22 @@ def test_a_finished_run_can_be_judged_again(tmp_path):
     assert "重判" in report and "| major |" in report
 
 
+def test_the_judge_asks_again_when_its_answer_does_not_read():
+    """The 小周 v3 run lost a clearly right answer to one empty judge reply."""
+    assert checkup.judge(FakeLLM(["", '{"label":"记住","why":"ok"}']), "问", "真", "答") == ("记住", "ok")
+    label, why = checkup.judge(FakeLLM(["", "x", "{}"]), "问", "真", "答")
+    assert label == checkup.BROKEN and why.startswith("raw:")
+
+
+def test_only_the_rows_the_judge_failed_on_can_be_judged_again():
+    result = {"transcript": [], "summary": {},
+              "graded": [{"day": 1, "ask": "a", "reply": "x", "label": "记住", "why": "", "expect": ["记住"], "soft": False, "ok": True},
+                         {"day": 2, "ask": "b", "reply": "y", "label": checkup.BROKEN, "why": "", "expect": ["记住"], "soft": False, "ok": True}]}
+    llm = FakeLLM(lambda m, j: '{"label": "说不记得", "why": "重判"}')
+    again = checkup.rejudge(result, llm, checkup.date(2027, 1, 5), only_broken=True)
+    assert [g["label"] for g in again["graded"]] == ["记住", "说不记得"] and len(llm.calls) == 1
+
+
 def test_summaries_are_told_to_keep_passwords_out():
     """The baseline leaked a password into a chat summary: notes had the rule, summaries did not."""
     from fish.brain.prompt import load_template

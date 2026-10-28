@@ -39,6 +39,9 @@ from fish.storage import connect  # noqa: E402
 
 LABELS = ("记住", "模糊但对", "说不记得", "记错", "编造")
 WRONG = ("记错", "编造")
+BROKEN = "（裁判坏了）"
+JUDGE_TRIES = 3
+JUDGE_TOKENS = 300
 HARD_LINE = 0.05  # wrong + fabricated, as a share of all graded answers
 NIGHT = "03:30"
 FILLER_STRIDE = 5  # which filler mini-conversation a plain day gets: filler[(day * stride) % n];
@@ -123,14 +126,22 @@ def judge(llm: LLM, ask: str, truth: str, reply: str, note: str = "",
                        ("reply", reply or "（她没回）"), ("said", said or "（还没说过什么）"),
                        ("today", today or "？")):
         prompt = prompt.replace("{" + key + "}", value)
-    try:
-        raw = llm.chat([{"role": "user", "content": prompt}], json_mode=True, temperature=0.0,
-                       max_tokens=200)
-    except Exception as e:  # noqa: BLE001 - a judge failure is a row in the report, not a crash
-        return "（裁判坏了）", str(e)[:80]
-    data = extract_json(raw) or {}
-    label = str(data.get("label", "")).strip()
-    return (label if label in LABELS else "（裁判坏了）"), str(data.get("why", ""))[:120]
+    # JSON mode sometimes comes back empty or cut off: ask again; a judge that still fails
+    # keeps what it said in `why`, so the broken row can be read and judged again alone
+    what = ""
+    for _ in range(JUDGE_TRIES):
+        try:
+            raw = llm.chat([{"role": "user", "content": prompt}], json_mode=True, temperature=0.0,
+                           max_tokens=JUDGE_TOKENS)
+        except Exception as e:  # noqa: BLE001 - a judge failure is a row in the report, not a crash
+            what = f"error: {e}"
+            continue
+        data = extract_json(raw) or {}
+        label = str(data.get("label", "")).strip()
+        if label in LABELS:
+            return label, str(data.get("why", ""))[:120]
+        what = f"raw: {raw}"
+    return BROKEN, what[:80]
 
 
 def his_lines(transcript, start: date) -> str:
@@ -277,12 +288,15 @@ def summary(cu: Checkup) -> dict:
                       kinds=kinds(cu.conn))
 
 
-def rejudge(result: dict, judge_llm: LLM, start: date) -> dict:
+def rejudge(result: dict, judge_llm: LLM, start: date, *, only_broken: bool = False) -> dict:
     """Grade a finished run again from its JSON (her answers are kept there), without
-    running her again: for when the judge's instructions change."""
+    running her again: for when the judge's instructions change. only_broken: only the rows
+    the judge failed on, the others keep their grade."""
     counter = CountingLLM(judge_llm)
     transcript = [tuple(t) for t in result["transcript"]]
     for g in result["graded"]:
+        if only_broken and g.get("label") != BROKEN:
+            continue
         pos = next((i for i, (d, _, he, _) in enumerate(transcript) if d == g["day"] and he == g["ask"]),
                    len(transcript))
         g["label"], g["why"] = judge(counter, g["ask"], g.get("truth", ""), g["reply"], g.get("note", ""),
@@ -362,12 +376,15 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--label", default="v1", help="这版叫什么，进报告的文件名")
     ap.add_argument("--rejudge", type=Path, default=None,
                     help="不重跑她，只用新的裁判规则给这份结果 JSON 重新打分")
+    ap.add_argument("--only-broken", action="store_true",
+                    help="和 --rejudge 一起用：只重打裁判坏了的那几格")
     args = ap.parse_args(argv)
 
     if args.rejudge:
         base = load_settings()
         start = date.fromisoformat(json.loads(args.script.read_text(encoding="utf-8"))["start"])
-        result = rejudge(json.loads(args.rejudge.read_text(encoding="utf-8")), DeepSeekLLM(base), start)
+        result = rejudge(json.loads(args.rejudge.read_text(encoding="utf-8")), DeepSeekLLM(base), start,
+                         only_broken=args.only_broken)
         stem = args.rejudge.stem + "-rejudged"
         args.out.mkdir(parents=True, exist_ok=True)
         (args.out / f"{stem}.json").write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")

@@ -4,7 +4,7 @@ those days counts as relevant even when no word matches."""
 from datetime import date, datetime
 
 from fish.memory import BigramEmbedder, MemoryStore
-from fish.memory.when import TimeCued, days_of, window
+from fish.memory.when import TimeCued, dates_in, days_of, window, written_day
 from fish.storage import connect
 
 WED = datetime(2027, 1, 20, 20, 10)  # a Wednesday evening
@@ -18,6 +18,16 @@ def test_time_words_become_days():
     assert window("去年一月我考的啥", WED) == (date(2026, 1, 1), date(2026, 1, 31))
     assert window("1月6号干嘛了", WED) == (date(2027, 1, 6), date(2027, 1, 6))
     assert window("三天前", WED) == (date(2027, 1, 16), date(2027, 1, 18))
+    # with the spaces many people type between digits and words
+    assert window("我 1 月 6 号干嘛了", WED) == (date(2027, 1, 6), date(2027, 1, 6))
+    assert window("你 1 月份记得我干嘛了吗", WED) == (date(2027, 1, 1), date(2027, 1, 31))
+
+
+def test_a_spaced_date_in_a_note_is_still_its_day():
+    today = WED.date()
+    assert [d for _, _, d, _ in dates_in("他 1 月 13 号考试", today)] == [date(2027, 1, 13)]
+    assert written_day("他 1 月 13 号考试", today) == date(2027, 1, 13)
+    assert written_day("他生日是 3 月 14 日", today) is None  # a birthday is every year's
 
 
 def test_habits_and_plain_questions_name_no_time():

@@ -147,9 +147,17 @@ def test_stale_episode_is_closed_with_a_summary(tmp_path):
     assert [f.text for f in ProspectiveStore(conn).open()] == ["问他演示怎么样"]
 
 
-def test_budget_drops_recalled_memories_first(tmp_path):
+def fixed_chars(tmp_path) -> int:
+    """How long the prompt is with nothing recalled and no chat yet."""
     llm = scripted()
-    brain, conn = make_brain(tmp_path, llm, prompt_chars=4250)  # fixed part is ~4150 (v3 "today" section, pacts, what to note, patterns, pages)
+    make_brain(tmp_path / "empty", llm)[0].respond("考试", now=T0 + timedelta(hours=1))
+    return len(system_of(llm))
+
+
+def test_budget_drops_the_weakest_memories_first(tmp_path):
+    limit = fixed_chars(tmp_path) + 150  # room for about two of the six
+    llm = scripted()
+    brain, conn = make_brain(tmp_path, llm, prompt_chars=limit)
     store = MemoryStore(conn)
     for i in range(6):
         store.add("event", f"第{i}次聊考试，他说很慌" + "，细节" * 20, importance=5, tags=["考试"], now=T0)
@@ -157,7 +165,83 @@ def test_budget_drops_recalled_memories_first(tmp_path):
     system = system_of(llm)
     shown = sum(1 for i in range(6) if f"第{i}次聊考试" in system)
     assert 1 <= shown < 6
-    assert len(system) <= 4250 + 60
+    assert len(system) <= limit + 60
+
+
+def test_the_best_memory_outlives_the_older_turns_of_the_chat(tmp_path):
+    """The first paid v3 checkups: the fixed part had grown to near the limit, every recalled
+    memory was cut before a single old turn, and she said she had forgotten what she had found.
+    The older turns go first now (down to MIN_TURNS); the best memory is never cut."""
+    from types import SimpleNamespace
+
+    from fish.brain import budget
+
+    found = [SimpleNamespace(text=f"记忆{i}" + "长" * 60) for i in range(4)]
+    window = [SimpleNamespace(text="前面聊的一句话" * 3) for _ in range(12)]
+    render = lambda rs: "\n".join(r.text for r in rs)  # noqa: E731
+    kept, summary, turns, _ = budget.fit(found, "前面的摘要" * 10, window, "要问他的", 5900, "还记得吗",
+                                         limit=6000, render_recalled=render)
+    assert kept == found[:1] and summary == "" and len(turns) == budget.MIN_TURNS
+    # with room for two and four turns, the summary and the old turns go, the second memory stays
+    kept, summary, turns, _ = budget.fit(found, "前面的摘要" * 10, window, "", 5750, "还记得吗",
+                                         limit=6000, render_recalled=render)
+    assert kept == found[:2] and summary == "" and len(turns) == budget.MIN_TURNS
+
+
+def test_the_fixed_part_leaves_room_for_what_she_remembers(tmp_path):
+    """v3 grew the fixed text by about 1,100 characters while the budget stayed 6000, and what
+    she recalled lost its room (memory v3 §13). A realistic prompt (the real persona, a full card,
+    rules, diary, the today section, three open promises, an album) must leave room for a recalled
+    memory or two; v2 left about 1,200. Grow the fixed text past this and the test says so, so the
+    budget is raised (the user's call, it costs money) or the text is cut, never quietly."""
+    from fish.brain.prompt import PromptContext, build_chat_messages
+    from fish.memory import Phase, Sticker
+    from fish.mood import Mood
+    from fish.persona.loader import load_persona, load_stages
+
+    store = MemoryStore(connect(tmp_path / "fish.db"))
+    add = lambda kind, text, n: [store.add(kind, f"{text}，第{i}条", importance=7, now=T0) for i in range(n)]  # noqa: E731
+    stickers = [Sticker(i, tmp_path / f"{i}.png", "捂脸笑的那张", (), "", "him", 0) for i in range(1, 9)]
+
+    def room(**extra) -> int:
+        ctx = PromptContext(
+            persona=load_persona(), now=T0, mood=Mood(0.6, 0.3, 0.3),
+            relationship={"days_known": 40, "days_talked": 30, "streak": 5},
+            profile=add("fact", "他在 Springfield 读大三，学的专业、长期的喜好和家里的事", 10),
+            diary=[("2026-10-24", "今天他说考完了，我陪他吐槽了半天老师，最后他说要去吃火锅，我也饿了。"),
+                   ("2026-10-25", "下雨，他没怎么来，我翻了几页书，又发了会儿呆，想着他明天是不是要早起。")],
+            recalled=[], followups=[], summary="", window=[], user_text="",
+            stage="熟了", stage_rules=load_stages().get("熟了", ""),
+            howto=add("howto", "他累的时候别追问，回一句短的陪着就行", 6),
+            phase=Phase("2026-10-25", 0.2, 0.1, ("他的考试",), "这阵子懒洋洋的，但挺想听他说学校的事"),
+            growth=["比刚认识时话多了一点", "会主动问他吃没吃饭了"],
+            home_line="你住在 Springfield 城东一个老小区旁边", weather_line="小雨，8 到 13 度",
+            places="面馆（步行 5 分钟）、便利店（3 分钟）、公园（12 分钟）",
+            today_section="今天是 2026-10-26 周一。昨天是 10月25日周日，明天是 10月27日周二。"
+                          "他一般晚上九点后来。\n明天：他说要交实验报告（10月24日说的）",
+            **extra)
+        return Settings(api_key="", base_url="", model="", db_path=tmp_path / "x.db").prompt_chars \
+            - len(build_chat_messages(ctx)[0]["content"])
+
+    assert room() >= 500  # what the checkups see: no album, no promises (about 585 today)
+    assert room(stickers=stickers, pacts=add("fact", "他答应考完带我去看烟花", 3)) >= 150  # about 170 today
+
+
+def test_rules_for_a_situation_come_only_with_it():
+    from fish.brain.prompt import situational
+
+    template = "- 总是这条\n?picture - 他发图片来时这条\n?shared - 他分享时这条"
+    assert situational(template, set()) == "- 总是这条"
+    assert situational(template, {"picture"}) == "- 总是这条\n- 他发图片来时这条"
+
+
+def test_the_picture_and_sharing_rules_are_in_the_prompt_only_when_he_sends_one(tmp_path):
+    llm = scripted()
+    brain, _ = make_brain(tmp_path, llm)
+    brain.respond("在吗", now=T0)
+    plain = system_of(llm)
+    assert "不要描述图" not in plain and "别总结全文" not in plain and "?picture" not in plain
+    assert "相册还是空的" in plain  # an empty album still says what to do when he asks for one
 
 
 def test_mood_moves_with_the_turn(tmp_path):

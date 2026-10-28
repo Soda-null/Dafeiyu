@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -17,6 +18,24 @@ WEEKDAYS = "一二三四五六日"
 
 def load_template(name: str) -> str:
     return owner_words((PROMPTS_DIR / f"{name}.md").read_text(encoding="utf-8"))
+
+
+SITUATION = re.compile(r"\?(\w+) ")
+
+
+def situational(template: str, on: set[str]) -> str:
+    """A rule line marked "?name " is for one situation only (a picture, a shared link, old
+    chats she looked back at, open promises, her sticker album): it is kept, unmarked, only
+    when that situation is on. Rules for what is not there would only take the room of what
+    she remembers (memory v3 §13)."""
+    kept = []
+    for line in template.split("\n"):
+        m = SITUATION.match(line)
+        if m is None:
+            kept.append(line)
+        elif m.group(1) in on:
+            kept.append(line[m.end():])
+    return "\n".join(kept)
 
 
 def render(template: str, **fields: str) -> str:
@@ -98,7 +117,8 @@ def render_howto(howto: list[Memory]) -> str:
 
 
 def render_stickers(stickers: list[Sticker]) -> str:
-    return "\n".join(f"- [#{s.id}] {s.caption}" for s in stickers) or "（相册还是空的）"
+    return "\n".join(f"- [#{s.id}] {s.caption}" for s in stickers) or \
+        "（相册还是空的：别填 sticker；他要表情包，就实话说没有、让他发几个给你）"
 
 
 def render_profile(profile: list[Memory], mentioned: set[int] = frozenset(),
@@ -176,7 +196,10 @@ def render_seen(seen: list[Memory]) -> str:
 
 
 def build_chat_messages(ctx: PromptContext) -> list[dict[str, str]]:
-    template = load_template("chat")
+    on = {name for name, there in (("picture", ctx.user_image), ("shared", ctx.shared),
+                                   ("pages", ctx.pages), ("pacts", ctx.pacts),
+                                   ("stickers", ctx.stickers)) if there}
+    template = situational(load_template("chat"), on)
     fixed_fields = dict(
         persona=ctx.persona, profile=render_profile(ctx.profile, ctx.mentioned, ctx.formers),
         diary=render_diary(ctx.diary),

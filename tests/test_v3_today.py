@@ -203,6 +203,10 @@ def test_her_card_says_when_his_birthday_is_today_or_soon(tmp_path):
     assert yearly([born], date(2027, 3, 14)) == ["今天是他生日（3月14日）！"]
     said = store.add("fact", "他2027-01-05说过生日的事", importance=9, now=WED)
     assert yearly([said], date(2028, 1, 5)) == []
+    # many people type a space between digits and words, and the note keeps his spacing
+    spaced = store.add("fact", "他生日是 3 月 14 日，让我到时候记得给他过", importance=9, now=WED)
+    assert yearly([spaced], date(2027, 3, 14)) == ["今天是他生日（3月14日）！"]
+    assert yearly([spaced], date(2027, 3, 12)) == ["再过 2 天是他生日（3月14日）。"]
 
 
 def test_what_he_planned_comes_up_on_the_day(tmp_path):

@@ -80,6 +80,7 @@ class EpisodeClose:
     followups: list[FollowupRequest] = field(default_factory=list)
     pact_done: list[tuple[int, str]] = field(default_factory=list)  # (memory id, kept / dropped)
     outcomes: list[tuple[int, str]] = field(default_factory=list)  # (memory id, how it turned out)
+    corrections: list[Correction] = field(default_factory=list)  # card facts this chat made untrue
     parsed: bool = True
 
 
@@ -179,11 +180,7 @@ def parse_reply(raw: str) -> Reply:
     topic = data.get("topic")
     asked = [i for i in (data.get("asked") or []) if isinstance(i, int)] \
         if isinstance(data.get("asked"), list) else []
-    corrections = []
-    for item in data.get("corrections") or []:
-        if isinstance(item, dict) and isinstance(item.get("old_id"), int) \
-                and str(item.get("text", "")).strip():
-            corrections.append(Correction(item["old_id"], str(item["text"]).strip()[:MAX_NOTE_CHARS]))
+    corrections = parse_corrections(data.get("corrections"))
     look = str(data.get("look") or "").strip()[:60]
     seen = [Note(n.text, "world", min(n.importance, 6), n.valence, n.tags)
             for n in parse_notes(data.get("seen"), force_kind="world")]
@@ -237,7 +234,19 @@ def parse_episode_close(raw: str, fallback_summary: str) -> EpisodeClose:
         followups=parse_followups(data.get("followups")),
         pact_done=parse_pact_done(data.get("pact_done")),
         outcomes=parse_outcomes(data.get("outcomes")),
+        corrections=parse_corrections(data.get("corrections")),
     )
+
+
+def parse_corrections(items) -> list[Correction]:
+    """[{"old_id": 17, "text": "..."}]: what an old memory should say now. Whether the id is
+    one she was shown is checked by the caller."""
+    out: list[Correction] = []
+    for item in items if isinstance(items, list) else []:
+        if isinstance(item, dict) and isinstance(item.get("old_id"), int) \
+                and str(item.get("text", "")).strip():
+            out.append(Correction(item["old_id"], str(item["text"]).strip()[:MAX_NOTE_CHARS]))
+    return out
 
 
 def parse_pact_done(items) -> list[tuple[int, str]]:
