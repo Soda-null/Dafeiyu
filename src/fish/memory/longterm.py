@@ -210,10 +210,11 @@ def _from_row(r: sqlite3.Row) -> Memory:
     )
 
 
-def _why_before_v3(old: Memory, new: Memory) -> str:
+def why_before_v3(old: Memory, new: Memory) -> str:
     """A memory superseded before the `why` column existed: guessed the way the v3 migration
-    does (docs/memory_v3_zh.md §8). A source of a merge was merged; a rule replaced by another
-    rule, not merged, was pushed out by the cap; anything else was an update."""
+    writes it (docs/memory_v3_zh.md §8, scripts/migrate_v3.py). A source of a merge was merged;
+    a rule replaced by another rule, not merged, was pushed out by the cap; anything else was
+    an update."""
     if old.id in new.merged_from:
         return "merge"
     if old.kind in RULE_KINDS and new.kind == old.kind:
@@ -645,7 +646,7 @@ class MemoryStore:
         ).fetchall()
         new = self.get(memory_id) if rows else None
         for old in map(_from_row, rows):
-            if (old.why or _why_before_v3(old, new)) in SHOWN_AS_FORMER:
+            if (old.why or why_before_v3(old, new)) in SHOWN_AS_FORMER:
                 return old
         return None
 
