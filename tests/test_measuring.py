@@ -41,6 +41,10 @@ SCRIPT = {
          "probes": [{"day": 3, "time": "20:30", "ask": "我昨天吃的啥"}]},
     ],
 }
+# the exam itself is noted; the score only made it into a chat summary
+EXAM = {"id": "exam", "category": "日常", "day": 2, "keys": ["期中"],
+        "probes": [{"day": 3, "time": "20:40", "ask": "我期中考的啥"},
+                   {"day": 3, "time": "20:50", "ask": "期中考得咋样", "keys": ["九十"]}]}
 
 
 def at(day: int, hhmm: str) -> datetime:
@@ -62,10 +66,13 @@ def db(tmp_path):
     eps.close(e1.id, summary="他说了猫和生日", gist="猫", importance=3, valence=0.0, now=at(1, "22:00"))
     e2 = eps.start("checkup", at(2, "21:00"))
     win.append("user", "今天去 Springfield 动物园了，吃了个苹果派，门禁 8642", "checkup", e2.id, at(2, "21:00"))
-    eps.close(e2.id, summary="他去了动物园", gist="动物园", importance=3, valence=0.0, now=at(2, "22:00"))
+    win.append("user", "期中考完了，估计九十分", "checkup", e2.id, at(2, "21:10"))
+    store.add("event", "他期中考完了", importance=4, now=at(2, "21:11"))
+    eps.close(e2.id, summary="他去了动物园，期中估计九十分", gist="动物园", importance=3, valence=0.0,
+              now=at(2, "22:00"))
     e3 = eps.start("checkup", at(3, "19:59"))
     win.append("fish", "你家团子今天乖不乖", "checkup", e3.id, at(3, "19:59"))
-    for p in (f["probes"][0] for f in SCRIPT["facts"]):
+    for p in [f["probes"][0] for f in SCRIPT["facts"]] + EXAM["probes"]:
         win.append("user", p["ask"], "checkup", e3.id, at(p["day"], p["time"]))
         win.append("fish", "嗯", "checkup", e3.id, at(p["day"], p["time"]))
     conn.close()
@@ -107,6 +114,18 @@ def test_coverage_tells_the_layers_apart(db):
     assert banned["8642"] == {"笔记": 0, "摘要": 0, "日记": 0, "他的原话": 1}
     text = cover.render("测试剧本", list(rows.values()), banned)
     assert "笔记 2 件，摘要 1 件，只在原话 1 件" in text
+
+
+def test_a_question_can_bring_its_own_keys(db):
+    script = {**SCRIPT, "facts": SCRIPT["facts"] + [EXAM]}
+    res = bench.bench(db, script, cue="his", out=lambda *_: None)
+    assert (res["asked"], res["missing"]) == (6, 3)  # "考得咋样" wants the score, which no note has
+    rows = {r["id"]: r for r in cover.coverage(db, script)}
+    assert rows["exam"]["layer"] == "笔记" and rows["exam"]["probes"] == 1 and rows["exam"]["held"] == 1
+    assert rows["exam"]["said"] == 1  # his two questions contain 期中 but are not him telling her
+    score = rows["exam（九十）"]
+    assert score["layer"] == "摘要" and score["probes"] == 1 and score["held"] == 0
+    assert score["first_page"] == 2 and score["said"] == 1
 
 
 def test_coverage_runs_on_both_scripted_friends(db, capsys):

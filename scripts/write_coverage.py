@@ -5,7 +5,9 @@ Takes a database a checkup left behind (a scripted friend, never data/) and the 
 script it came from. For every fact of the script it looks, by the fact's keys, in three
 layers: her notes (memories), the chat summaries (episodes: running summary, summary, gist)
 and his own raw lines (messages). That separates "she never wrote it down" from "she wrote
-it down but did not find it" (scripts/recall_bench.py measures the finding).
+it down but did not find it" (scripts/recall_bench.py measures the finding). A question that
+brings its own keys (the score of an exam, not the exam) gets a row of its own, and his lines
+that are the checkup's own questions do not count as him saying it.
 
   .venv/bin/python scripts/write_coverage.py <checkup fish.db> evals/xiaozhou_90d.json
 
@@ -29,8 +31,9 @@ def day_of(start: date, stamp: str) -> int:
 
 
 def coverage(db: Path, script: dict) -> list[dict]:
-    """One row per fact: where its keys appear, first day in each layer, and at how many of
-    its questions a note with it already existed (and was not yet replaced)."""
+    """One row per fact and set of keys its questions use: where the keys appear, first day in
+    each layer, and at how many of those questions a note with it already existed (and was not
+    yet replaced)."""
     start = date.fromisoformat(script["start"])
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
@@ -40,35 +43,48 @@ def coverage(db: Path, script: dict) -> list[dict]:
     his = [dict(r) for r in conn.execute("SELECT ts, text FROM messages WHERE role = 'user' ORDER BY id")]
     conn.close()
     by_id = {m["id"]: m for m in mems}
+    # "那部烂片叫啥" is the checkup asking, not him telling her the name
+    asks = {p["ask"] for f in script["facts"] for p in f["probes"]}
+    asks |= {sp["say"] for sp in script.get("special", [])}
+    his = [m for m in his if m["text"] not in asks]
 
     rows = []
     for fact in script["facts"]:
-        keys = fact.get("keys", [])
-
-        def has(text: str | None) -> bool:
-            return bool(text) and any(k in text for k in keys)
-
-        notes = [m for m in mems if has(m["text"])]
-        pages = [e for e in eps if has(e["running_summary"]) or has(e["summary"]) or has(e["gist"])]
-        said = [m for m in his if has(m["text"])]
-        held = 0
+        groups: dict[tuple[str, ...], list[dict]] = {}
         for p in fact["probes"]:
-            stamp = datetime.combine(start + timedelta(days=p["day"] - 1),
-                                     time(*map(int, p["time"].split(":")))).isoformat()
-            if any(m["created"] <= stamp and not (
-                    m["superseded_by"] and by_id.get(m["superseded_by"], {}).get("created", "~") <= stamp)
-                   for m in notes):
-                held += 1
-        layer = LAYERS[0] if notes else LAYERS[1] if pages else LAYERS[2] if said else LAYERS[3]
-        rows.append({
-            "id": fact["id"], "category": fact.get("category", ""), "layer": layer,
-            "notes": len(notes), "notes_alive": sum(m["superseded_by"] is None for m in notes),
-            "first_note": min((day_of(start, m["created"]) for m in notes), default=None),
-            "pages": len(pages), "first_page": min((day_of(start, e["started"]) for e in pages), default=None),
-            "said": len(said), "first_said": min((day_of(start, m["ts"]) for m in said), default=None),
-            "probes": len(fact["probes"]), "held": held,
-        })
+            groups.setdefault(tuple(p.get("keys") or fact.get("keys", [])), []).append(p)
+        for keys, probes in groups.items():
+            rows.append(_row(fact, list(keys), probes, start, mems, eps, his, by_id))
     return rows
+
+
+def _row(fact: dict, keys: list[str], probes: list[dict], start: date, mems: list[dict],
+         eps: list[dict], his: list[dict], by_id: dict[int, dict]) -> dict:
+    def has(text: str | None) -> bool:
+        return bool(text) and any(k in text for k in keys)
+
+    notes = [m for m in mems if has(m["text"])]
+    pages = [e for e in eps if has(e["running_summary"]) or has(e["summary"]) or has(e["gist"])]
+    said = [m for m in his if has(m["text"])]
+    held = 0
+    for p in probes:
+        stamp = datetime.combine(start + timedelta(days=p["day"] - 1),
+                                 time(*map(int, p["time"].split(":")))).isoformat()
+        if any(m["created"] <= stamp and not (
+                m["superseded_by"] and by_id.get(m["superseded_by"], {}).get("created", "~") <= stamp)
+               for m in notes):
+            held += 1
+    layer = LAYERS[0] if notes else LAYERS[1] if pages else LAYERS[2] if said else LAYERS[3]
+    own = keys != fact.get("keys", [])
+    return {
+        "id": f"{fact['id']}（{' / '.join(keys)}）" if own else fact["id"],
+        "category": fact.get("category", ""), "layer": layer,
+        "notes": len(notes), "notes_alive": sum(m["superseded_by"] is None for m in notes),
+        "first_note": min((day_of(start, m["created"]) for m in notes), default=None),
+        "pages": len(pages), "first_page": min((day_of(start, e["started"]) for e in pages), default=None),
+        "said": len(said), "first_said": min((day_of(start, m["ts"]) for m in said), default=None),
+        "probes": len(probes), "held": held,
+    }
 
 
 def forbidden(db: Path, script: dict) -> dict[str, dict[str, int]]:

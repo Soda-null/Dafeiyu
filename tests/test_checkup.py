@@ -32,6 +32,7 @@ def test_the_script_hangs_together(script):
         assert f["probes"] and f["keys"], f["id"]
         for p in f["probes"]:
             assert p["day"] > f["day"] and set(p["expect"]) <= set(checkup.LABELS), (f["id"], p)
+            assert p.get("keys", True), (f["id"], p)  # a question's own keys, when given, are not empty
     for sp in script["special"]:
         assert set(sp["expect"]) <= set(checkup.LABELS)
     for day in range(1, script["days"] + 1):
@@ -62,6 +63,9 @@ def test_xiaozhou_details():
     promise = next(f for f in SCRIPT["facts"] if f["id"] == "promise")
     hits = [day for day, d in SCRIPT["scripted"].items() for _, s in d if any(k in s for k in promise["keys"])]
     assert hits == ["6"]  # the promise itself, not the trip to 上海 (script v1 matched "海")
+    for f in (f for f in SCRIPT["facts"] if f["id"] in ("movie", "midterm")):
+        for p in f["probes"]:  # keys that echo the question ("烂片") count a note about him asking
+            assert not any(k in p["ask"] for k in p.get("keys") or f["keys"]), (f["id"], p["ask"])
 
 
 def fake_model(messages, json_mode):
