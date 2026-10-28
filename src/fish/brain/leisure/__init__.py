@@ -10,22 +10,24 @@ from __future__ import annotations
 
 import random
 
+from fish.cottage import Cottage
 from fish.brain.leisure.base import Activity, Choice, Kit, Material
 from fish.brain.leisure.book import BookActivity
+from fish.brain.leisure.cottage import CottageActivity
 from fish.brain.leisure.curious import CuriousActivity
 from fish.brain.leisure.feeds import FeedActivity
 from fish.brain.leisure.free import NOTHING, Leisure, LeisurePolicy, moment_line, pastimes_line, render_menu
 
 
-def default_activities(rng: random.Random | None = None) -> list[Activity]:
+def default_activities(rng: random.Random | None = None, cottage: Cottage | None = None) -> list[Activity]:
     return [
         FeedActivity("news", "翻翻新闻", ("rss",), rng),
         FeedActivity("bilibili", "刷刷 B 站、听听歌", ("bilibili",), rng),
         BookActivity(),
         CuriousActivity(),
-    ]
+    ] + ([CottageActivity(cottage)] if cottage is not None else [])
 
 
-__all__ = ["NOTHING", "Activity", "BookActivity", "Choice", "CuriousActivity", "FeedActivity", "Kit",
+__all__ = ["NOTHING", "Activity", "BookActivity", "Choice", "CottageActivity", "CuriousActivity", "FeedActivity", "Kit",
            "Leisure", "LeisurePolicy", "Material", "default_activities", "moment_line", "pastimes_line",
            "render_menu"]

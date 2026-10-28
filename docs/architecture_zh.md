@@ -31,8 +31,9 @@
 | `brain/` | 拼提示词、调 DeepSeek、解析回复 | 真正"想"的地方 | `persona` `memory` `mood` |
 | `routines/` | 定时跑的事：夜间整理、写日记、淡化；天气（她的空闲时间不是定时的，在 `brain/leisure/`，决定 24） | 她睡觉时脑子在整理 | `memory` `mood` `brain` |
 | `storage/` | SQLite 读写，一个文件 `data/fish.db` | 所有东西存哪 | 无 |
+| `cottage/` | 她的湖边小屋：屋里此刻的样子（`data/cottage/now.json`）、她能做的动作、时间怎么改屋子（决定 26；`docs/cottage_rules_zh.md`） | 她住的地方，是现实不是记忆 | 无（只用标准库） |
 
-**铁律：** `brain/`、`memory/`、`mood/` 不许 import `channels/`。换电话线不动大脑。`world/` 不调模型、不认识大脑；`brain` 和 `routines` 用它。
+**铁律：** `brain/`、`memory/`、`mood/` 不许 import `channels/`。换电话线不动大脑。`world/` 不调模型、不认识大脑；`brain` 和 `routines` 用它。`cottage/` 也一样：不调模型、不认识大脑，屋子只被他、规则、时间改。
 
 ## 3. 记忆：全在 `memory_design_zh.md`
 

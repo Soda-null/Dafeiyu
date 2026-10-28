@@ -31,6 +31,7 @@ class Settings:
     # may she turn back to old chats' summaries (memory v3 step 8; on here on the memory-v3
     # branch, waiting for the user's approval: docs/memory_v3_zh.md §11 item 1)
     pages: bool = True
+    cottage: bool = False  # her lakeside cottage (decision 26); off until the persona says she lives there
 
 
 def owner_words(text: str) -> str:
@@ -79,4 +80,5 @@ def load_settings(env_file: Path | None = None) -> Settings:
         leisure_max_per_day=int(os.environ.get("FISH_LEISURE_MAX", "3")),
         home_at=os.environ.get("FISH_HOME", "").replace(" ", ""),
         pages=os.environ.get("FISH_PAGES", "1") not in ("0", "false", "no", ""),
+        cottage=os.environ.get("FISH_COTTAGE", "0") not in ("0", "false", "no", ""),
     )

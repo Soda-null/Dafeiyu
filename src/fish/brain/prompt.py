@@ -78,6 +78,7 @@ class PromptContext:
     weather_line: str = ""  # today's weather there
     places: str = ""  # nearby places, names and walking minutes
     day_line: str = ""  # solar term, holiday (decision 24)
+    cottage: str = ""  # her cottage right now (decision 26); when set, the real city is his, not hers
     pastimes_line: str = ""  # the book she is reading
     today_line: str = ""  # what she did with her free moments today
     growth: list[str] = field(default_factory=list)  # layer A: how she has changed from her origin
@@ -105,6 +106,18 @@ def state_line(ctx: PromptContext) -> str:
     parts += [x for x in (ctx.day_line, ctx.pastimes_line, ctx.today_line) if x]
     parts.append(f"你此刻的状态：{ctx.mood.describe(ctx.stage)}。")
     return " ".join(parts + ctx.extra_state)
+
+
+def render_home(ctx: PromptContext) -> str:
+    """Where she lives. With her cottage (decision 26) that is the lakeside room, and the real
+    city and its shops (decision 15) are where he is; without it, the real city is hers."""
+    town = (ctx.home_line + "。" if ctx.home_line else "") + (f"附近：{ctx.places}" if ctx.places else "")
+    if not ctx.cottage:
+        return town or "（还不知道）"
+    from fish.cottage import layout
+
+    mine = "你住在湖边的小屋：\n" + layout() + "\n" + ctx.cottage
+    return mine + ("\n" + owner_words("他那边：") + town if town else "")
 
 
 def render_phase(phase: Phase | None) -> str:
@@ -214,7 +227,8 @@ def render_seen(seen: list[Memory]) -> str:
 def build_chat_messages(ctx: PromptContext) -> list[dict[str, str]]:
     on = {name for name, there in (("picture", ctx.user_image), ("shared", ctx.shared),
                                    ("pages", ctx.pages), ("pacts", ctx.pacts),
-                                   ("stickers", ctx.stickers)) if there}
+                                   ("stickers", ctx.stickers), ("cottage", ctx.cottage),
+                                   ("town", not ctx.cottage)) if there}
     template = situational(load_template("chat"), on)
     fixed_fields = dict(
         persona=ctx.persona, profile=render_profile(ctx.profile, ctx.mentioned, ctx.formers),
@@ -223,8 +237,7 @@ def build_chat_messages(ctx: PromptContext) -> list[dict[str, str]]:
         stage=ctx.stage, stage_rules=ctx.stage_rules or "（照平时）",
         howto=render_howto(ctx.howto), stickers=render_stickers(ctx.stickers),
         phase=render_phase(ctx.phase), growth=render_growth(ctx.growth),
-        home=(ctx.home_line + "。" if ctx.home_line else "（还不知道）")
-        + (f"附近：{ctx.places}" if ctx.places else ""),
+        home=render_home(ctx),
         shared=ctx.shared or "（没有）", today=ctx.today_section or "（没算）",
         pacts=render_pacts(ctx.pacts, ctx.stars), pages=render_pages(ctx.pages, ctx.now.date()),
     )

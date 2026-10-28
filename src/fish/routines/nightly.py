@@ -213,6 +213,11 @@ def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
         seen_today = [m.text for m in store.seen_recently(now, 2)
                       if fish_day(datetime.fromisoformat(m.created)) == day]
         leisure = [moment_line(m) for m in Pastimes(conn).moments(day_start, day_end) if m.choice]
+        if brain.cottage is not None:  # meals, sleep, food gone off: her day at home (decision 26)
+            try:
+                leisure += brain.cottage.between(day_start, day_end)
+            except ValueError:
+                pass
         prev = phases.current()
         text, notes, line = thinker.diary(day.isoformat(), moods.load().describe(), threads, gists,
                                           yesterday, seen=seen_today, phase_line=prev.line,

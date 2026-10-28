@@ -18,6 +18,7 @@ from fish.brain.prompt import (JSON_REMINDER, PromptContext, build_chat_messages
                                build_fold_messages)
 from fish.brain.reach import Reacher, ReachOut, ReachPolicy, recent_lines
 from fish.config import Settings, owner_words
+from fish.cottage import Cottage
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
 from fish.memory import (ABOUT_HIM_KINDS, BigramEmbedder, Diary, Episode, EpisodeManager, Memory, MemoryStore,
                          Moment, Pastimes, PhaseStore, ProspectiveStore, Relationship, StickerAlbum, TimeCued,
@@ -102,6 +103,8 @@ class Brain:
         self.traits = TraitStore(conn)
         self.pastimes = Pastimes(conn)
         self.leisure: Leisure | None = None  # built on the first free moment; tests set their own
+        # her lakeside cottage (decision 26), next to her database like her pictures; None when off
+        self.cottage = Cottage(settings.db_path.parent / "cottage" / "now.json") if settings.cottage else None
         # turns whose JSON replies gave nothing usable, so she was asked in plain text, with why the
         # model stopped when it says: the checkup counts and writes them (memory v3 §14); nothing is stored
         self.fallbacks: list[dict] = []
@@ -121,6 +124,29 @@ class Brain:
         return {"home_line": home.line() if home else "",
                 "weather_line": self.relationship.get("weather_line", "") or "",
                 "places": places_line(load_places(folder))}
+
+    def move_time(self, now: datetime) -> None:
+        """Bring her cottage up to now (decision 26): she sleeps, eats at mealtimes, food goes
+        off; her hunger and energy move with it. A file he broke by hand leaves it as it is."""
+        if self.cottage is None:
+            return
+        try:
+            change = self.cottage.advance(now)
+        except ValueError:
+            return
+        if change.hunger or change.energy:
+            base = self.moods.load()
+            base.hunger += change.hunger
+            base.energy += change.energy
+            self.moods.save(base)  # save clamps
+
+    def cottage_text(self, now: datetime, hunger: float) -> str:
+        if self.cottage is None:
+            return ""
+        try:
+            return self.cottage.for_chat(now, hunger)
+        except ValueError:
+            return ""
 
     def day_fields(self, now: datetime) -> dict[str, str]:
         """What day it is, what she is following, what she did with her free time today (decision 24)."""
@@ -163,6 +189,7 @@ class Brain:
             self.close_episode(stale, now)
         ep = self.episodes.open_episode() or self.episodes.start(channel, now)
 
+        self.move_time(now)
         base = self.moods.load()
         mood = MoodStore.apply_clock(base, now)  # what she feels now; the baseline is what we save
         stage = self.stage()
@@ -209,7 +236,7 @@ class Brain:
             seen=self.store.seen_recently(now, SEEN_DAYS)[:SEEN_SHOWN],
             stage=stage, stage_rules=self.stages.get(stage, ""), howto=self.store.howto_card(),
             phase=self.phases.current(), growth=self.growth_lines(), **self.place_fields(),
-            **self.day_fields(now),
+            **self.day_fields(now), cottage=self.cottage_text(now, mood.hunger),
             stickers=self.album.offer(), user_image=data_url(image) if image else None,
             shared=shared, today_section=today, pacts=pacts, stars=stars,
             pages=pages, nothing_found=nothing_found,
@@ -246,7 +273,7 @@ class Brain:
 
         last_topic = self.relationship.get("last_topic")
         base = MoodStore.after_turn(base, user_text, reply.say, reported=reply.mood,
-                                    topic=reply.topic, last_topic=last_topic)
+                                    topic=reply.topic, last_topic=last_topic, kitchen=self.cottage is not None)
         self.moods.save(base)
         self.moods.log(base, reply.mood, now)  # layer C's trace, read by layer B at night
         self.relationship.bump_closeness(reply.mood, now)
@@ -420,6 +447,7 @@ class Brain:
         """Called by a channel between polls. True when she reached out and it was delivered;
         otherwise it may be one of her free moments."""
         now = now or datetime.now()
+        self.move_time(now)
         ro = self.consider_reach_out(now)
         if ro is not None and send(ro.text):
             self.commit_reach_out(ro, channel, now)
@@ -430,7 +458,7 @@ class Brain:
     def free_time(self, now: datetime | None = None) -> Moment | None:
         """A free moment, if she has one now: she may do something, or nothing (decision 24)."""
         if self.leisure is None:
-            self.leisure = Leisure(self, default_activities(), searcher=self.searcher)
+            self.leisure = Leisure(self, default_activities(cottage=self.cottage), searcher=self.searcher)
         return self.leisure.run(now)
 
     # --- working memory upkeep ----------------------------------------------

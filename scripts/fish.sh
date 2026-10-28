@@ -9,6 +9,7 @@
 #   scripts/fish.sh timers    when the nightly routine runs next
 #   scripts/fish.sh browse    make her browse now (by hand; on her own she browses only when she likes)
 #   scripts/fish.sh stickers <folder>   give her every picture in a folder on this Mac; she names each now
+#   scripts/fish.sh cottage [put 鸡蛋 [顿数] | sill 一盆薄荷]   her cottage as it is now, or put something in (decision 26)
 set -eu
 BOX="${BOX:-ubuntu-tailscale}"
 cd "$(dirname "$0")/.."
@@ -32,5 +33,6 @@ case "${1:-show}" in
             --include='*.[gG][iI][fF]' --include='*.[wW][eE][bB][pP]' --exclude='*' \
             "$folder/" "$BOX:$stage/"
         ssh "$BOX" "cd Dafeiyu && TZ=$TZ_USER .venv/bin/python -m fish stickers ~/$stage && rm -rf ~/$stage" ;;
-    *) echo "usage: scripts/fish.sh [show|notebook|logs|sent|timers|browse|stickers <folder>]" >&2; exit 2 ;;
+    cottage)  shift; ssh "$BOX" "cd Dafeiyu && TZ=$TZ_USER .venv/bin/python -m fish cottage $*" ;;
+    *) echo "usage: scripts/fish.sh [show|notebook|logs|sent|timers|browse|stickers <folder>|cottage ...]" >&2; exit 2 ;;
 esac

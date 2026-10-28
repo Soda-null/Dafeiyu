@@ -109,7 +109,8 @@ class Leisure:
         data = ask_json(brain.llm, "leisure_choose", persona=brain.persona, now=self.when(now),
                         mood=MoodStore.apply_clock(brain.moods.load(), now).describe(),
                         threads="\n".join(f"- {m.line()}" for m in kit.store.alive("self")[-5:]) or "（没什么特别的）",
-                        earlier=self.earlier(kit, now), menu=render_menu(choices), temperature=1.0)
+                        earlier=self.earlier(kit, now), home=self.home(now), menu=render_menu(choices),
+                        temperature=1.0)
         pick = (data or {}).get("pick")
         if not isinstance(pick, int) or not 1 <= pick <= len(choices):
             kit.pastimes.end_moment(moment_id, "nothing", NOTHING.line, "（没想好）")
@@ -127,7 +128,8 @@ class Leisure:
             material = Material(result=f"想{choice.line}，没弄成（{type(e).__name__}）")
         ids = self.write_down(kit, choice, why, material) if material.opened else []
         kit.pastimes.end_moment(moment_id, choice.activity, choice.line, why, material.result, ids)
-        return self.finish(kit, moment_id, did_something=bool(material.opened))
+        return self.finish(kit, moment_id, did_something=bool(material.opened) or material.done,
+                           moved=material.mood)
 
     def write_down(self, kit: Kit, choice: Choice, why: str, material: Material) -> list[int]:
         browser = Browser(self.brain.llm, self.brain.persona)
@@ -156,15 +158,28 @@ class Leisure:
         return kit.conn.execute(f"SELECT COUNT(*) FROM memories WHERE kind = 'self' AND id IN ({marks})",
                                 ids).fetchone()[0]
 
-    def finish(self, kit: Kit, moment_id: int, *, did_something: bool) -> Moment:
+    def finish(self, kit: Kit, moment_id: int, *, did_something: bool,
+               moved: dict[str, float] | None = None) -> Moment:
         moods = self.brain.moods
         base = moods.load()
+        for key, delta in (moved or {}).items():
+            setattr(base, key, min(100.0, max(0.0, getattr(base, key) + delta)))
         if did_something:
             base.boredom = max(0.0, base.boredom + BOREDOM_AFTER_DOING)
         else:
             base.energy = min(100.0, base.energy + ENERGY_AFTER_NOTHING)
         moods.save(base)
         return next(m for m in kit.pastimes.moments(kit.now - timedelta(days=1)) if m.id == moment_id)
+
+    def home(self, now: datetime) -> str:
+        """Her cottage as it is, when she has one (decision 26): a section of its own, or nothing."""
+        cottage = self.brain.cottage
+        if cottage is None:
+            return ""
+        try:
+            return "## 你的小屋（屋里现在就是这样）\n" + cottage.for_leisure(now) + "\n"
+        except ValueError:
+            return ""
 
     @staticmethod
     def when(now: datetime) -> str:

@@ -1,0 +1,7 @@
+"""Her lakeside cottage (decision 26): reality, not memory. Never calls a model, never imports
+the brain or the channels."""
+
+from fish.cottage.room import Change, Cottage, Offer, Room
+from fish.cottage.rules import layout
+
+__all__ = ["Change", "Cottage", "Offer", "Room", "layout"]

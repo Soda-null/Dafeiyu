@@ -29,6 +29,8 @@ class Material:
     """What came of a choice: pages to look at, or one line when there is nothing to read."""
     opened: list[tuple[Item, str]] = field(default_factory=list)
     result: str = ""  # one line for the log and her diary: "读了《西遊記》第001回的前一段"
+    done: bool = False  # she did something with nothing to read (cooked, made the bed: decision 26)
+    mood: dict[str, float] = field(default_factory=dict)  # how it moves her: {"hunger": -50}
 
 
 @dataclass
