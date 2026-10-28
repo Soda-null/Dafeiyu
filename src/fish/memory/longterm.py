@@ -23,6 +23,14 @@ PROFILE_IMPORTANCE = 8  # facts at or above this importance form the always-pres
 PROFILE_SIZE = 12
 # Card facts that keep him safe come right after the pinned ones (memory v3 §B3).
 SAFETY = re.compile(r"过敏|不耐(?!烦)|病|药")
+# A card fact about someone around him: one that starts with another name ("大壮是他表哥……",
+# "团子是只仓鼠"), or with his family, friends or people at work ("他表哥……", "他合租的室友叫……").
+# They go on the card after the facts about him himself, so many friends never push his school or
+# his home off it. Kinship and social words of the language, not of any one friend's story.
+RELATIONS = ("爸|妈|父亲|母亲|爷爷|奶奶|姥姥|姥爷|外公|外婆|祖|[表堂]?[哥姐弟妹]|兄|叔|伯|姨|舅|姑|侄|甥"
+             "|儿子|女儿|孩子|老婆|老公|媳妇|对象|男朋友|女朋友|前任|室友|舍友|同学|同事|朋友|闺蜜|发小"
+             "|老师|导师|老板|领导|上司|组长|经理|师兄|师姐|师弟|师妹|邻居|房东")
+ABOUT_OTHERS = re.compile(rf"^(?![他她])|^[他她](?:[^，。,；;的]{{0,4}}的)?(?:{RELATIONS})")
 
 # Choosing before writing (decision 19): what `note` refuses or folds into an old memory.
 REPEAT_SIMILARITY = 0.5  # same kind, this much bigram overlap (dates removed): a repeat
@@ -170,8 +178,16 @@ class Memory:
         return self.superseded_by is None
 
 
+def about_of(kind: str, about: str | None) -> str | None:
+    """路过 is a meal, what he is doing now, today's plan: things that happen. A lasting fact
+    filed there ("his friend's cat is called X") counts as 日常, wherever it is read: when it is
+    written, when its ceiling is worked out, when it is corrected or merged, when a database
+    written before this rule is migrated."""
+    return "日常" if kind == "fact" and about == "路过" else about
+
+
 def ceiling_of(kind: str, text: str, about: str | None) -> float:
-    return st.ceiling(about, unasked=kind == "event" and bool(UNASKED.search(text)))
+    return st.ceiling(about_of(kind, about), unasked=kind == "event" and bool(UNASKED.search(text)))
 
 
 def capped(stability: float, ceiling: float, was: float = 0.0) -> float:
@@ -181,9 +197,11 @@ def capped(stability: float, ceiling: float, was: float = 0.0) -> float:
 
 
 def card_order(m: Memory) -> tuple:
-    """Sort key of her card: pinned, then safety, then the latest day it came up."""
+    """Sort key of her card: pinned, then safety, then facts about him himself before facts
+    about people around him, each by the latest day it came up."""
     last = date.fromisoformat(m.last_time or m.created[:10])
-    return (not m.pinned, not SAFETY.search(m.text), -last.toordinal(), -m.importance, m.id)
+    return (not m.pinned, not SAFETY.search(m.text), bool(ABOUT_OTHERS.search(m.text.lstrip())),
+            -last.toordinal(), -m.importance, m.id)
 
 
 def _from_row(r: sqlite3.Row) -> Memory:
@@ -298,10 +316,7 @@ class MemoryStore:
         # (the persona calls him 他 or 她, FISH_OWNER; she is never the subject in third person)
         if about == "本人" and FOR_NOW.search(text) and not LASTING.search(text):
             about = "日常"  # a state for now is not who he is; it does not go on his card
-        if kind == "fact" and about == "路过":
-            # 路过 is a meal, what he is doing now, today's plan: events. A lasting fact filed
-            # there ("his friend's cat is called X") would sit under the 14-day ceiling
-            about = "日常"
+        about = about_of(kind, about)  # a fact is never 路过: it would sit under the 14-day ceiling
         same = self.repeat_of(kind, text, now, lifelong=about == "一辈子")
         if same is not None and not self.adds_detail(text, same):
             again = self.happened_again(same.id, now)
@@ -463,7 +478,8 @@ class MemoryStore:
             happened_on=(d.isoformat() if (d := day_of(text, now)) else old.happened_on),
         )
         self.conn.execute("UPDATE memories SET about = ?, last_time = ?, pact = ?, pact_state = ?, outcome = ?"
-                          " WHERE id = ?", (old.about, iso(now)[:10], old.pact, old.pact_state, old.outcome, new.id))
+                          " WHERE id = ?", (about_of(old.kind, old.about), iso(now)[:10], old.pact,
+                                            old.pact_state, old.outcome, new.id))
         self.supersede(old_id, new.id, why="correct")
         self.repoint([old_id], new.id)
         return self.get(new.id)
@@ -483,7 +499,7 @@ class MemoryStore:
         tags: list[str] = []
         for o in olds:
             tags += [t for t in o.tags if t not in tags]
-        about = strongest_about([o.about for o in olds])
+        about = about_of(olds[0].kind, strongest_about([o.about for o in olds]))
         strongest = max(o.stability for o in olds)
         new = self.add(
             olds[0].kind, text,
@@ -531,7 +547,8 @@ class MemoryStore:
 
     def profile(self, limit: int = PROFILE_SIZE) -> list[Memory]:
         """The facts she always keeps in mind (her card): pinned first, then what keeps him
-        safe (allergies, illness, medicine), then the rest by when it last came up. Facts about
+        safe (allergies, illness, medicine), then what is about him himself, then the people
+        around him (ABOUT_OTHERS), each by when it last came up. Facts about
         him himself (about = 本人, decision 21) always qualify. Not by stability (memory v3
         §B3): how strongly she holds a fact says nothing about whether it is who he is now.
         His nickname is on it (a pact with no state); a promise is not, whatever its state: an

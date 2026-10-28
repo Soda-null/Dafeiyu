@@ -245,7 +245,20 @@ def test_the_prompts_ask_for_results_named_things_people_and_what_she_said_she_w
         assert "长期的特点（养的宠物" in prompt and "人和动物不算" in prompt and "about 填 本人" in prompt
         assert "写明是谁的" in prompt
     assert "跟你记的对不上的前提" in chat and "别顺着他的说法答" in chat
-    assert "又捡回了一个习惯" in chat and '"corrections"' in close
+    assert "开始晨跑了" in chat and '"corrections"' in close
+
+
+def test_the_close_does_not_take_a_premise_in_his_question_for_news(tmp_path):
+    """A trap question ("我那只仓鼠叫啥", when her card says it is his cousin's) is not a change he
+    told her. Chat had that rule and the close did not, so a close could have written his
+    cousin's pet onto him for good. The close prompt it is sent carries the rule too."""
+    brain, conn, llm = make_brain(tmp_path)
+    MemoryStore(conn).note("fact", "大壮是他表哥，养了只仓鼠叫团子", importance=8, about="本人", now=T0)
+    brain.respond("我那只仓鼠叫啥来着", now=T0)
+    brain.respond("我回来了", now=T0 + timedelta(hours=3))
+    close = last_close_prompt(llm)
+    assert "只算他明说的改变" in close and "他问起时话里带的说法不算新情况" in close
+    assert "大壮是他表哥" in close  # the card it could have rewritten is in front of it
 
 
 def test_no_prompt_holds_an_answer_of_the_scripted_friends():
@@ -276,6 +289,23 @@ def test_a_lasting_fact_filed_as_passing_is_kept_as_everyday(tmp_path):
     assert meal.about == "路过" and meal.stability <= st.PASSING_MAX_DAYS
 
 
+def test_a_fact_stored_as_passing_before_the_rule_is_not_held_to_14_days(tmp_path):
+    """The rule lives where the ceiling is worked out, not only in note(): a fact already in the
+    database as 路过 (written before it) grows past 14 days when recalled, and a correction of
+    it is 日常 and not cut either."""
+    from fish.memory import stability as st
+
+    store = MemoryStore(connect(tmp_path / "fish.db"))
+    shop = store.note("fact", "他楼下新开了家面馆，他挺喜欢", importance=3, about="日常", now=T0)
+    store.conn.execute("UPDATE memories SET about = '路过', stability = 40.0 WHERE id = ?", (shop.id,))
+    store.conn.commit()
+    assert store.get(shop.id).ceiling == st.INFINITE
+    moved = store.correct(shop.id, "他楼下的面馆搬走了，他挺可惜", now=T0 + timedelta(days=5))
+    assert moved.about == "日常" and moved.stability >= 40.0
+    store.touch(moved.id, now=T0 + timedelta(days=60))
+    assert store.get(moved.id).stability > 40.0 > st.PASSING_MAX_DAYS
+
+
 def test_a_friend_written_with_his_pet_is_on_her_card(tmp_path):
     note = {"text": "大壮是他表哥，养了只仓鼠叫团子", "kind": "fact", "about": "本人", "tags": ["大壮", "表哥", "仓鼠"]}
     turns = iter([chat_json("表哥啊", notes=[note]), chat_json("嗯")])
@@ -284,6 +314,27 @@ def test_a_friend_written_with_his_pet_is_on_her_card(tmp_path):
     brain.respond("养仓鼠的那个是谁来着", now=T0 + timedelta(minutes=5))
     card = llm.calls[-1][0][0]["content"].split("## 你一直记得的关于他的事", 1)[1].split("\n## ", 1)[0]
     assert "团子" in card and "大壮" in card
+
+
+def test_many_friends_on_the_card_never_push_his_own_facts_off_it(tmp_path):
+    """People go on the card as 本人 notes now (a name, how he knows them, their pet). A friend who
+    mentions a dozen people still keeps his major and his hometown on it, however long ago he said
+    them; the newest people take what room is left."""
+    from fish.memory.longterm import PROFILE_SIZE
+
+    store = MemoryStore(connect(tmp_path / "fish.db"))
+    major = store.note("fact", "他在Springfield大学读机械，大二", importance=8, about="本人", now=T0)
+    home = store.note("fact", "他老家在Springfield郊外的一个小镇", importance=8, about="本人", now=T0)
+    people = [("大壮是他表哥，养了只仓鼠叫团子", ["大壮"]), ("他室友小马天天打游戏", ["小马"]),
+              ("他导师姓钱，很严", ["导师"]), ("他妈妈是护士", ["妈妈"]), ("他发小阿福在外地读书", ["阿福"]),
+              ("他同事老吴爱钓鱼", ["老吴"]), ("他女朋友叫小雪", ["小雪"]), ("他姐姐在读研", ["姐姐"]),
+              ("他邻居养了条柯基", ["邻居"]), ("他组长人很好", ["组长"]), ("他同学阿青会弹琴", ["阿青"]),
+              ("毛毛是他堂弟，上初中", ["毛毛"]), ("他外公爱下象棋", ["外公"])]
+    for day, (text, tags) in enumerate(people, start=1):
+        store.note("fact", text, importance=8, about="本人", tags=tags, now=T0 + timedelta(days=day))
+    card = store.profile()
+    assert len(card) == PROFILE_SIZE and {major.id, home.id} <= {m.id for m in card}
+    assert "他外公爱下象棋" in [m.text for m in card]  # the newest person is still on it
 
 
 def test_the_close_corrects_a_card_fact_the_chat_made_untrue(tmp_path):

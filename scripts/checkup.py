@@ -41,6 +41,7 @@ LABELS = ("记住", "模糊但对", "说不记得", "记错", "编造")
 WRONG = ("记错", "编造")
 BROKEN = "（裁判坏了）"
 JUDGE_TRIES = 3
+JUDGE_WAITS = (1.0, 3.0)  # seconds before asking again after an error (rate limit, timeout)
 JUDGE_TOKENS = 300
 HARD_LINE = 0.05  # wrong + fabricated, as a share of all graded answers
 NIGHT = "03:30"
@@ -118,7 +119,7 @@ def lines_for(script: dict, day: int) -> list[tuple[str, str, dict | None]]:
 
 
 def judge(llm: LLM, ask: str, truth: str, reply: str, note: str = "",
-          said: str = "", today: str = "") -> tuple[str, str]:
+          said: str = "", today: str = "", sleep=time.sleep) -> tuple[str, str]:
     """`said`: everything he said before this question, dated, so correct extra details she
     brings up are not mistaken for fabrication and "last January" can be checked."""
     prompt = JUDGE  # .replace, not .format: the template holds literal JSON braces
@@ -126,15 +127,19 @@ def judge(llm: LLM, ask: str, truth: str, reply: str, note: str = "",
                        ("reply", reply or "（她没回）"), ("said", said or "（还没说过什么）"),
                        ("today", today or "？")):
         prompt = prompt.replace("{" + key + "}", value)
-    # JSON mode sometimes comes back empty or cut off: ask again; a judge that still fails
-    # keeps what it said in `why`, so the broken row can be read and judged again alone
+    # JSON mode sometimes comes back empty or cut off: ask again at once. An error (a rate
+    # limit, a timeout) often lasts a moment: wait a little longer each time first. A judge that
+    # still fails keeps what it said in `why`, so the broken row can be read and judged again alone
     what = ""
+    errors = 0
     for _ in range(JUDGE_TRIES):
+        if what.startswith("error:"):
+            sleep(JUDGE_WAITS[min(errors, len(JUDGE_WAITS)) - 1])
         try:
             raw = llm.chat([{"role": "user", "content": prompt}], json_mode=True, temperature=0.0,
                            max_tokens=JUDGE_TOKENS)
         except Exception as e:  # noqa: BLE001 - a judge failure is a row in the report, not a crash
-            what = f"error: {e}"
+            what, errors = f"error: {e}", errors + 1
             continue
         data = extract_json(raw) or {}
         label = str(data.get("label", "")).strip()

@@ -12,7 +12,7 @@ so the result can be looked at first):
   --pacts 17,3|all       make these promises between them / his nickname for her (step 6)
   --subjects 123|all     her own doings a merge handed to him: the leading 他 becomes 我 (step 4)
   --dates 45|all         a date that disagrees with the weekday next to it moves to it (§B2 D5)
-  --ceilings unasked|all the old 没问成 events down to 14 days; all: 路过 and 待印证 rules to
+  --ceilings unasked|all the old 没问成 events down to 14 days; all: 路过 events, 待印证 rules to
                          their ceilings too (step 7; the numbers wait for the user, §11 item 2)
 
   .venv/bin/python scripts/migrate_v3.py [--db data/fish.db] [--apply] [--now 2027-04-01T12:00]
@@ -40,8 +40,8 @@ sys.path.insert(0, str(ROOT / "src"))
 from fish.brain.consolidate import keeps_subject  # noqa: E402
 from fish.memory import pacts as pk  # noqa: E402
 from fish.memory import stability as st  # noqa: E402
-from fish.memory.longterm import (UNASKED, MemoryStore, _from_row, ceiling_of, strongest_about,  # noqa: E402
-                                  why_before_v3)
+from fish.memory.longterm import (UNASKED, MemoryStore, _from_row, about_of, ceiling_of,  # noqa: E402
+                                  strongest_about, why_before_v3)
 from fish.memory.pages import keys_of  # noqa: E402
 from fish.memory.patterns import DAY_ENDS, count_patterns  # noqa: E402
 from fish.memory.relationship import Relationship  # noqa: E402
@@ -130,11 +130,13 @@ def fill_why(conn: sqlite3.Connection) -> Step:
 
 def fill_about(conn: sqlite3.Connection) -> Step:
     """3. A merged memory with no about: the strongest about among its sources, back through
-    merges of merges; still unconfirmed only when every source was."""
-    step = Step("3. 合并出来的条补上\"说的是什么那一档\"")
+    merges of merges; still unconfirmed only when every source was. And a current fact filed as
+    路过 becomes 日常 (longterm.about_of: 路过 is for things that happen), so step 7 never cuts
+    a lasting fact down to the 14 days of a meal."""
+    step = Step("3. 合并出来的条补上\"说的是什么那一档\"，标成路过的事实改成日常")
     resolved: dict[int, str | None] = {}
 
-    def about_of(i: int) -> str | None:
+    def merged_about(i: int) -> str | None:
         if i not in resolved:
             row = conn.execute("SELECT about, merged_from FROM memories WHERE id = ?", (i,)).fetchone()
             if row is None:
@@ -144,15 +146,20 @@ def fill_about(conn: sqlite3.Connection) -> Step:
             else:
                 resolved[i] = None  # a cycle cannot happen, but never loop
                 sources = json.loads(row["merged_from"] or "[]")
-                resolved[i] = strongest_about([about_of(s) for s in sources]) if sources else None
+                resolved[i] = strongest_about([merged_about(s) for s in sources]) if sources else None
         return resolved[i]
 
     for m in _rows(conn, "SELECT * FROM memories WHERE about IS NULL AND merged_from IS NOT NULL"
                          " AND merged_from != '[]' ORDER BY id"):
-        about = about_of(m.id)
+        about = merged_about(m.id)
         if about is not None:
             conn.execute("UPDATE memories SET about = ? WHERE id = ?", (about, m.id))
             step.lines.append(f"#{m.id} → {about}{'' if m.alive else '（已换掉）'}：{short(m.text)}")
+    for m in _rows(conn, "SELECT * FROM memories WHERE kind = 'fact' AND superseded_by IS NULL"
+                         " AND about = '路过' ORDER BY id"):
+        about = about_of(m.kind, m.about)
+        conn.execute("UPDATE memories SET about = ? WHERE id = ?", (about, m.id))
+        step.lines.append(f"#{m.id} 路过 → {about}（事实不算路过）：{short(m.text)}")
     step.note = "" if step.lines else "没有要补的"
     return step
 

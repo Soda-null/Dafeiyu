@@ -202,3 +202,21 @@ def test_a_follow_up_written_by_a_close_finds_the_chat_that_closed(v2):
     assert any("惦记 2" in line and "#14 " in line for line in step(steps, "8.").lines)
     conn = open_db(v2)
     assert conn.execute("SELECT source_memory FROM prospective WHERE id = 2").fetchone()[0] == 14
+
+
+def test_a_lasting_fact_filed_as_passing_is_relabeled_not_cut(v2):
+    """v2 filed some lasting facts as 路过 ("the new noodle shop downstairs, he likes it"). A
+    fact is never 路过 (longterm.about_of), so --ceilings all must not cut it to a meal's 14
+    days: step 3 relabels it 日常. A 路过 event above the ceiling is still cut."""
+    conn = sqlite3.connect(v2)
+    memory(conn, 14, "fact", "他楼下新开了家面馆，他挺喜欢", "2027-03-01T20:30:00", ep=1, about="路过", s=44.0)
+    memory(conn, 15, "event", "他今晚吃了面馆的牛肉面", "2027-03-01T20:40:00", ep=1, about="路过", s=40.0)
+    conn.commit()
+    conn.close()
+    steps, _ = mig.run(v2, NOW)
+    assert any(line.startswith("#14 路过 → 日常") for line in step(steps, "3.").lines)
+    assert "#14 " not in " ".join(step(steps, "7.").candidates)
+    mig.run(v2, NOW, apply=True, ceilings="all")
+    row = {r["id"]: r for r in open_db(v2).execute("SELECT * FROM memories")}
+    assert (row[14]["about"], row[14]["stability"]) == ("日常", 44.0)
+    assert (row[15]["about"], row[15]["stability"]) == ("路过", 14.0)

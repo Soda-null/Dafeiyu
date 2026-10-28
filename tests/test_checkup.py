@@ -122,6 +122,27 @@ def test_the_judge_asks_again_when_its_answer_does_not_read():
     assert label == checkup.BROKEN and why.startswith("raw:")
 
 
+def test_the_judge_waits_a_little_longer_each_time_it_errors_and_not_when_it_cannot_read():
+    waits = []
+
+    def flaky(replies):
+        it = iter(replies)
+
+        def answer(messages, json_mode):
+            r = next(it)
+            if isinstance(r, Exception):
+                raise r
+            return r
+        return FakeLLM(answer)
+
+    got = checkup.judge(flaky([TimeoutError("t"), TimeoutError("t"), '{"label":"记住","why":"ok"}']),
+                        "问", "真", "答", sleep=waits.append)
+    assert got == ("记住", "ok") and waits == list(checkup.JUDGE_WAITS)
+    waits.clear()
+    checkup.judge(FakeLLM(["", "x", "{}"]), "问", "真", "答", sleep=waits.append)
+    assert waits == []
+
+
 def test_only_the_rows_the_judge_failed_on_can_be_judged_again():
     result = {"transcript": [], "summary": {},
               "graded": [{"day": 1, "ask": "a", "reply": "x", "label": "记住", "why": "", "expect": ["记住"], "soft": False, "ok": True},
