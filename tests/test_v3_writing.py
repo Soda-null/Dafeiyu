@@ -265,7 +265,7 @@ def test_no_prompt_holds_an_answer_of_the_scripted_friends():
     """The checkup scripts are held out: a prompt that names their answers (a roommate's name, a
     dorm number, a dish) would pass them without the memory doing the work. Words that name a
     kind of thing rather than one answer may appear."""
-    ordinary = {"生日", "过敏", "设计", "80", "妹", "UI", "界面", "机械", "牛奶", "咖啡", "期中"}
+    ordinary = {"生日", "过敏", "设计", "80", "妹", "UI", "界面", "机械", "牛奶", "咖啡", "期中", "面试"}
     keys = set()
     for path in sorted((Path(__file__).resolve().parents[1] / "evals").glob("*.json")):
         script = json.loads(path.read_text(encoding="utf-8"))
