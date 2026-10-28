@@ -1,7 +1,7 @@
 # 节点化：像 ROS 那样把她拆开
 
 > **是什么：** 架构稿。把现在"大脑一个文件管一切"的写法，改成 ROS 式的节点 + 消息：每个模块只认约定好的消息，不伸手进别人内部；加新功能是加一个节点，不是改一堆老文件。
-> **地位：** 现行方向（用户 2026-10-28 晚："我要的是思路，类似 ros 一样的模块化思想"，"开始第 1 步"）。第 1 步做完（10-28）；第 2 步起按 §4 一步一步来，每步用户点头。`architecture_zh.md` 第 2 步做完再改。
+> **地位：** 现行方向（用户 2026-10-28 晚："我要的是思路，类似 ros 一样的模块化思想"，"开始第 1 步"）。第 1、2 步做完（10-28）；第 3 步起按 §4 一步一步来，每步用户点头。`architecture_zh.md` §1 已按第 2 步改。
 > **读法：** §1 看一眼问题在哪；§2 是节点清单；§3 是消息清单（最要紧的一节）；§4 是怎么一步步搬，每步都能单独做、单独停。
 
 ## 0. 一句话
@@ -84,7 +84,7 @@ Reply(say, sticker, mood_word, notes, followups, asked, corrections, look)      
 | 步 | 做什么 | 动哪些文件 | 不动什么 | 大概多大 |
 |---|---|---|---|---|
 | 1 ✅ | **立合同 + 总线。** 写 `msgs.py`、`bus.py`、`clock.py`；`tests/test_skeleton.py` 加第三条铁律的检查：现有 26 处跨节点 import、3 个越界写 SQL 的文件记成老账放过，**新的一律失败**；修掉一处就得从老账里划掉（测试会提醒），清单只会变短 | 新文件为主 | 行为一点不变 | 10-28 做完 |
-| 2 | **拆 `handle()`。** 把"收集"拆成各节点的服务，拼成 `Situation`；`brain.reply(Situation)` 只拼提示词、问、读。`app.py` 当 launch 文件 | `brain/respond.py` 拆成 `brain/reply.py`（纯）+ `app.py`（接线） | 提示词文本、记忆规则、测试的断言 | 一到两天，最大的一步 |
+| 2 ✅ | **拆 `handle()`。** 记忆的回答搬进记忆节点（`memory/recollect.py`：这句话让她想起什么；`memory/daychat.py`：今天的聊天留哪些原文）；她住哪的读法搬进 `world`；纯大脑 `brain/reply.py` 只认 `Situation`（原 `PromptContext` 改名），拼提示词、问、读，不认识任何仓库；`respond.py` 成了接线员：收集 → `Situation` → 大脑 → 记下。还清 8 处老账。**验收**：用寝室机数据拷贝的三个真实时刻，拆前拆后每次模型调用、她的回复、数据库各表的变化逐字节相同；439 个测试一个断言没改。**和原计划不同的一处**：`app.py` 放到第 3 步：`Brain` 被 30 多个测试和脚本 import，现在搬只是改名，等接总线时一起搬 | `brain/respond.py`（577 → 491 行）、`brain/reply.py`、`memory/recollect.py`、`memory/daychat.py`、`world/place.py` | 提示词文本、记忆规则、测试的断言 | 10-28 做完 |
 | 3 | **把"先开口""空闲""小屋动作"改成订阅。** 它们订 `TimePassed` / `HomeEvent`，不再由 `respond.tick()` 挨个调 | `reach/`、`leisure/` 成独立节点 | 它们各自内部的规则 | 一天 |
 | 4 | **心情只订消息。** 饿困跟着 `TimePassed` / `SheAte` / `SheSlept` 走（决定 32 已经这么定了，这步只是把"小屋改心情"从 `respond.move_time` 搬成订阅） | `mood/`、`cottage/` | 数值 | 半天 |
 | 5 | **夜里整理拆成订阅链。** `nightly` 八步变成 `DayEnded` 的八个订阅者，每个一个文件；去掉四处散落的 SQL | `routines/nightly.py` | 每步的提示词和规则 | 一天 |

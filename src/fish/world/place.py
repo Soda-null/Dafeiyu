@@ -16,6 +16,7 @@ import io
 import json
 import math
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 from fish.world.http import (Fetch, FetchBytes, FetchPost, urllib_fetch, urllib_fetch_bytes,
                              urllib_post)
@@ -183,6 +184,19 @@ def neighbourhood_map(home: Home, fetch_bytes: FetchBytes = urllib_fetch_bytes, 
     out = io.BytesIO()
     canvas.save(out, "PNG", optimize=True)
     return out.getvalue()
+
+
+def load_home(folder: Path) -> Home | None:
+    """Where she lives, as saved in data/home/ once she located it; None before."""
+    p = folder / "home.json"
+    return Home.from_json(p.read_text(encoding="utf-8")) if p.exists() else None
+
+
+def load_places(folder: Path) -> list[Place]:
+    p = folder / "places.json"
+    if not p.exists():
+        return []
+    return [Place(**d) for d in json.loads(p.read_text(encoding="utf-8"))["places"]]
 
 
 def places_line(places: list[Place], limit: int = 15) -> str:

@@ -7,16 +7,22 @@
 ## 1. 一条消息怎么走
 
 ```
-终端 / 微信 ──> channels ──> brain ──> 回复 ──> channels ──> 你
-                             ^   |
-            persona + mood + memory（召回）
-                                 |
-                       memory（记下这一轮）+ mood（更新）
+终端 / 微信 ──> channels ──> 接线员（brain/respond.py）
+                                 │ 问各节点
+        memory：这句话让她想起什么（recollect）、今天聊过的（daychat）
+        mood：她此刻什么状态    cottage：屋里什么样    world：住哪、今天什么日子
+                                 │ 装成一个 Situation
+                          大脑本身（brain/reply.py）──> DeepSeek
+                                 │ 她的回复
+        接线员记下：两句话进聊天记录、她的笔记、表情包、心情和亲近
+                                 │
+                             channels ──> 你
 ```
 
-1. **电话线**（`channels/`）收到你一句话（可能带一张图），交给大脑；大脑回她的话（可能带一张她的表情包）。它只负责收发，不懂内容。两头之间传的是 `messages.py` 里的 `Incoming` / `Outgoing`。
-2. **大脑**（`brain/`）拼一份提示词：她是谁（persona）+ 她现在什么心情（mood）+ 和这句话有关的旧事（memory 召回）+ 最近几轮对话（窗口），然后问 DeepSeek，拿到回复。
-3. 回复发回电话线；同时这一轮对话进窗口，心情按这轮聊了什么微调。
+1. **电话线**（`channels/`）收到你一句话（可能带一张图），交给接线员；回她的话（可能带一张她的表情包）。它只负责收发，不懂内容。两头之间传的是 `messages.py` 里的 `Incoming` / `Outgoing`。
+2. **接线员**（`brain/respond.py` 的 `Brain`）不自己翻任何东西，挨个问节点：记忆节点回答"这句话让她想起什么、今天聊过什么"（`memory/recollect.py`），心情、小屋、外面的世界各回各的。答案装成一个 `Situation`（节点化第 2 步，`nodes_design_zh.md`）。
+3. **大脑本身**（`brain/reply.py`）只认 `Situation`：拼提示词、问 DeepSeek、读回复。它不认识记忆的表、小屋的文件、心情的存法，换哪个都不用动它。
+4. 回复发回电话线；接线员把这一轮记下：对话进聊天记录，她的笔记进记忆，心情按这轮聊了什么微调。
 4. **每天夜里**（`routines/`）：把今天的对话过一遍，值得记的写进小本本，写一条日记，让久不提的旧事淡一点。
 
 ## 2. 七个模块

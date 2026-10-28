@@ -9,7 +9,8 @@ from pathlib import Path
 
 from fish.brain import budget
 from fish.config import owner_words
-from fish.memory import Followup, Memory, Page, Phase, Recalled, Sticker, Turn, spoken, told_day
+from fish.memory import (DAY_LIMIT, DayChat, Followup, Memory, Page, Phase, Recalled, Sticker, Turn, fit_day_chat,
+                         spoken, told_day)
 from fish.mood import Mood
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -54,7 +55,9 @@ def render(template: str, **fields: str) -> str:
 
 
 @dataclass
-class PromptContext:
+class Situation:
+    """Everything the brain is given for one turn (docs/nodes_design_zh.md step 2): each node's
+    answer, put together by the wiring (respond.Brain). The brain reads only this."""
     persona: str
     now: datetime
     mood: Mood
@@ -94,7 +97,10 @@ class PromptContext:
     pages: list[Page] = field(default_factory=list)  # old chats she looked back at (memory/pages.py)
 
 
-def state_line(ctx: PromptContext) -> str:
+PromptContext = Situation  # the name before step 2
+
+
+def state_line(ctx: Situation) -> str:
     now = ctx.now
     when = f"现在是 {now.strftime('%Y-%m-%d')} 周{WEEKDAYS[now.weekday()]} {now.strftime('%H:%M')}。"
     rel = ctx.relationship
@@ -111,7 +117,7 @@ def state_line(ctx: PromptContext) -> str:
 HIS_SHOPS = 6
 
 
-def render_home(ctx: PromptContext) -> str:
+def render_home(ctx: Situation) -> str:
     """Where she lives. With her cottage (decision 26) that is the lakeside room, and the real
     city and its shops (decision 15) are where he is; without it, the real city is hers."""
     town = (ctx.home_line + "。" if ctx.home_line else "") + (f"附近：{ctx.places}" if ctx.places else "")
@@ -236,7 +242,7 @@ def render_seen(seen: list[Memory]) -> str:
                      for m in seen) or "（最近没逛）"
 
 
-def build_chat_messages(ctx: PromptContext) -> list[dict[str, str]]:
+def build_chat_messages(ctx: Situation) -> list[dict[str, str]]:
     # Each rule and section is there only when what it is about is there: rules for what is
     # not in front of her would only take the room of what she remembers (memory v3 §13).
     on = {name for name, there in (
@@ -288,40 +294,32 @@ def build_chat_messages(ctx: PromptContext) -> list[dict[str, str]]:
     return messages
 
 
-def fit_day(earlier: list[tuple[int | None, list[Turn]]], current: list[Turn], gists: dict[int, str],
-            running_summary: str = "", limit: int = budget.DAY_LIMIT) -> tuple[str, list[Turn]]:
-    """The day so far (decision 32): the earlier chats of today word for word, each under the
-    time it began, then this chat whole. A very long day over `limit` keeps only the gist of its
-    oldest chats, and if this chat alone is too long, the gist of its start; the latest words
-    are always there as they were said."""
-    def size(turns: list[Turn]) -> int:
-        return sum(len(t.text) + budget.TURN_OVERHEAD for t in turns)
-
-    blocks: list[tuple[int | None, list[Turn], str | None]] = [(e, ts, None) for e, ts in earlier if ts]
-    total = sum(size(ts) for _, ts, _ in blocks) + size(current)
-    for i, (e, ts, _) in enumerate(blocks):
-        if total <= limit:
-            break
-        gist = gists.get(e or -1, "") or "（聊了些家常）"
-        total += len(gist) + 20 - size(ts)
-        blocks[i] = (e, ts, gist)
-    head = ""
-    if total > limit and current:
-        while total > limit and len(current) > 10:
-            total -= size(current[:1])
-            current = current[1:]
-        head = f"（这次聊天开头的大意：{running_summary}）" if running_summary else "（这次聊天开头的记不太清了）"
+def render_day(day: DayChat) -> str:
+    """Today's chat as she reads it (decision 32): each earlier chat under the time it began,
+    word for word or only its gist; then where this chat starts. Which parts are kept is
+    memory's rule (memory/daychat.py)."""
     who = owner_words("他")
     lines: list[str] = []
-    for _, ts, gist in blocks:
-        if gist is not None:
-            lines.append(f"—— {ts[0].ts[11:16]}–{ts[-1].ts[11:16]}，只记得大意：{gist} ——")
+    for block in day.earlier:
+        ts = block.turns
+        if block.gist is not None:
+            lines.append(f"—— {ts[0].ts[11:16]}–{ts[-1].ts[11:16]}，只记得大意：{block.gist} ——")
             continue
         lines.append(f"—— {ts[0].ts[11:16]} ——")
         lines += [f"{who if t.role == 'user' else '你'}：{t.text}" for t in ts]
-    if current:
-        lines.append(head + f"（下面是这次聊天，从 {current[0].ts[11:16]} 开始，一句不少）")
-    return "\n".join(lines), current
+    if day.current:
+        head = ""
+        if day.cut:
+            head = f"（这次聊天开头的大意：{day.summary}）" if day.summary else "（这次聊天开头的记不太清了）"
+        lines.append(head + f"（下面是这次聊天，从 {day.current[0].ts[11:16]} 开始，一句不少）")
+    return "\n".join(lines)
+
+
+def fit_day(earlier: list[tuple[int | None, list[Turn]]], current: list[Turn], gists: dict[int, str],
+            running_summary: str = "", limit: int = DAY_LIMIT) -> tuple[str, list[Turn]]:
+    """What is kept of today (memory) laid out as she reads it (render_day)."""
+    day = fit_day_chat(earlier, current, gists, running_summary, limit)
+    return render_day(day), list(day.current)
 
 
 def render_turns(turns: list[Turn]) -> str:

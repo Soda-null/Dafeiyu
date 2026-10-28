@@ -1,7 +1,7 @@
 """Keep the prompt near a character budget (docs/memory_design_zh.md §2).
 
 The day's chat is never cut here (decision 32): what was said today is in front of her in
-full, like a person's day, and has its own, much larger limit (DAY_LIMIT, prompt.fit_day).
+full, like a person's day, and has its own, much larger limit (memory/daychat.py).
 So the budget is soft: over it, only recalled memories are cut, from the weakest down to the
 strongest one, then the follow-ups. When he asks "还记得吗" the answer is in what was
 recalled, so the best memory is never cut (the recall budget already keeps it short).
@@ -13,7 +13,6 @@ from __future__ import annotations
 from fish.memory import Recalled, Turn
 
 DEFAULT_LIMIT = 6000
-DAY_LIMIT = 15000  # characters of today's chat kept word for word (decision 32)
 TURN_OVERHEAD = 4  # role marker etc.
 
 

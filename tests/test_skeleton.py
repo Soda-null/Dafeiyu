@@ -50,12 +50,9 @@ LAUNCH = ("__main__.py",)  # the launch file wires nodes together; it may reach 
 KNOWN_DEEP_IMPORTS = {
     "brain/leisure/book.py -> world.http", "brain/leisure/book.py -> world.wikisource",
     "brain/reach.py -> memory.longterm", "brain/reach.py -> memory.prospective",
-    "brain/respond.py -> memory.longterm", "brain/respond.py -> memory.patterns",
-    "brain/respond.py -> memory.prospective", "brain/respond.py -> memory.retrieval",
-    "brain/respond.py -> memory.window", "brain/respond.py -> world.days",
     "routines/outside.py -> world.days", "routines/outside.py -> world.http", "routines/outside.py -> world.place",
     # imported inside functions (found by the test, not by eye)
-    "brain/consolidate.py -> memory.retrieval", "brain/respond.py -> routines.outside", "brain/respond.py -> world.place",
+    "brain/consolidate.py -> memory.retrieval",
     "mood/state.py -> memory.longterm", "routines/browse.py -> brain.respond", "routines/browse.py -> brain.world",
     "routines/nightly.py -> brain.consolidate", "routines/nightly.py -> brain.leisure",
     "routines/nightly.py -> brain.respond", "routines/outside.py -> brain.ask", "routines/outside.py -> brain.respond",

@@ -20,7 +20,8 @@ from fish.routines.nightly import fish_day
 from fish.routines.runs import claim_run
 from fish.world.days import refresh_holidays
 from fish.world.http import Fetch, FetchBytes, FetchPost, urllib_fetch, urllib_fetch_bytes, urllib_post
-from fish.world.place import (Home, Place, locate, nearby, neighbourhood_map, places_line, weather)
+from fish.world.place import (Home, Place, load_home, load_places, locate, nearby, neighbourhood_map,
+                              places_line, weather)
 
 if TYPE_CHECKING:
     from fish.brain.respond import Brain
@@ -31,18 +32,6 @@ PLACES_EVERY_DAYS = 30
 
 def home_dir(brain: "Brain") -> Path:
     return brain.album.folder.parent / "home"
-
-
-def load_home(folder: Path) -> Home | None:
-    p = folder / "home.json"
-    return Home.from_json(p.read_text(encoding="utf-8")) if p.exists() else None
-
-
-def load_places(folder: Path) -> list[Place]:
-    p = folder / "places.json"
-    if not p.exists():
-        return []
-    return [Place(**d) for d in json.loads(p.read_text(encoding="utf-8"))["places"]]
 
 
 def run_outside(conn: sqlite3.Connection, now: datetime | None = None, *, brain: "Brain",

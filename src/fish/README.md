@@ -11,6 +11,7 @@
 | `persona/` | 读 `docs/persona_zh.md`：底子（每轮原样进提示词）和"熟悉程度"三档（只有当前档进，决定 11） | 能用 |
 | `memory/` | 只有数据和数学，不调模型：`stability`（遗忘公式；决定 21 起牢固度从"说的是什么"和"多触动"算，一辈子的钉住）、`longterm`（长期条目：加 / 想起 / 改口 / 合并 / 底牌；`note` 是写之前挑：关于聊天本身的不记、重复的加固旧的、规律和相处方式各 20 条上限，决定 19；重复的事记次数、攒到 3 / 6 / 12 回夜里改写成大意，决定 20）、`retrieval`（召回：两道门 + 三项打分；`BigramEmbedder` 不用模型）、`window`（最近 N 轮 + 折叠）、`episodes`（一次聊天）、`prospective`（惦记）、`relationship`（关系账）、`diary` | 能用，30 个测试 |
 | `mood/` | 性格最快的一层（决定 13）：精力、无聊、饿每轮变，时钟加偏移不存，`log` 每轮记一行，`rest(tone, drive)` 夜里回到阶段定的基线；`stage_of` 按亲近值分档 | 能用 |
+| `memory/recollect.py`、`memory/daychat.py` | 节点化第 2 步：记忆节点给大脑的唯一回答。`Recollector.recollect` 是"他这句话让她想起什么"（底牌、碰到的、约定、召回、翻聊天摘要、"今天"一节、到期惦记、见闻、日记、阶段）；`day_chat` 是今天聊过的哪些还留原文（决定 32） | 能用 |
 | `memory/when.py` | 按时间想起（第二版第 5 步）："昨晚""上周三""一月初"读成日子，那几天的记忆算相关（时间越窄加得越多）；`TimeCued` 包在别的找法外面，第三版第 2 步起每轮聊天都用。第三版第 3 步加了反过来的：`day_of` 读一条笔记说的是哪天（"明天""下下周二"也认，填 `happened_on`）、`fix_weekday` 把和旁边"周X"对不上的日期挪过去、`spoken` 把日子说成"上周三 1月13日" | 能用 |
 | `memory/today.py` | 第三版第 3 步：每轮提示词里的"今天"那一节，纯代码：这周下周每天几号、生日今天或 3 天内、他说过今天 / 明天要做的事；加上第 6 步的星期几规律和"他几点来" | 能用，`tests/test_v3_today.py`、`tests/test_v3_patterns.py` |
 | `memory/patterns.py` | 第三版第 6 步：程序数他的习惯，不调模型。夜里数他某个星期几总说的话（小周周五的"糖醋排骨"、小林周三的"吉他课"），存进关系账的 `patterns`，带"还在 / 停了"；每轮从他每天第一条消息的钟点算"他一般几点来"那一行。只在那个星期几、或他问"一般 / 平时 / 每周"时给她看 | 能用，`tests/test_v3_patterns.py` |
@@ -20,7 +21,7 @@
 | `memory/phase.py` | 性格中间层：基调、劲头、在意的事、一句话，`update` 每晚八成旧两成新 | 能用 |
 | `memory/traits.py` | 性格底色层：五根有界滑杆，`apply` 一次最多挪 0.15，`describe` 只说挪得明显的；每月的"回头看"笔记 | 能用 |
 | `memory/relationship.py` | 关系账：认识天数、连续天数、**亲近值**按天涨（每轮 +0.3、开心 +1，但一天最多 +2，熟了以后 +1、很熟以后 +0.8；没聊的日子 −0.5；决定 17） | 能用 |
-| `brain/` | 所有模型调用都在这：`respond.py` 每轮流程（收尾旧情景 → 挑 → 拼 → 问 → 记 → 心情 → 折叠）；`prompt.py` 按 `prompts/*.md` 渲染；`budget.py` 字数预算；`parse.py` 读 JSON 回复；`llm.py`：`DeepSeekLLM`（JSON 模式）、`FakeLLM`、`CountingLLM`（数调用，体检用） | 能用，寝室机上真跑着 |
+| `brain/` | 所有模型调用都在这：`respond.py` 是接线员（节点化第 2 步）：问各节点要答案装成 `Situation` → 交给 `reply.py` → 记下这一轮（收尾旧情景、折叠也在这）；`reply.py` 是大脑本身，只认 `Situation`：拼提示词、问、读回复、查一下；`prompt.py` 按 `prompts/*.md` 渲染；`budget.py` 字数预算；`parse.py` 读 JSON 回复；`llm.py`：`DeepSeekLLM`（JSON 模式）、`FakeLLM`、`CountingLLM`（数调用，体检用） | 能用，寝室机上真跑着 |
 | `brain/prompts/` | `gist.md`（夜里把反复的事改写成大意，决定 20）；聊天：`chat.md`（人设 + 怎么回 + 输出格式 + 底牌 / 日记 / 现在 / 想起 / 惦记 / 摘要）、`fold.md`（折叠窗口）、`close_episode.md`（收尾聊天）；夜里：`merge.md`（合并重复）、`contradictions.md`（新事实取代旧的）、`reflect.md`（反思）、`diary.md`（日记和生活线）；用户能直接改 | 能用 |
 | `brain/consolidate.py` | 夜里的四次模型调用（合并、取代、反思、日记），回复坏了就当"今晚不做" | 能用 |
 | `brain/world.py` | 逛的两次模型调用：从今天的标题里挑最多 3 条、看完写见闻和新念头（`prompts/browse_pick.md`、`browse_read.md`）；`brain/ask.py` 是它们共用的"问一句拿 JSON" | 能用 |

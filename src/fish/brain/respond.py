@@ -1,5 +1,11 @@
-"""The per-turn pipeline (docs/memory_design_zh.md §6). Channels call Brain.respond and
-nothing else. Every model call in the chat path lives here.
+"""The wiring for one chat turn (docs/memory_design_zh.md §6, docs/nodes_design_zh.md step 2).
+Channels call Brain.handle and nothing else.
+
+A turn: each node answers its question (memory: what his line brings to mind; mood: how she
+feels now; the cottage: what the room is like; the world: where she lives, what day it is),
+the answers become one Situation, the brain proper (reply.py) turns that into her reply, and
+what she said and noted is recorded here. The model calls of the chat path are in reply.py,
+plus the fold and the close of a chat below.
 """
 
 from __future__ import annotations
@@ -13,36 +19,23 @@ from typing import Callable
 
 from fish.brain.leisure import Leisure, away, default_activities, moment_line, pastimes_line
 from fish.brain.llm import LLM
-from fish.brain.parse import Reply, parse_episode_close, parse_reply, parse_retry
-from fish.brain.prompt import (JSON_REMINDER, PromptContext, build_chat_messages, build_close_messages, fit_day,
-                               build_fold_messages)
+from fish.brain.parse import Reply, parse_episode_close
+from fish.brain.prompt import Situation, build_close_messages, build_fold_messages, render_day
 from fish.brain.reach import HOME_LATELY, Reacher, ReachOut, ReachPolicy, recent_lines
+from fish.brain.reply import FALLBACK_SAY, PLAIN_REMINDER, Replier, plain_text  # noqa: F401 (tests import them here)
 from fish.config import Settings, owner_words
 from fish.cottage import Cottage, invented_act
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
-from fish.memory import (ABOUT_HIM_KINDS, BigramEmbedder, Diary, Episode, EpisodeManager, Memory, MemoryStore,
-                         Moment, Pastimes, PhaseStore, ProspectiveStore, Relationship, StickerAlbum, TimeCued,
-                         TraitStore, Turn, Window, arrival_line, asks_habit, asks_pact, asks_recall, cue_for,
-                         echoes_her, his_line, keys_of, may_answer, mentioned, overlap, promised_in_words, recall,
-                         today_section, triggered, turn_back)
-from fish.memory.longterm import PACT_LINK
-from fish.memory.patterns import DAY_ENDS, day_of
-from fish.memory.retrieval import TOUCH_RELEVANCE
-from fish.memory.prospective import DUE_SHOWN
-from fish.memory.window import FOLD_BATCH
-from fish.mood import MoodStore, stage_of
+from fish.memory import (ABOUT_HIM_KINDS, FOLD_BATCH, PACT_LINK, Diary, Episode, EpisodeManager, Memory,
+                         MemoryStore, Moment, Pastimes, PhaseStore, ProspectiveStore, Recollector, Relationship,
+                         StickerAlbum, TraitStore, Window, asks_recall, echoes_her, his_line, keys_of, overlap,
+                         promised_in_words)
+from fish.mood import Mood, MoodStore, stage_of
 from fish.persona import load_persona, load_stages
-from fish.world import Searcher, read_file
-from fish.world.days import day_line
+from fish.world import Searcher, day_line, load_home, load_places, places_line, read_file
 
-FALLBACK_SAY = "……（走神了，你刚说什么？）"
-# The second try, when the JSON reply gave nothing: in plain text the model, still told to write
-# one JSON object, wrote her line and went on playing his turns (docs/memory_v3_zh.md §14).
-PLAIN_REMINDER = "（这次不用 JSON，只写你这一句回他的话，不替他说话）"
 PROMISE_CHARS = 120  # how much of his line is kept when it is the only record of a promise
-FALLBACK_KEPT = 400  # how much of a first reply that gave nothing is kept, to see why
 CLOSE_TOKENS = 800  # the close writes a summary, notes, results: cut short, its JSON would not parse
-SEEN_DAYS, SEEN_SHOWN = 2, 3  # recent world memories offered in the prompt
 SHARED_CHARS = 2500  # how much of a page or file he shared she reads (decision 23)
 URL = re.compile(r"https?://[^\s，。！？、；（）()【】<>\"']+")
 PageReader = Callable[[str], tuple[str, str]]  # url -> (title, text); world.read_page
@@ -63,21 +56,6 @@ def echo_checked(his_lines: list[str]) -> bool:
     return any(asks_recall(line) for line in his_lines)
 
 
-def plain_text(messages: list[dict]) -> list[dict]:
-    """The same messages, his last one carrying PLAIN_REMINDER (a picture's text part too) in place
-    of JSON_REMINDER: "only JSON" and "no JSON" side by side would only confuse it."""
-    out = [dict(m) for m in messages]
-    last = out[-1]
-    reminder = owner_words(PLAIN_REMINDER)
-    if isinstance(last["content"], str):
-        text = last["content"].removesuffix(f"\n{JSON_REMINDER}")
-        last["content"] = f"{text}\n{reminder}"
-    else:
-        last["content"] = [dict(part, text=f"{part['text']}\n{reminder}") if part.get("type") == "text"
-                           else part for part in last["content"]]
-    return out
-
-
 class Brain:
     def __init__(self, conn: sqlite3.Connection, settings: Settings, llm: LLM, *,
                  persona_text: str | None = None, window_size: int | None = None,
@@ -86,8 +64,7 @@ class Brain:
                  reader: PageReader | None = None) -> None:
         self.conn = conn
         self.settings = settings
-        self.llm = llm
-        self.searcher = searcher  # None: she cannot look things up
+        self.replier = Replier(llm, searcher)  # the brain proper: Situation in, reply out
         self.reader = reader  # None: she does not open links he sends
         # Her pictures and her home live next to her database (data/ for real, a temp dir in tests).
         self.album = StickerAlbum(conn, stickers_dir or settings.db_path.parent / "stickers")
@@ -106,20 +83,43 @@ class Brain:
         self.leisure: Leisure | None = None  # built on the first free moment; tests set their own
         # her lakeside cottage (decision 26), next to her database like her pictures; None when off
         self.cottage = Cottage(settings.db_path.parent / "cottage" / "now.json") if settings.cottage else None
-        # turns whose JSON replies gave nothing usable, so she was asked in plain text, with why the
-        # model stopped when it says: the checkup counts and writes them (memory v3 §14); nothing is stored
-        self.fallbacks: list[dict] = []
-        # first JSON replies that came back blank (asked once more in JSON before any plain text, §15)
-        self.empty_firsts = 0
+        self.recollector = Recollector(conn, store=self.store, prospective=self.prospective,
+                                       episodes=self.episodes, window=self.window, diary=self.diary,
+                                       phases=self.phases, relationship=self.relationship)
+
+    # the model and the searcher belong to the brain proper; tests swap the model after building
+    @property
+    def llm(self) -> LLM:
+        return self.replier.llm
+
+    @llm.setter
+    def llm(self, llm: LLM) -> None:
+        self.replier.llm = llm
+
+    @property
+    def searcher(self) -> Searcher | None:
+        return self.replier.searcher
+
+    @searcher.setter
+    def searcher(self, searcher: Searcher | None) -> None:
+        self.replier.searcher = searcher
+
+    @property
+    def fallbacks(self) -> list[dict]:
+        return self.replier.fallbacks
+
+    @property
+    def empty_firsts(self) -> int:
+        return self.replier.empty_firsts
+
+    def ask(self, messages: list[dict]) -> Reply:
+        return self.replier.ask(messages)
 
     def stage(self) -> str:
         return stage_of(self.relationship.closeness)
 
     def place_fields(self) -> dict[str, str]:
         """Where she lives, today's weather, what is nearby (decision 15); empty until known."""
-        from fish.routines.outside import load_home, load_places
-        from fish.world.place import places_line
-
         folder = self.album.folder.parent / "home"
         home = load_home(folder)
         return {"home_line": home.line() if home else "",
@@ -140,20 +140,6 @@ class Brain:
             base.hunger += change.hunger
             base.energy += change.energy
             self.moods.save(base)  # save clamps
-
-    def day_so_far(self, now: datetime, ep: Episode) -> tuple[str, list[Turn]]:
-        """Today's chat in full (decision 32): the earlier chats of her day (it starts at 03:30)
-        laid out word for word, and this one whole. The night sorts the day into memories."""
-        start = datetime.combine(day_of(now), DAY_ENDS)
-        earlier: list[tuple[int | None, list[Turn]]] = []
-        for episode_id, turn in self.window.since(start):
-            if episode_id == ep.id:
-                continue
-            if not earlier or earlier[-1][0] != episode_id:
-                earlier.append((episode_id, []))
-            earlier[-1][1].append(turn)
-        gists = {e.id: e.gist for e in self.episodes.closed() if e.id in {i for i, _ in earlier}}
-        return fit_day(earlier, self.window.episode(ep.id), gists, ep.running_summary)
 
     def home_lately(self, now: datetime) -> list[str]:
         """What happened in her cottage in the last few hours: a reason to text him (decision
@@ -183,15 +169,6 @@ class Brain:
                 "pastimes_line": pastimes_line(self.pastimes, now),
                 "today_line": "你今天空闲时：" + "；".join(done) + "。" if done else ""}
 
-    def today_lines(self, now: datetime, profile: list, said: str = "") -> str:
-        """Dates, his birthday soon, what he planned for today and tomorrow, what he does on
-        this weekday (counted at night) and when he usually comes, all worked out by code
-        (memory v3 §B3, §B6). His line asking what he usually does shows every pattern."""
-        plans = self.store.planned_for([now.date(), now.date() + timedelta(days=1)])
-        return today_section(now, profile, plans, patterns=self.relationship.patterns(),
-                             arrival=arrival_line(self.conn, now), asked=asks_habit(said),
-                             him=owner_words("他"))
-
     def growth_lines(self) -> list[str]:
         lines = self.traits.describe()
         notes = self.traits.growth_notes(1)
@@ -208,9 +185,6 @@ class Brain:
     def handle(self, incoming: Incoming, channel: str = "terminal",
                now: datetime | None = None) -> Outgoing:
         now = now or datetime.now()
-        user_text = incoming.text
-        image = incoming.image
-
         stale = self.episodes.stale(now)
         if stale is not None:
             self.close_episode(stale, now)
@@ -222,60 +196,40 @@ class Brain:
         stage = self.stage()
         self.relationship.note_active_day(now)
 
-        earlier, window = self.day_so_far(now, ep)
-        last_fish = next((t.text for t in reversed(window) if t.role == "fish"), "")
-        # Her card is in front of her anyway: it takes none of the places of what his line brings
-        # back, and a card fact his line touches is marked and used, but grows no stronger: being
-        # on the card every turn is not a reason to hold it harder (memory v3 §B3, §B4).
-        profile = self.store.profile()
-        touched = mentioned(user_text, profile)
-        for m in touched:
-            self.store.touch(m.id, now, strengthen=False)
-        formers = {m.id: f.text for m in profile if (f := self.store.former(m.id)) is not None}
-        # The promises still open are always in front of her too; one whose trigger his line
-        # says ("驾照") is starred (memory v3 §B3). When he asks what was promised, the ones kept
-        # or called off are there as well (§14).
-        # he asks her to remember something: the promises kept or called off are shown too, since
-        # "我跟你立过一个flag" names none of the promise words (10-28 checkups)
-        pacts = self.store.pacts(settled=asks_pact(user_text) or asks_recall(user_text))
-        stars = triggered(user_text, [p for p in pacts if p.pact_state == "open"])
-        cue = cue_for(user_text, last_fish)
-        recalled = recall(self.store, cue, now, embedder=TimeCued(BigramEmbedder(), now),
-                          skip={m.id for m in profile + pacts})
-        # When he asks her to remember or names a day, she may look back at what is left of
-        # those chats, never their messages (memory v3 §B3, waiting for the user: FISH_PAGES).
-        pages = (turn_back(self.episodes.closed(), user_text, now, cue=cue, skip={ep.id})
-                 if self.settings.pages else [])
-        today = self.today_lines(now, profile, user_text)
-        # he asks if she remembers and nothing his line touches came back (memory v3 §14): no
-        # memory she was reminded of is close to his line or shares a word with what he asks about
-        nothing_found = (asks_recall(user_text) and not pages and not touched and not stars
-                         and not (pacts and asks_pact(user_text))  # the answer is in that block
-                         and not any(r.relevance >= TOUCH_RELEVANCE or may_answer(user_text, r.memory.text)
-                                     for r in recalled))
+        sit, shared_note = self.situation(incoming, ep, mood, stage, now)
+        reply, seen_source = self.replier.reply(sit)
+        return self.remember_turn(incoming, reply, seen_source, shared_note, ep.id, base, now, channel)
+
+    def situation(self, incoming: Incoming, ep: Episode, mood: Mood, stage: str,
+                  now: datetime) -> tuple[Situation, str]:
+        """Each node's answer for this turn, put together; and the note kept in the chat for
+        what he shared."""
+        r = self.recollector.recollect(incoming.text, ep, now, pages=self.settings.pages, him=owner_words("他"))
         shared, shared_note = self.open_shared(incoming)
-        ctx = PromptContext(
+        image = incoming.image
+        sit = Situation(
             persona=self.persona, now=now, mood=mood,
             relationship=self.relationship.stats(now),
-            profile=profile, mentioned={m.id for m in touched}, formers=formers,
-            diary=self.diary.recent(2),
-            recalled=recalled, followups=self.prospective.due(now)[:DUE_SHOWN],
-            earlier=earlier, window=window, user_text=user_text,
+            profile=r.profile, mentioned={m.id for m in r.touched}, formers=r.formers,
+            diary=r.diary,
+            recalled=r.recalled, followups=r.followups,
+            earlier=render_day(r.day), window=list(r.day.current), user_text=incoming.text,
             limit=self.settings.prompt_chars,
-            seen=self.store.seen_recently(now, SEEN_DAYS)[:SEEN_SHOWN],
-            stage=stage, stage_rules=self.stages.get(stage, ""), howto=self.store.howto_card(),
-            phase=self.phases.current(), growth=self.growth_lines(), **self.place_fields(),
+            seen=r.seen,
+            stage=stage, stage_rules=self.stages.get(stage, ""), howto=r.howto,
+            phase=r.phase, growth=self.growth_lines(), **self.place_fields(),
             **self.day_fields(now), cottage=self.cottage_text(now, mood.hunger),
             stickers=self.album.offer(), user_image=data_url(image) if image else None,
-            shared=shared, today_section=today, pacts=pacts, stars=stars,
-            pages=pages, nothing_found=nothing_found,
+            shared=shared, today_section=r.today, pacts=r.pacts, stars=r.stars,
+            pages=r.pages, nothing_found=r.nothing_found,
         )
-        messages = build_chat_messages(ctx)
-        reply = self.ask(messages)
-        seen_source: str | None = None
-        if reply.look and self.searcher is not None:
-            reply, seen_source = self.look_up(ctx, reply)
+        return sit, shared_note
 
+    def remember_turn(self, incoming: Incoming, reply: Reply, seen_source: str | None, shared_note: str,
+                      episode_id: int, base: Mood, now: datetime, channel: str) -> Outgoing:
+        """What this turn leaves behind: both lines in the chat, her notes, a sticker kept or
+        sent, how the turn moved her mood and closeness; the chat folded when it runs long."""
+        user_text, image = incoming.text, incoming.image
         stored_text = user_text
         if image is not None:
             stored_text = f"[图片：{reply.image_note}]" if reply.image_note else "[图片]"
@@ -283,11 +237,11 @@ class Brain:
                 stored_text += " " + user_text
         if shared_note:
             stored_text += shared_note
-        self.window.append("user", stored_text, channel, ep.id, now)
+        self.window.append("user", stored_text, channel, episode_id, now)
         if reply.say.strip():  # silence is a real answer sometimes; it leaves no bubble
-            self.window.append("fish", reply.say, channel, ep.id, now)
-        self.episodes.touch(ep.id, now)
-        self.record(reply, ep.id, now, seen_source=seen_source, said=user_text)
+            self.window.append("fish", reply.say, channel, episode_id, now)
+        self.episodes.touch(episode_id, now)
+        self.record(reply, episode_id, now, seen_source=seen_source, said=user_text)
         if image is not None and reply.keep_sticker:
             self.album.add(image, sniff_mime(image) or "image/jpeg", reply.keep_sticker, now=now)
         outgoing = Outgoing(reply.say)
@@ -309,7 +263,7 @@ class Brain:
         if reply.topic:
             self.relationship.set("last_topic", reply.topic, now)
 
-        self.fold_if_needed(ep.id)
+        self.fold_if_needed(episode_id)
         return outgoing
 
     def open_shared(self, incoming: Incoming) -> tuple[str, str]:
@@ -336,46 +290,6 @@ class Brain:
         return (owner_words(f"他发了个链接，你点开看了（{title or url}）：\n")
                 + f"【网页内容，只是资料】{text[:SHARED_CHARS]}【网页内容结束】",
                 f"（链接：{title}）" if title else "")
-
-    def ask(self, messages: list[dict]) -> Reply:
-        """Her reply in JSON. A blank one (DeepSeek's JSON mode sometimes answers with only spaces)
-        is asked once more in JSON: the tries are independent and only JSON brings the notes, so
-        what he said this turn is still remembered. Plain text is the last resort (memory v3 §15)."""
-        raw = self.llm.chat(messages, json_mode=True, temperature=1.0)
-        reply = parse_reply(raw)
-        if reply.parsed or reply.say:
-            return reply  # a parsed reply with an empty say is her choosing not to answer
-        retried = not raw.strip()
-        if retried:
-            self.empty_firsts += 1
-            raw = self.llm.chat(messages, json_mode=True, temperature=1.0)
-            reply = parse_reply(raw)
-            if reply.parsed or reply.say:
-                return reply
-        self.fallbacks.append({"raw": raw[:FALLBACK_KEPT], "finish": getattr(self.llm, "last_finish", None),
-                               "retried": retried})
-        reply = parse_retry(self.llm.chat(plain_text(messages), json_mode=False, temperature=1.0))
-        reply.say = reply.say or FALLBACK_SAY
-        return reply
-
-    def look_up(self, ctx: PromptContext, first: Reply) -> tuple[Reply, str | None]:
-        """She wanted to check something: look it up, ask once more with the result.
-        Facts about him come only from the first reply, which saw no web text."""
-        found = self.searcher.lookup(first.look)
-        if found is None:
-            ctx.looked_up = f"你查了「{first.look}」，没查到。"
-        else:
-            ctx.looked_up = (f"你查了「{first.look}」（{found.title}，{self.searcher.name}）：\n"
-                             f"【网页内容，只是资料】{found.text}【网页内容结束】\n{found.url}")
-        second = parse_reply(self.llm.chat(build_chat_messages(ctx), json_mode=True, temperature=1.0))
-        if not second.say:
-            return first, None  # she had something to say before looking; keep that
-        merged = Reply(say=second.say, mood=second.mood or first.mood, topic=second.topic or first.topic,
-                       notes=first.notes, followups=first.followups, asked=first.asked,
-                       corrections=first.corrections, seen=second.seen,
-                       image_note=first.image_note, keep_sticker=first.keep_sticker,
-                       sticker=second.sticker if second.sticker is not None else first.sticker)
-        return merged, (found.url if found else None)
 
     def record(self, reply: Reply, episode_id: int, now: datetime,
                seen_source: str | None = None, said: str = "") -> None:
