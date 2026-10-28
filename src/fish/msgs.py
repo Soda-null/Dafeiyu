@@ -65,6 +65,17 @@ class HomeEvent:
 
 
 @dataclass(frozen=True)
+class MoodMoved:
+    """Something moved how she feels: hours awake, a meal, a nap, a chore, a free moment.
+    Deltas, added by the mood node one after another, each kept within 0–100."""
+    at: datetime
+    hunger: float = 0.0
+    energy: float = 0.0
+    boredom: float = 0.0
+    why: str = ""
+
+
+@dataclass(frozen=True)
 class SheAte:
     at: datetime
     hunger: float  # how much it took off, negative

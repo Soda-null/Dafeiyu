@@ -97,3 +97,16 @@ def test_the_launch_file_knows_only_the_bus_and_the_messages():
     src = (SRC / "app.py").read_text(encoding="utf-8")
     used = set(re.findall(r"^\s*(?:from|import)\s+fish\.([a-z_]+)", src, re.M))
     assert used <= {"bus", "msgs"}, f"app.py wires nodes it is handed; it imports none: {sorted(used)}"
+
+
+# step 4: how she feels changes only through MoodMoved and the mood node. Old debts: a chat
+# turn's own nudge (respond.remember_turn) and the night's rest (routines/nightly.py, step 5)
+MOOD_WRITE = re.compile(r"moods?\.save\(|MoodStore\([^)]*\)\.save\(|\.rest\(")
+KNOWN_MOOD_WRITERS = {"brain/respond.py", "routines/nightly.py"}
+
+
+def test_only_the_mood_node_changes_how_she_feels():
+    found = {rel for rel, src in _node_files() if MOOD_WRITE.search(src) and not rel.startswith("mood/")}
+    new, paid = found - KNOWN_MOOD_WRITERS, KNOWN_MOOD_WRITERS - found
+    assert not new, f"new direct write to her mood (publish a MoodMoved instead): {sorted(new)}"
+    assert not paid, f"fixed, strike from KNOWN_MOOD_WRITERS: {sorted(paid)}"

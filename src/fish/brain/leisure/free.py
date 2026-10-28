@@ -22,7 +22,7 @@ from fish.brain.prompt import WEEKDAYS
 from fish.brain.world import Browser
 from fish.memory import MemoryStore, Moment, Pastimes
 from fish.mood import MoodStore
-from fish.msgs import SheSaid, TimePassed
+from fish.msgs import MoodMoved, SheSaid, TimePassed
 from fish.world import Fetch, Searcher, load_sources, urllib_fetch
 
 if TYPE_CHECKING:
@@ -166,15 +166,15 @@ class Leisure:
 
     def finish(self, kit: Kit, moment_id: int, *, did_something: bool,
                moved: dict[str, float] | None = None) -> Moment:
-        moods = self.brain.moods
-        base = moods.load()
-        for key, delta in (moved or {}).items():
-            setattr(base, key, min(100.0, max(0.0, getattr(base, key) + delta)))
+        # what the chore did to her body, then what the free moment itself did: two messages, in
+        # that order, each kept within 0–100 (docs/nodes_design_zh.md step 4)
+        if moved:
+            self.brain.bus.publish(MoodMoved(kit.now, hunger=moved.get("hunger", 0.0),
+                                             energy=moved.get("energy", 0.0), why="家务"))
         if did_something:
-            base.boredom = max(0.0, base.boredom + BOREDOM_AFTER_DOING)
+            self.brain.bus.publish(MoodMoved(kit.now, boredom=BOREDOM_AFTER_DOING, why="空闲时做了点事"))
         else:
-            base.energy = min(100.0, base.energy + ENERGY_AFTER_NOTHING)
-        moods.save(base)
+            self.brain.bus.publish(MoodMoved(kit.now, energy=ENERGY_AFTER_NOTHING, why="空闲时发了会儿呆"))
         return next(m for m in kit.pastimes.moments(kit.now - timedelta(days=1)) if m.id == moment_id)
 
     def home(self, now: datetime) -> str:

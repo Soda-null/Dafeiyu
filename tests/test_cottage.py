@@ -321,3 +321,60 @@ def test_life_shows_her_day_without_her_memories(tmp_path, capsys):
     assert "冰箱里有" in out and "南瓜" in out and "09:00 他往冰箱里放了南瓜" in out
     assert "14:00 什么都没干，发了会儿呆" in out and "洗了碗" not in out
     assert "看了半天鸭子" in out and "Springfield" not in out
+
+
+def test_the_room_says_on_the_bus_what_time_did(tmp_path):
+    """Nodes step 4: the room node publishes what a step did; the mood node is the only one that
+    changes how she feels; a line written into the room by another program (`fish cottage put`)
+    is said on the next step all the same, and only once."""
+    from fish.bus import Bus
+    from fish.cottage import RoomNode
+    from fish.mood import Mood, MoodNode, MoodStore
+    from fish.msgs import HomeEvent, MoodMoved, SheAte, SheSlept
+
+    bus, heard = Bus(), []
+    for topic in (MoodMoved, SheAte, SheSlept, HomeEvent):
+        bus.subscribe(topic, heard.append)
+    conn = connect(tmp_path / "fish.db")
+    store = MoodStore(conn)
+    store.save(Mood(energy=50, boredom=20, hunger=98))
+    bus.subscribe(MoodMoved, MoodNode(store).on_moved)
+    c = home(tmp_path, datetime(2026, 11, 2, 7, 0))
+    room = RoomNode(bus, c)
+    room.step(datetime(2026, 11, 2, 7, 0))  # first step: what the record already holds is said once
+    heard.clear()
+    room.step(datetime(2026, 11, 2, 12, 0))  # woke at 8; lunch starts
+    room.step(datetime(2026, 11, 2, 13, 0))  # lunch was ready at 12:40
+    kinds = [type(m).__name__ for m in heard]
+    assert kinds.count("SheSlept") == 1 and kinds.count("SheAte") == 1 and kinds.count("MoodMoved") == 2
+    slept = next(m for m in heard if isinstance(m, SheSlept))
+    assert (slept.start.hour, slept.end.hour) == (0, 8)
+    assert [m.line for m in heard if isinstance(m, HomeEvent)] == ["开始做午饭，用青菜、鸡蛋", "午饭做好了，吃了"]
+    assert all(m.routine for m in heard if isinstance(m, HomeEvent))
+    assert 0.0 <= store.load().hunger <= 100.0  # 98 + a morning − a lunch, kept within bounds
+    heard.clear()
+    Cottage(c.path).give("南瓜", datetime(2026, 11, 2, 13, 5))  # he, from another program
+    room.step(datetime(2026, 11, 2, 13, 10))
+    room.step(datetime(2026, 11, 2, 13, 20))
+    assert [m.line for m in heard if isinstance(m, HomeEvent)] == ["他往冰箱里放了南瓜"]
+    assert room.lately(datetime(2026, 11, 2, 13, 30), timedelta(hours=1)) == ["13:05 他往冰箱里放了南瓜"]
+
+
+def test_mood_moves_only_within_its_bounds():
+    from fish.mood import Mood, MoodNode
+    from fish.msgs import MoodMoved
+
+    class Store:
+        mood = Mood(energy=95, boredom=3, hunger=50)
+
+        def load(self):
+            return Mood(**self.mood.__dict__)
+
+        def save(self, m):
+            self.mood = m
+
+    s = Store()
+    node = MoodNode(s)
+    node.on_moved(MoodMoved(MON, energy=+25, boredom=-10))
+    node.on_moved(MoodMoved(MON, energy=-5))
+    assert (s.mood.energy, s.mood.boredom, s.mood.hunger) == (95, 0, 50)  # 100 then 95; not 115 − 5 = 110 → 100

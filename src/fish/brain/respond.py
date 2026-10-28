@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 from typing import Callable
@@ -27,14 +27,14 @@ from fish.bus import Bus
 from fish.clock import Clock
 from fish.brain.reply import FALLBACK_SAY, PLAIN_REMINDER, Replier, plain_text  # noqa: F401 (tests import them here)
 from fish.config import Settings, owner_words
-from fish.cottage import Cottage, invented_act
+from fish.cottage import Cottage, RoomNode, invented_act
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
-from fish.msgs import SheSaid, TimePassed
+from fish.msgs import SheSaid
 from fish.memory import (ABOUT_HIM_KINDS, FOLD_BATCH, PACT_LINK, Diary, Episode, EpisodeManager, Memory,
                          MemoryStore, Moment, Pastimes, PhaseStore, ProspectiveStore, Recollector, Relationship,
                          StickerAlbum, TraitStore, Window, asks_recall, echoes_her, his_line, keys_of, overlap,
                          promised_in_words)
-from fish.mood import Mood, MoodStore, stage_of
+from fish.mood import Mood, MoodNode, MoodStore, stage_of
 from fish.persona import load_persona, load_stages
 from fish.world import Searcher, day_line, load_home, load_places, places_line, read_file
 
@@ -101,7 +101,10 @@ class Brain:
                                kitchen=self.cottage is not None, home_lately=self.home_lately,
                                say=lambda text: self._say(text), channel=lambda: self._channel)
         self.leisure_node = LeisureNode(self.free_time)
-        wire(self.bus, room=self.on_time, reach=self.reach, leisure=self.leisure_node, chat=self.keep_her_line)
+        self.room = RoomNode(self.bus, self.cottage) if self.cottage is not None else None
+        self.mood_node = MoodNode(self.moods)
+        wire(self.bus, room=self.room, mood=self.mood_node, reach=self.reach, leisure=self.leisure_node,
+             chat=self.keep_her_line)
 
     # the model and the searcher belong to the brain proper; tests swap the model after building
     @property
@@ -143,39 +146,19 @@ class Brain:
                 "places": places_line(load_places(folder))}
 
     def move_time(self, now: datetime) -> None:
-        """Bring her cottage up to now (decision 26): she sleeps, eats at mealtimes, food goes
-        off; her hunger and energy move with it. A file he broke by hand leaves it as it is."""
-        if self.cottage is None:
-            return
-        try:
-            change = self.cottage.advance(now)
-        except ValueError:
-            return
-        if change.hunger or change.energy:
-            base = self.moods.load()
-            base.hunger += change.hunger
-            base.energy += change.energy
-            self.moods.save(base)  # save clamps
+        """Bring her cottage up to now (decision 26) before a chat turn; the room node says
+        on the bus what that did to her (step 4)."""
+        if self.room is not None:
+            self.room.step(now)
 
     def home_lately(self, now: datetime) -> list[str]:
         """What happened in her cottage in the last few hours: a reason to text him (decision
         26). Only recent, so one event does not knock on the gate all day; never a meal eaten on
         time, or she texts "饭做好了" twice a day (the 10-28 trial)."""
-        if self.cottage is None:
-            return []
-        try:
-            # the room was just brought up to now (tick): what happened this very minute counts
-            return self.cottage.between(now - HOME_LATELY, now + timedelta(minutes=1), routine=False)
-        except ValueError:
-            return []
+        return self.room.lately(now, HOME_LATELY) if self.room is not None else []
 
     def cottage_text(self, now: datetime, hunger: float) -> str:
-        if self.cottage is None:
-            return ""
-        try:
-            return self.cottage.for_chat(now, hunger)
-        except ValueError:
-            return ""
+        return self.room.view(now, hunger) if self.room is not None else ""
 
     def day_fields(self, now: datetime) -> dict[str, str]:
         """What day it is, what she is following, what she did with her free time today (decision 24)."""
@@ -377,9 +360,6 @@ class Brain:
     def consider_reach_out(self, now: datetime | None = None) -> ReachOut | None:
         """Whether she wants to say something right now (the reach node's question)."""
         return self.reach.consider(now or datetime.now())
-
-    def on_time(self, m: TimePassed) -> None:
-        self.move_time(m.now)
 
     def keep_her_line(self, m: SheSaid) -> None:
         """A line she said first went through: it is part of the conversation now, and the

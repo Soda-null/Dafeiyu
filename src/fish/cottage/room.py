@@ -18,7 +18,7 @@ from pathlib import Path
 
 from fish.config import owner_words
 from fish.cottage.rules import (ACTIONS, ATE_RECENTLY_HOURS, CARRY, ENERGY_PER_HOUR, FRIDGE_SLOTS, GOODS, HUNGER_PER_HOUR,
-                                HUNGRY, RICE, RICE_FULL, SHOP_WALK_MINUTES, SINK_LIMIT, TIRED, WAKE_AT, Good,
+                                HUNGRY, RICE, RICE_FULL, SHOP_WALK_MINUTES, SINK_LIMIT, SLEEP_FROM, TIRED, WAKE_AT, Good,
                                 asleep_hours, in_stock, mealtime, shop_open)
 
 KEEP_EVENTS = timedelta(days=2)
@@ -63,11 +63,15 @@ class Change:
     lines: list[str] = field(default_factory=list)
     hunger: float = 0.0
     energy: float = 0.0
+    ate: list[tuple[datetime, float]] = field(default_factory=list)  # (when, hunger it took off)
+    slept: list[tuple[datetime, datetime]] = field(default_factory=list)  # (from, to): a nap or the night
 
     def __iadd__(self, other: "Change") -> "Change":
         self.lines += other.lines
         self.hunger += other.hunger
         self.energy += other.energy
+        self.ate += other.ate
+        self.slept += other.slept
         return self
 
 
@@ -169,9 +173,11 @@ class Cottage:
             done = datetime.fromisoformat(room.until)
             if room.doing == ACTIONS["nap"].doing:
                 room.bed = "乱"
+                change.slept.append((done - timedelta(minutes=ACTIONS["nap"].minutes), done))
             if room.pending:  # the meal is ready: she eats now, not when she started cooking
                 self.note(room, done, room.pending["line"], change, routine=room.pending.get("routine", False))
                 change.hunger += room.pending["hunger"]
+                change.ate.append((done, room.pending["hunger"]))
                 room.ate, room.pending = _iso(done), {}
             room.doing, room.until = "", ""
         if asleep_hours(now):
@@ -181,6 +187,8 @@ class Cottage:
             if room.doing == "睡觉":
                 room.doing = ""
             room.bed = "乱"  # up for the day; the bed stays as she left it until she makes it
+            woke = datetime.combine(now.date() if now.time() >= WAKE_AT else now.date() - timedelta(days=1), WAKE_AT)
+            change.slept.append((datetime.combine(woke.date(), SLEEP_FROM), woke))
 
         for item in list(room.fridge):
             if _days_left(item, now.date()) <= 0:
