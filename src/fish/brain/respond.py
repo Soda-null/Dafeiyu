@@ -22,7 +22,7 @@ from fish.config import Settings, owner_words
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
 from fish.memory import (BigramEmbedder, Diary, Episode, EpisodeManager, MemoryStore, Moment, Pastimes,
                          PhaseStore, ProspectiveStore, Relationship, StickerAlbum, TimeCued, TraitStore,
-                         Window, cue_for, mentioned, recall, today_section)
+                         Window, cue_for, mentioned, recall, today_section, triggered)
 from fish.memory.prospective import DUE_SHOWN
 from fish.memory.window import FOLD_BATCH
 from fish.mood import MoodStore, stage_of
@@ -134,8 +134,12 @@ class Brain:
         for m in touched:
             self.store.touch(m.id, now)
         formers = {m.id: f.text for m in profile if (f := self.store.former(m.id)) is not None}
+        # The promises still open are always in front of her too; one whose trigger his line
+        # says ("驾照") is starred (memory v3 §B3).
+        pacts = self.store.pacts()
         recalled = recall(self.store, cue_for(user_text, last_fish), now,
-                          embedder=TimeCued(BigramEmbedder(), now), skip={m.id for m in profile})
+                          embedder=TimeCued(BigramEmbedder(), now),
+                          skip={m.id for m in profile + pacts})
         today = self.today_lines(now, profile)
         shared, shared_note = self.open_shared(incoming)
         ctx = PromptContext(
@@ -151,7 +155,7 @@ class Brain:
             phase=self.phases.current(), growth=self.growth_lines(), **self.place_fields(),
             **self.day_fields(now),
             stickers=self.album.offer(), user_image=data_url(image) if image else None,
-            shared=shared, today_section=today,
+            shared=shared, today_section=today, pacts=pacts, stars=triggered(user_text, pacts),
         )
         messages = build_chat_messages(ctx)
         reply = self.ask(messages)
@@ -253,12 +257,12 @@ class Brain:
         for n in reply.notes:
             self.store.note(n.kind, n.text, importance=n.importance, valence=n.valence,
                             arousal=n.arousal, about=n.about, source_episode=episode_id, tags=n.tags,
-                            now=now, said=said)
+                            now=now, said=said, heard="chat")
         for n in reply.seen:
             self.store.note("world", n.text, importance=n.importance, valence=n.valence,
                             source_episode=episode_id, tags=n.tags, source=seen_source, now=now)
         for f in reply.followups:
-            self.prospective.add(f.text, f.due, now=now)
+            self.add_followup(f.text, f.due, now)
         for c in reply.corrections:
             try:
                 old = self.store.get(c.old_id)
@@ -270,6 +274,11 @@ class Brain:
         for i in reply.asked:
             if i in open_ids:
                 self.prospective.close(i)
+
+    def add_followup(self, text: str, due: str, now: datetime) -> None:
+        """A follow-up about an open promise points at it, so it is never let go (memory v3 §B2)."""
+        pact = self.store.pact_for(text)
+        self.prospective.add(text, due, source_memory=pact.id if pact else None, now=now)
 
     # --- she speaks first (decision 10) ----------------------------------------
 
@@ -342,17 +351,23 @@ class Brain:
         already = [m.text for m in self.store.alive() if m.source_episode == ep.id]
         if not turns and not ep.running_summary:
             return self.episodes.close(ep.id, summary="", gist="", importance=1, valence=0.0, now=now)
+        pacts = self.store.pacts()
         raw = self.llm.chat(
             build_close_messages(ep.running_summary, turns, already, ep.started[:10],  # the chat's own date
-                                 known=[m.text for m in self.store.profile()]),
+                                 known=[m.text for m in self.store.profile()], pacts=pacts),
             json_mode=True, temperature=0.3, max_tokens=600,
         )
         fallback = ep.running_summary or "、".join(t.text for t in turns)[:200]
         closed = parse_episode_close(raw, fallback)
         for n in closed.notes:
             self.store.note(n.kind, n.text, importance=n.importance, valence=n.valence,
-                            arousal=n.arousal, about=n.about, source_episode=ep.id, tags=n.tags, now=at)
+                            arousal=n.arousal, about=n.about, source_episode=ep.id, tags=n.tags, now=at,
+                            heard="close")
         for f in closed.followups:
-            self.prospective.add(f.text, f.due, now=at)
+            self.add_followup(f.text, f.due, at)
+        shown = {p.id for p in pacts}  # only a promise she was shown can be settled
+        for pact_id, state in closed.pact_done:
+            if pact_id in shown:
+                self.store.settle(pact_id, state, now=at)
         return self.episodes.close(ep.id, summary=closed.summary, gist=closed.gist,
                                    importance=closed.importance, valence=closed.valence, now=now)

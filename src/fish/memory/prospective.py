@@ -78,10 +78,13 @@ class ProspectiveStore:
 
     def expire(self, now: datetime | None = None, grace_days: int = GRACE_DAYS) -> list[Followup]:
         """Nightly: give up on follow-ups she never got to ask; returns them. They are only closed,
-        never turned into memories (memory v3)."""
+        never turned into memories (memory v3). One about a promise still open between them
+        ("去海边了没") is never given up: the promise has no day it runs out."""
         cutoff = ((now or datetime.now()).date() - timedelta(days=grace_days)).isoformat()
         rows = self.conn.execute(
-            "SELECT * FROM prospective WHERE status = 'open' AND due < ? ORDER BY due, id", (cutoff,)
+            "SELECT * FROM prospective p WHERE status = 'open' AND due < ? AND NOT EXISTS"
+            " (SELECT 1 FROM memories m WHERE m.id = p.source_memory AND m.superseded_by IS NULL"
+            "  AND m.pact_state = 'open') ORDER BY due, id", (cutoff,)
         ).fetchall()
         expired = [_from_row(r) for r in rows]
         for f in expired:

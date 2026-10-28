@@ -77,6 +77,7 @@ class EpisodeClose:
     valence: float = 0.0
     notes: list[Note] = field(default_factory=list)
     followups: list[FollowupRequest] = field(default_factory=list)
+    pact_done: list[tuple[int, str]] = field(default_factory=list)  # (memory id, kept / dropped)
     parsed: bool = True
 
 
@@ -217,4 +218,15 @@ def parse_episode_close(raw: str, fallback_summary: str) -> EpisodeClose:
         valence=_float(data.get("valence")),
         notes=parse_notes(data.get("notes")),
         followups=parse_followups(data.get("followups")),
+        pact_done=parse_pact_done(data.get("pact_done")),
     )
+
+
+def parse_pact_done(items) -> list[tuple[int, str]]:
+    """[{"id": 17, "state": "kept"}]: promises he kept or called off in this chat. Whether the
+    id is one of the open promises she was shown is checked by the caller."""
+    out: list[tuple[int, str]] = []
+    for item in items if isinstance(items, list) else []:
+        if isinstance(item, dict) and isinstance(item.get("id"), int) and item.get("state") in ("kept", "dropped"):
+            out.append((item["id"], item["state"]))
+    return out

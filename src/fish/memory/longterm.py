@@ -13,6 +13,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
+from fish.memory import pacts as pk
 from fish.memory import stability as st
 from fish.memory.when import day_of, fix_weekday, written_day
 
@@ -40,11 +41,19 @@ EVIDENCE_DAYS = 3
 UNCONFIRMED = "待印证"
 # Words that make a "him himself" note a passing state (a sore throat last week), not who he is.
 FOR_NOW = re.compile(r"最近|这几天|这阵子|这周|上周|今天|昨天|刚才|还没好|这次|暂时|目前|这两天")
+# ... unless it names something that lasts (memory v3 §B2 D3): "他说妹妹今天打电话来，她叫小雨"
+# is his sister, not today's news; "以后提醒他" is a standing thing.
+LASTING = re.compile(r"妹|弟|哥|姐|爸|妈|家在|老家|过敏|不耐|不能吃|专业|学校|年级|公司|岗位|生日|最爱"
+                     r"|外号|从小|以后")
+# A repeat that brings a number or a title the old memory lacks is news, not a repeat (§B2 D4).
+_DETAIL = re.compile(r"\d+|《[^》]+》")
 _DATE = re.compile(r"\d{4}\s*[-年/.]\s*\d{1,2}\s*[-月/.]\s*\d{1,2}\s*日?")
 # Why a memory stopped being current (memory v3). Only a correction he made and an update the
 # night found are "what she used to think"; a memory merged away or pushed out by a cap is not.
 WHYS = ("correct", "update", "merge", "cap", "expired")
 SHOWN_AS_FORMER = ("correct", "update")
+SETTLED = {"kept": "兑现了", "dropped": "后来说不算了"}  # how a settled pact reads
+PACT_LINK = 0.3  # overlap at which a follow-up is about an open promise (memory v3 §B1)
 
 
 def strongest_about(abouts: list[str | None]) -> str | None:
@@ -101,6 +110,8 @@ class Memory:
     last_time: str | None = None  # YYYY-MM-DD it last happened; a day counts once
     why: str | None = None  # why it was superseded (WHYS); None while current, or before v3
     happened_on: str | None = None  # YYYY-MM-DD it happened (or will); None before v3
+    pact: str | None = None  # a promise between them or his nickname for her: pacts.WHO
+    pact_state: str | None = None  # open / kept / dropped; None for the nickname
 
     @property
     def unconfirmed(self) -> bool:
@@ -118,6 +129,8 @@ class Memory:
         "（还说不准）" for a rule she has not seen confirmed yet."""
         if self.unconfirmed:
             return f"{self.text}（还说不准）"
+        if self.pact_state in SETTLED:
+            return f"{self.text}（{SETTLED[self.pact_state]}）"
         return f"{self.text}（{self.often}）" if self.often else self.text
 
     def retrievability(self, now: datetime) -> float:
@@ -155,6 +168,8 @@ def _from_row(r: sqlite3.Row) -> Memory:
         last_time=r["last_time"] if "last_time" in r.keys() else None,
         why=r["why"] if "why" in r.keys() else None,
         happened_on=r["happened_on"] if "happened_on" in r.keys() else None,
+        pact=r["pact"] if "pact" in r.keys() else None,
+        pact_state=r["pact_state"] if "pact_state" in r.keys() else None,
     )
 
 
@@ -215,7 +230,7 @@ class MemoryStore:
         return self.get(cur.lastrowid)
 
     def note(self, kind: str, text: str, *, importance: int, now: datetime | None = None,
-             said: str = "", **fields) -> Memory | None:
+             said: str = "", heard: str | None = None, **fields) -> Memory | None:
         """How the brain and the routines write (decision 19): choose before writing.
 
         None: not written (it is about the chat itself, not about him). An older memory:
@@ -223,20 +238,29 @@ class MemoryStore:
         if its kind is over its cap, the least stable one of that kind is pushed out.
         said: his line the note came from; for an event, its time words date the note when the
         note's own text names no day (memory v3 §B1). A date that disagrees with the weekday written
-        next to it is moved to that weekday first (§B2 D5)."""
+        next to it is moved to that weekday first (§B2 D5).
+        heard: "chat" or "close" when the note comes from talking with him; only such a note can
+        be a promise between them or his nickname for her (§B2 D1/D2, pacts.py)."""
         now = now or datetime.now()
         text = fix_weekday(text, now.date())
         if kind in ABOUT_HIM_KINDS and ABOUT_THE_CHAT.search(text):
             return None
+        about = fields.pop("about", None)
+        pact = state = None
+        if heard in pk.HEARD:
+            if pk.nickname(text):
+                kind, about, pact = "fact", "一辈子", "both"  # what he calls her is a fact for life
+            elif (pact := pk.promise(text, kind)) is not None:
+                about, state = "一辈子", "open"  # however much it sounds like a plan
         if kind == "self" and text.lstrip().startswith(("他", "她")):
             return None  # her life threads are about her; his things are noted in chat
         # (the persona calls him 他 or 她, FISH_OWNER; she is never the subject in third person)
-        about = fields.pop("about", None)
-        if about == "本人" and FOR_NOW.search(text):
+        if about == "本人" and FOR_NOW.search(text) and not LASTING.search(text):
             about = "日常"  # a state for now is not who he is; it does not go on his card
         same = self.repeat_of(kind, text, now, lifelong=about == "一辈子")
-        if same is not None:
-            return self.happened_again(same.id, now)
+        if same is not None and not self.adds_detail(text, same):
+            again = self.happened_again(same.id, now)
+            return self.raise_to(again, about, fields.get("arousal", 0.0), pact, state)
         if kind in RULE_KINDS:
             about = UNCONFIRMED  # however sure the model sounds, one day is one day
             fields["stability"] = st.UNCONFIRMED_DAYS
@@ -248,8 +272,8 @@ class MemoryStore:
         said = said if kind == "event" else ""  # a lasting fact is not dated by "明天" in his line
         fields.setdefault("happened_on", (day_of(text, now, said) or now.date()).isoformat())
         new = self.add(kind, text, importance=importance, now=now, **fields)
-        self.conn.execute("UPDATE memories SET about = ?, last_time = ? WHERE id = ?",
-                          (about, iso(now)[:10], new.id))
+        self.conn.execute("UPDATE memories SET about = ?, last_time = ?, pact = ?, pact_state = ? WHERE id = ?",
+                          (about, iso(now)[:10], pact, state, new.id))
         self.conn.commit()
         new = self.get(new.id)
         cap = KIND_CAPS.get(kind)
@@ -273,6 +297,34 @@ class MemoryStore:
             if sim >= threshold and (best is None or sim > best[0]):
                 best = (sim, m)
         return best[1] if best else None
+
+    @staticmethod
+    def adds_detail(text: str, old: Memory) -> bool:
+        """The new words bring a number or a 《title》 the old memory does not have ("他考了82分"
+        after "他考完期中了"): that is news, written as a memory of its own (memory v3 §B2 D4)."""
+        known = set(_DETAIL.findall(_DATE.sub("", old.text + " " + (old.pattern or ""))))
+        return any(d not in known for d in _DETAIL.findall(_DATE.sub("", text)))
+
+    def raise_to(self, m: Memory, about: str | None, arousal: float = 0.0,
+                 pact: str | None = None, state: str | None = None) -> Memory:
+        """A repeat that says more of it than the old memory did (memory v3 §B2 D4): the promise
+        first filed as 日常, told again as a promise. The old memory rises to the new about, with
+        its strength and pin, and becomes the pact; never down. Rules keep their own evidence."""
+        if m.kind in RULE_KINDS:
+            return m
+        rank = {a: i for i, a in enumerate(st.ABOUTS)}
+        sets: dict[str, object] = {}
+        if about in rank and rank[about] > rank.get(m.about, -1):
+            s = max(m.stability, st.stability_from(about, arousal))
+            sets.update(about=about, stability=s, importance=max(m.importance, st.importance_of(s)),
+                        pinned=int(m.pinned or about == "一辈子"))
+        if pact and not m.pact:
+            sets.update(pact=pact, pact_state=state)
+        if sets:
+            cols = ", ".join(f"{c} = ?" for c in sets)
+            self.conn.execute(f"UPDATE memories SET {cols} WHERE id = ?", (*sets.values(), m.id))
+            self.conn.commit()
+        return self.get(m.id)
 
     def happened_again(self, memory_id: int, now: datetime | None = None) -> Memory:
         """The same thing once more: recalled once; on a new day, one more time, flagged for
@@ -327,6 +379,12 @@ class MemoryStore:
         self.conn.commit()
         return self.get(memory_id)
 
+    def repoint(self, old_ids: list[int], new_id: int) -> None:
+        """Follow-ups about a memory that was replaced are about the one that replaced it."""
+        self.conn.execute(f"UPDATE prospective SET source_memory = ? WHERE source_memory IN"
+                          f" ({', '.join('?' * len(old_ids))})", (new_id, *old_ids))
+        self.conn.commit()
+
     def supersede(self, old_id: int, new_id: int, *, why: str) -> None:
         if why not in WHYS:
             raise ValueError(f"why must be one of {WHYS}, got {why!r}")
@@ -339,7 +397,8 @@ class MemoryStore:
         now: datetime | None = None,
     ) -> Memory:
         """He corrected her: a new memory replaces the old one, which stays as 'what she used to think'.
-        It keeps what the old one was about (his major corrected is still about him himself), and
+        It keeps what the old one was about (his major corrected is still about him himself), its
+        pact, and
         the day it happened unless the new words name another one."""
         old = self.get(old_id)
         now = now or datetime.now()
@@ -352,14 +411,16 @@ class MemoryStore:
             stability=stability, now=now,
             happened_on=(d.isoformat() if (d := day_of(text, now)) else old.happened_on),
         )
-        self.conn.execute("UPDATE memories SET about = ?, last_time = ? WHERE id = ?",
-                          (old.about, iso(now)[:10], new.id))
+        self.conn.execute("UPDATE memories SET about = ?, last_time = ?, pact = ?, pact_state = ? WHERE id = ?",
+                          (old.about, iso(now)[:10], old.pact, old.pact_state, new.id))
         self.supersede(old_id, new.id, why="correct")
+        self.repoint([old_id], new.id)
         return self.get(new.id)
 
     def merge(self, ids: list[int], text: str, *, now: datetime | None = None) -> Memory:
         """Nightly: several near-duplicates become one, more stable, with its sources noted.
-        What it is about, whether it is pinned and the day it last happened carry over; so does
+        What it is about, whether it is pinned, the pact (still open if any source was) and the day
+        it last happened carry over; so does
         the day it happened (the latest of its sources), unless the merged words write a date."""
         olds = [self.get(i) for i in ids]
         if not olds:
@@ -385,10 +446,14 @@ class MemoryStore:
         )
         for o in olds:
             self.supersede(o.id, new.id, why="merge")
+        self.repoint(ids, new.id)
         times = sum(o.times for o in olds)  # both counts carry over (decision 20)
         last = max((o.last_time for o in olds if o.last_time), default=None)
-        self.conn.execute("UPDATE memories SET times = ?, about = ?, last_time = ? WHERE id = ?",
-                          (times, strongest_about([o.about for o in olds]), last, new.id))
+        pact = next((o.pact for o in olds if o.pact), None)
+        states = [o.pact_state for o in olds if o.pact_state]
+        self.conn.execute("UPDATE memories SET times = ?, about = ?, last_time = ?, pact = ?, pact_state = ?"
+                          " WHERE id = ?", (times, strongest_about([o.about for o in olds]), last, pact,
+                                            "open" if "open" in states else next(iter(states), None), new.id))
         self.conn.commit()
         return self.get(new.id)
 
@@ -412,12 +477,46 @@ class MemoryStore:
         """The facts she always keeps in mind (her card): pinned first, then what keeps him
         safe (allergies, illness, medicine), then the rest by when it last came up. Facts about
         him himself (about = 本人, decision 21) always qualify. Not by stability (memory v3
-        §B3): how strongly she holds a fact says nothing about whether it is who he is now."""
+        §B3): how strongly she holds a fact says nothing about whether it is who he is now.
+        A pact is on it when it is not a fact too (his nickname, a promise he kept); an open
+        one has its own block (`pacts`), one called off is not on it."""
         rows = self.conn.execute(
-            "SELECT * FROM memories WHERE superseded_by IS NULL AND kind = 'fact'"
-            " AND (pinned = 1 OR importance >= ? OR about = '本人')", (PROFILE_IMPORTANCE,)
+            "SELECT * FROM memories WHERE superseded_by IS NULL"
+            " AND ((kind = 'fact' AND (pinned = 1 OR importance >= ? OR about = '本人'))"
+            "      OR (pact IS NOT NULL AND pinned = 1))"
+            " AND COALESCE(pact_state, '') NOT IN ('open', 'dropped')", (PROFILE_IMPORTANCE,)
         )
         return sorted(map(_from_row, rows), key=card_order)[:limit]
+
+    def pacts(self, limit: int = pk.PACTS_SHOWN) -> list[Memory]:
+        """The promises between them still open, latest first (memory v3 §B3): always in front of
+        her in a block of their own, so they leave her card."""
+        rows = self.conn.execute(
+            "SELECT * FROM memories WHERE superseded_by IS NULL AND pact_state = 'open'"
+            " ORDER BY COALESCE(last_time, substr(created, 1, 10)) DESC, id DESC LIMIT ?", (limit,)
+        )
+        return [_from_row(r) for r in rows]
+
+    def pact_for(self, text: str) -> Memory | None:
+        """The open promise a follow-up is about ("海边去了没" and the promise of the sea): one
+        whose tag it says, else the one it overlaps most, at PACT_LINK or more."""
+        open_pacts = self.pacts(limit=-1)
+        tagged = pk.triggered(text, open_pacts)
+        best = max(open_pacts, key=lambda p: (p.id in tagged, overlap(text, p.text)), default=None)
+        if best is not None and (best.id in tagged or overlap(text, best.text) >= PACT_LINK):
+            return best
+        return None
+
+    def settle(self, memory_id: int, state: str, now: datetime | None = None) -> Memory:
+        """He kept a promise, or said it is off: it leaves the block. The memory stays pinned and
+        its words stay as they were; a kept one reads "（兑现了）" and is on her card."""
+        if state not in pk.STATES[1:]:
+            raise ValueError(f"a pact is settled as kept or dropped, got {state!r}")
+        now = now or datetime.now()
+        self.conn.execute("UPDATE memories SET pact_state = ?, last_time = ? WHERE id = ?",
+                          (state, iso(now)[:10], memory_id))
+        self.conn.commit()
+        return self.get(memory_id)
 
     def howto_card(self, limit: int = 8) -> list[Memory]:
         """How to get along with him: the rules she has drawn, always in mind (decision 11).

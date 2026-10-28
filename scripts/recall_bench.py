@@ -33,6 +33,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from fish.memory.longterm import (PROFILE_IMPORTANCE, PROFILE_SIZE, Memory, _from_row,  # noqa: E402
                                   card_order)
+from fish.memory.pacts import PACTS_SHOWN  # noqa: E402
 from fish.memory.retrieval import (DEFAULT_K, RECENCY_DECAY_PER_HOUR, W_IMPORTANCE, W_RECENCY,  # noqa: E402
                                    W_RELEVANCE, BigramEmbedder, cue_for)
 from fish.memory.when import TimeCued  # noqa: E402
@@ -85,12 +86,16 @@ def known_then(mems: list[Memory], now: datetime) -> list[Memory]:
 
 
 def card_then(alive: list[Memory]) -> set[int]:
-    """store.profile() as it would have been: pinned, important or about him himself, in the
-    card's order. Uses the final last_time, so the order among unpinned facts is approximate."""
-    card = [m for m in alive if m.kind == "fact"
-            and (m.pinned or m.importance >= PROFILE_IMPORTANCE or m.about == "本人")]
+    """store.profile() and store.pacts() as they would have been: the card (pinned, important
+    or about him himself, a pact that is not open) and the open promises (memory v3 step 4).
+    Uses the final last_time and pact state, so the order among unpinned facts is approximate."""
+    card = [m for m in alive if m.pact_state not in ("open", "dropped") and (
+        m.kind == "fact" and (m.pinned or m.importance >= PROFILE_IMPORTANCE or m.about == "本人")
+        or m.pact and m.pinned)]
     card.sort(key=card_order)
-    return {m.id for m in card[:PROFILE_SIZE]}
+    pacts = sorted((m for m in alive if m.pact_state == "open"),
+                   key=lambda m: (m.last_time or m.created[:10], m.id), reverse=True)
+    return {m.id for m in card[:PROFILE_SIZE] + pacts[:PACTS_SHOWN]}
 
 
 def her_line_before(conn: sqlite3.Connection, ask: str, now: datetime) -> str | None:

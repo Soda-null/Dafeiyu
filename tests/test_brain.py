@@ -149,7 +149,7 @@ def test_stale_episode_is_closed_with_a_summary(tmp_path):
 
 def test_budget_drops_recalled_memories_first(tmp_path):
     llm = scripted()
-    brain, conn = make_brain(tmp_path, llm, prompt_chars=3550)  # fixed part is ~3450 (v3 "today" section)
+    brain, conn = make_brain(tmp_path, llm, prompt_chars=3750)  # fixed part is ~3650 (v3 "today" section, pacts)
     store = MemoryStore(conn)
     for i in range(6):
         store.add("event", f"第{i}次聊考试，他说很慌" + "，细节" * 20, importance=5, tags=["考试"], now=T0)
@@ -157,7 +157,7 @@ def test_budget_drops_recalled_memories_first(tmp_path):
     system = system_of(llm)
     shown = sum(1 for i in range(6) if f"第{i}次聊考试" in system)
     assert 1 <= shown < 6
-    assert len(system) <= 3550 + 60
+    assert len(system) <= 3750 + 60
 
 
 def test_mood_moves_with_the_turn(tmp_path):

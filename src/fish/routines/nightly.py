@@ -79,14 +79,16 @@ def _update_groups(new: list[Memory], alive: list[Memory],
                    merged_away: set[int]) -> list[tuple[Memory, list[Memory]]]:
     """Each new fact with the older facts it might replace. No upper bound on likeness: a pair
     the merge step declined ("住 3 号楼" / "住七号楼") is exactly a changed fact. Any shared
-    words or tag make a candidate; the model decides, and "拿不准就不列"."""
+    words or tag make a candidate; the model decides, and "拿不准就不列". An open promise is
+    never one: only he can call it off, and the close of that chat says so (memory v3 §B4)."""
     groups = []
     for n in new:
         if n.kind != "fact" or n.id in merged_away:
             continue
         olds = []
         for o in alive:
-            if o.id == n.id or o.kind != "fact" or o.id in merged_away or o.created >= n.created:
+            if (o.id == n.id or o.kind != "fact" or o.id in merged_away or o.created >= n.created
+                    or o.pact_state == "open"):
                 continue
             shared_tag = bool(set(n.tags) & set(o.tags))
             sim = overlap(n.text.translate(_NUMERALS), o.text.translate(_NUMERALS))
@@ -117,6 +119,10 @@ def run_nightly(conn: sqlite3.Connection, now: datetime | None = None, *,
         report["closed"] = stale.id
 
     new = _new_today(store, day)
+    # every note the pact words caught today (memory v3 §B2 D1/D2), to be read over
+    caught = [m.id for m in store.alive() if m.pact and (m in new or m.last_time == day.isoformat())]
+    if caught:
+        report["pacts"] = caught
 
     # 2. duplicates -> one stronger memory
     merged_away: set[int] = set()

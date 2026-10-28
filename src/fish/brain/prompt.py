@@ -60,6 +60,8 @@ class PromptContext:
     mentioned: set[int] = field(default_factory=set)  # card facts his line touches
     formers: dict[int, str] = field(default_factory=dict)  # card fact id -> what she used to think
     today_section: str = ""  # dates, birthday soon, plans for today (memory/today.py)
+    pacts: list[Memory] = field(default_factory=list)  # promises between them still open
+    stars: dict[int, str] = field(default_factory=dict)  # pact id -> the trigger his line said
 
 
 def state_line(ctx: PromptContext) -> str:
@@ -111,6 +113,23 @@ def render_profile(profile: list[Memory], mentioned: set[int] = frozenset(),
     return "\n".join(lines) or "（还没有）"
 
 
+PACT_SAYS = {"him": "他答应过你", "her": "你答应过他", "both": "你们说好的"}
+
+
+def render_pacts(pacts: list[Memory], stars: dict[int, str] | None = None) -> str:
+    """The promises still open, one line each; one whose trigger his line just said comes
+    first with a star: "★他刚说到「驾照」——你答应过他：……" (memory v3 §B3)."""
+    stars = stars or {}
+    lines = []
+    for p in sorted(pacts, key=lambda p: p.id not in stars):
+        says = owner_words(PACT_SAYS.get(p.pact or "", PACT_SAYS["both"])) + f"：{p.text}"
+        if p.id in stars:
+            lines.append(f"- ★[#{p.id}] " + owner_words("他刚说到") + f"「{stars[p.id]}」——{says}")
+        else:
+            lines.append(f"- [#{p.id}] {says}")
+    return "\n".join(lines) or "（没有）"
+
+
 def day_label(m: Memory, today: date | None) -> str:
     """"（上周三 1月13日）": the day it happened, said the way he would say it (memory v3 §B3).
     None when nothing names its day: the day it was written would mislead her."""
@@ -157,6 +176,7 @@ def build_chat_messages(ctx: PromptContext) -> list[dict[str, str]]:
         home=(ctx.home_line + "。" if ctx.home_line else "（还不知道）")
         + (f"附近：{ctx.places}" if ctx.places else ""),
         shared=ctx.shared or "（没有）", today=ctx.today_section or "（没算）",
+        pacts=render_pacts(ctx.pacts, ctx.stars),
     )
     today = ctx.now.date()
     fixed = render(template, recalled="", followups="", summary="", **fixed_fields)
@@ -196,14 +216,17 @@ def build_fold_messages(summary: str, turns: list[Turn]) -> list[dict[str, str]]
 
 
 def build_close_messages(summary: str, turns: list[Turn], already: list[str],
-                         today: str, known: list[str] | None = None) -> list[dict[str, str]]:
+                         today: str, known: list[str] | None = None,
+                         pacts: list[Memory] | None = None) -> list[dict[str, str]]:
     """known: what she always carries about him (her profile), so the close can see what is
     still missing and fill in what the chat forgot to write down. today: YYYY-MM-DD; the
-    weekday is added here so the notes do not work it out wrong."""
+    weekday is added here so the notes do not work it out wrong. pacts: the promises still
+    open, by id, for `pact_done`."""
     content = render(
         load_template("close_episode"), summary=summary or "（无）", turns=render_turns(turns),
         already="\n".join(f"- {a}" for a in already) or "（无）",
         today=f"{today} 周{WEEKDAYS[date.fromisoformat(today[:10]).weekday()]}",
         known="\n".join(f"- {k}" for k in known or []) or "（还没有）",
+        pacts=render_pacts(pacts or []),
     )
     return [{"role": "user", "content": content}]
