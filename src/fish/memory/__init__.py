@@ -9,6 +9,7 @@ when        recall by time: memories from the days a line names; the day a note 
 pacts       promises between them and his nickname for her, found by fixed words
 today       the "today" section: dates of this week and next, birthday soon, plans for today
 prospective things she means to ask him on a given day
+scrub       secrets (codes, passwords) never written: refused in notes, cut from summaries and diary
 diary       her own day, one entry each
 relationship when they met, days talked, streak
 pastimes    what she follows in her free time (a book), and the free-moment log
@@ -25,6 +26,7 @@ from fish.memory.pacts import triggered
 from fish.memory.prospective import Followup, ProspectiveStore
 from fish.memory.relationship import Relationship
 from fish.memory.retrieval import BigramEmbedder, Embedder, Recalled, cue_for, mentioned, recall
+from fish.memory.scrub import redact, secret
 from fish.memory.stickers import Sticker, StickerAlbum
 from fish.memory.today import section as today_section
 from fish.memory.traits import TRAITS, Growth, TraitStore
@@ -35,5 +37,6 @@ __all__ = [
     "KINDS", "TRAITS", "BigramEmbedder", "Diary", "Embedder", "Episode", "EpisodeManager",
     "Followup", "Growth", "Memory", "MemoryStore", "Moment", "Pastime", "Pastimes", "Phase", "PhaseStore", "ProspectiveStore",
     "Recalled", "Relationship", "Sticker", "StickerAlbum", "TimeCued", "TraitStore", "Turn", "Window",
-    "cue_for", "mentioned", "overlap", "recall", "spoken", "today_section", "told_day", "triggered",
+    "cue_for", "mentioned", "overlap", "recall", "redact", "secret", "spoken", "today_section", "told_day",
+    "triggered",
 ]

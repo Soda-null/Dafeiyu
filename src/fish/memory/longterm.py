@@ -15,6 +15,7 @@ from datetime import date, datetime, timedelta
 
 from fish.memory import pacts as pk
 from fish.memory import stability as st
+from fish.memory.scrub import secret
 from fish.memory.when import day_of, fix_weekday, written_day
 
 KINDS = ("fact", "event", "howto", "insight", "self", "world")  # world: things she saw online
@@ -54,6 +55,12 @@ WHYS = ("correct", "update", "merge", "cap", "expired")
 SHOWN_AS_FORMER = ("correct", "update")
 SETTLED = {"kept": "兑现了", "dropped": "后来说不算了"}  # how a settled pact reads
 PACT_LINK = 0.3  # overlap at which a follow-up is about an open promise (memory v3 §B1)
+SOURCE_LINK = 0.3  # overlap at which a follow-up is about a note from the same chat (§B1)
+# Things that end in a result she will want to hear (memory v3 §B2): an exam, an interview, a move.
+# 考虑 is thinking it over, not an exam.
+OUTCOME_WORDS = re.compile(r"考(?!虑)|面试|述职|答辩|演示|汇报|比赛|体检|复查|看病|看房|搬家|录取|申请|结题|评审")
+OUTCOME_DAYS = 30  # how far back an event can still get its result at the close
+OUTCOMES_SHOWN = 3
 
 
 def strongest_about(abouts: list[str | None]) -> str | None:
@@ -112,6 +119,7 @@ class Memory:
     happened_on: str | None = None  # YYYY-MM-DD it happened (or will); None before v3
     pact: str | None = None  # a promise between them or his nickname for her: pacts.WHO
     pact_state: str | None = None  # open / kept / dropped; None for the nickname
+    outcome: str | None = None  # how it turned out, with the day he said so; the text never changes
 
     @property
     def unconfirmed(self) -> bool:
@@ -125,13 +133,15 @@ class Memory:
         return "好几回了" if self.times < 5 else "很多回了"
 
     def line(self) -> str:
-        """The text as it goes into a prompt: with "（很多回了）" when it kept happening, and
-        "（还说不准）" for a rule she has not seen confirmed yet."""
+        """The text as it goes into a prompt: with "（很多回了）" when it kept happening,
+        "（还说不准）" for a rule she has not seen confirmed yet, and "→结果：……" once he told her
+        how it went."""
         if self.unconfirmed:
             return f"{self.text}（还说不准）"
         if self.pact_state in SETTLED:
             return f"{self.text}（{SETTLED[self.pact_state]}）"
-        return f"{self.text}（{self.often}）" if self.often else self.text
+        text = f"{self.text}（{self.often}）" if self.often else self.text
+        return f"{text} →结果：{self.outcome}" if self.outcome else text
 
     def retrievability(self, now: datetime) -> float:
         return st.retrievability(self.stability, days_between(self.last_recalled, now))
@@ -170,6 +180,7 @@ def _from_row(r: sqlite3.Row) -> Memory:
         happened_on=r["happened_on"] if "happened_on" in r.keys() else None,
         pact=r["pact"] if "pact" in r.keys() else None,
         pact_state=r["pact_state"] if "pact_state" in r.keys() else None,
+        outcome=r["outcome"] if "outcome" in r.keys() else None,
     )
 
 
@@ -240,8 +251,11 @@ class MemoryStore:
         note's own text names no day (memory v3 §B1). A date that disagrees with the weekday written
         next to it is moved to that weekday first (§B2 D5).
         heard: "chat" or "close" when the note comes from talking with him; only such a note can
-        be a promise between them or his nickname for her (§B2 D1/D2, pacts.py)."""
+        be a promise between them or his nickname for her (§B2 D1/D2, pacts.py).
+        A note that holds a secret (a code, a password) is never written, whoever asks (scrub.py)."""
         now = now or datetime.now()
+        if secret(text):
+            return None
         text = fix_weekday(text, now.date())
         if kind in ABOUT_HIM_KINDS and ABOUT_THE_CHAT.search(text):
             return None
@@ -398,9 +412,11 @@ class MemoryStore:
     ) -> Memory:
         """He corrected her: a new memory replaces the old one, which stays as 'what she used to think'.
         It keeps what the old one was about (his major corrected is still about him himself), its
-        pact, and
-        the day it happened unless the new words name another one."""
+        pact, its outcome, and the day it happened unless the new words name another one. New words
+        that hold a secret change nothing: the old memory is returned as it was."""
         old = self.get(old_id)
+        if secret(text):
+            return old
         now = now or datetime.now()
         importance = old.importance if importance is None else importance
         fresh = st.initial_stability(importance, old.valence)
@@ -411,16 +427,16 @@ class MemoryStore:
             stability=stability, now=now,
             happened_on=(d.isoformat() if (d := day_of(text, now)) else old.happened_on),
         )
-        self.conn.execute("UPDATE memories SET about = ?, last_time = ?, pact = ?, pact_state = ? WHERE id = ?",
-                          (old.about, iso(now)[:10], old.pact, old.pact_state, new.id))
+        self.conn.execute("UPDATE memories SET about = ?, last_time = ?, pact = ?, pact_state = ?, outcome = ?"
+                          " WHERE id = ?", (old.about, iso(now)[:10], old.pact, old.pact_state, old.outcome, new.id))
         self.supersede(old_id, new.id, why="correct")
         self.repoint([old_id], new.id)
         return self.get(new.id)
 
     def merge(self, ids: list[int], text: str, *, now: datetime | None = None) -> Memory:
         """Nightly: several near-duplicates become one, more stable, with its sources noted.
-        What it is about, whether it is pinned, the pact (still open if any source was) and the day
-        it last happened carry over; so does
+        What it is about, whether it is pinned, the pact (still open if any source was), the latest
+        outcome and the day it last happened carry over; so does
         the day it happened (the latest of its sources), unless the merged words write a date."""
         olds = [self.get(i) for i in ids]
         if not olds:
@@ -451,9 +467,11 @@ class MemoryStore:
         last = max((o.last_time for o in olds if o.last_time), default=None)
         pact = next((o.pact for o in olds if o.pact), None)
         states = [o.pact_state for o in olds if o.pact_state]
-        self.conn.execute("UPDATE memories SET times = ?, about = ?, last_time = ?, pact = ?, pact_state = ?"
-                          " WHERE id = ?", (times, strongest_about([o.about for o in olds]), last, pact,
-                                            "open" if "open" in states else next(iter(states), None), new.id))
+        outcome = next((o.outcome for o in sorted(olds, key=lambda o: o.created, reverse=True) if o.outcome), None)
+        self.conn.execute("UPDATE memories SET times = ?, about = ?, last_time = ?, pact = ?, pact_state = ?,"
+                          " outcome = ? WHERE id = ?",
+                          (times, strongest_about([o.about for o in olds]), last, pact,
+                           "open" if "open" in states else next(iter(states), None), outcome, new.id))
         self.conn.commit()
         return self.get(new.id)
 
@@ -514,6 +532,48 @@ class MemoryStore:
                           (state, iso(now)[:10], memory_id))
         self.conn.commit()
         return self.get(memory_id)
+
+    def set_outcome(self, memory_id: int, text: str, now: datetime | None = None) -> Memory | None:
+        """How something turned out ("考得还行，估计八十来分"), hung on the memory of the thing
+        itself with the day he said it (memory v3 §B1), instead of a memory of its own that fades
+        in a week. The text stays as it was; a later result replaces an earlier one. Hearing it is
+        using the memory once. None when the result holds a secret: nothing is written."""
+        if secret(text):
+            return None
+        now = now or datetime.now()
+        said = f"（{now.month}月{now.day}日说的）"
+        self.conn.execute("UPDATE memories SET outcome = ? WHERE id = ?", (text.strip() + said, memory_id))
+        self.conn.commit()
+        return self.touch(memory_id, now)
+
+    def awaiting_outcome(self, chat: str, now: datetime, *, also: set[int] | frozenset[int] = frozenset()
+                         ) -> list[Memory]:
+        """What the close may hang a result on (memory v3 §B2): first the memories the follow-ups
+        she asked in this chat are about (`also`), then his events of the last OUTCOME_DAYS that
+        end in a result (an exam, an interview, a move) and that this chat touched (one of those
+        words or one of its tags comes up in `chat`), latest first. Nothing still to come: a result
+        needs the day to have passed. A promise is not here; it is kept or dropped (`settle`)."""
+        since = (now.date() - timedelta(days=OUTCOME_DAYS)).isoformat()
+        today = now.date().isoformat()
+        asked = [m for m in self.alive() if m.id in also and not m.pact]
+        touched = []
+        for m in reversed(self.alive("event")):
+            words = OUTCOME_WORDS.findall(m.text)
+            if (m.id not in also and words and not m.pact and not m.text.lstrip().startswith("我")
+                    and since <= (m.happened_on or m.created[:10]) <= today
+                    and any(w in chat for w in [*words, *(t for t in m.tags if len(t) >= 2)])):
+                touched.append(m)
+        return (asked + touched)[:OUTCOMES_SHOWN]
+
+    def source_for(self, text: str, episode_id: int) -> Memory | None:
+        """The note of the same chat a follow-up is about ("演唱会看得怎么样" and the concert he
+        mentioned, memory v3 §B1): of his events and facts from that chat whose tag the follow-up
+        says, or that it overlaps at SOURCE_LINK or more, the one it overlaps most. Never an open
+        promise: that link is `pact_for`'s, stricter, since such a follow-up never runs out."""
+        notes = [m for m in self.alive() if m.source_episode == episode_id and m.kind in ("event", "fact")
+                 and m.pact_state != "open"
+                 and (overlap(text, m.text) >= SOURCE_LINK or any(len(t) >= 2 and t in text for t in m.tags))]
+        return max(notes, key=lambda m: (overlap(text, m.text), -m.id), default=None)
 
     def howto_card(self, limit: int = 8) -> list[Memory]:
         """How to get along with him: the rules she has drawn, always in mind (decision 11).

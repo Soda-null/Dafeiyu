@@ -14,6 +14,7 @@ from fish.memory import stability as st
 
 MAX_NOTES = 5
 MAX_NOTE_CHARS = 200
+MAX_OUTCOME_CHARS = 80
 MOODS = ("开心", "平静", "无聊", "困", "饿", "烦", "难过", "好奇")
 # "[sticker #1]", "[表情包#1]", "（表情包 1）", "[#1]" written into her words instead of the field
 _STICKER_IN_TEXT = re.compile(r"[\[（(【]\s*(?:sticker|表情包?|贴纸)?\s*#?\s*(\d+)\s*[\]）)】]", re.I)
@@ -78,6 +79,7 @@ class EpisodeClose:
     notes: list[Note] = field(default_factory=list)
     followups: list[FollowupRequest] = field(default_factory=list)
     pact_done: list[tuple[int, str]] = field(default_factory=list)  # (memory id, kept / dropped)
+    outcomes: list[tuple[int, str]] = field(default_factory=list)  # (memory id, how it turned out)
     parsed: bool = True
 
 
@@ -207,10 +209,25 @@ def parse_reply(raw: str) -> Reply:
     )
 
 
+def _salvage(raw: str, key: str) -> str:
+    """One string field out of a JSON object that does not parse (cut off at max_tokens, a stray
+    quote): what it says up to its closing quote, or to the end."""
+    found = re.search(rf'"{key}"\s*:\s*"((?:[^"\\]|\\.)*)', raw, re.S)
+    if not found:
+        return ""
+    try:
+        return json.loads(f'"{found.group(1)}"', strict=False).strip()
+    except json.JSONDecodeError:
+        return found.group(1).replace('\\"', '"').strip()
+
+
 def parse_episode_close(raw: str, fallback_summary: str) -> EpisodeClose:
+    """A reply that does not parse still never loses the summary (memory v3 §B2): its summary
+    field if one can be read, else the model's own prose, else `fallback_summary`; no notes."""
     data = extract_json(raw)
     if data is None:
-        return EpisodeClose(summary=fallback_summary, gist=fallback_summary[:60], parsed=False)
+        summary = _salvage(raw, "summary") or ("" if "{" in raw else prose_only(raw)) or fallback_summary
+        return EpisodeClose(summary=summary[:400], gist=(_salvage(raw, "gist") or summary)[:60], parsed=False)
     return EpisodeClose(
         summary=str(data.get("summary") or fallback_summary).strip(),
         gist=str(data.get("gist") or "").strip()[:80] or fallback_summary[:60],
@@ -219,6 +236,7 @@ def parse_episode_close(raw: str, fallback_summary: str) -> EpisodeClose:
         notes=parse_notes(data.get("notes")),
         followups=parse_followups(data.get("followups")),
         pact_done=parse_pact_done(data.get("pact_done")),
+        outcomes=parse_outcomes(data.get("outcomes")),
     )
 
 
@@ -229,4 +247,14 @@ def parse_pact_done(items) -> list[tuple[int, str]]:
     for item in items if isinstance(items, list) else []:
         if isinstance(item, dict) and isinstance(item.get("id"), int) and item.get("state") in ("kept", "dropped"):
             out.append((item["id"], item["state"]))
+    return out
+
+
+def parse_outcomes(items) -> list[tuple[int, str]]:
+    """[{"id": 22, "text": "考得还行，估计八十来分"}]: how something she was shown turned out.
+    Whether the id is one of them is checked by the caller."""
+    out: list[tuple[int, str]] = []
+    for item in items if isinstance(items, list) else []:
+        if isinstance(item, dict) and isinstance(item.get("id"), int) and str(item.get("text", "")).strip():
+            out.append((item["id"], str(item["text"]).strip()[:MAX_OUTCOME_CHARS]))
     return out

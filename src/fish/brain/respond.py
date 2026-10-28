@@ -31,6 +31,7 @@ from fish.world import Searcher, read_file
 from fish.world.days import day_line
 
 FALLBACK_SAY = "……（走神了，你刚说什么？）"
+CLOSE_TOKENS = 800  # the close writes a summary, notes, results: cut short, its JSON would not parse
 SEEN_DAYS, SEEN_SHOWN = 2, 3  # recent world memories offered in the prompt
 SHARED_CHARS = 2500  # how much of a page or file he shared she reads (decision 23)
 URL = re.compile(r"https?://[^\s，。！？、；（）()【】<>\"']+")
@@ -262,7 +263,7 @@ class Brain:
             self.store.note("world", n.text, importance=n.importance, valence=n.valence,
                             source_episode=episode_id, tags=n.tags, source=seen_source, now=now)
         for f in reply.followups:
-            self.add_followup(f.text, f.due, now)
+            self.add_followup(f.text, f.due, now, episode_id)
         for c in reply.corrections:
             try:
                 old = self.store.get(c.old_id)
@@ -273,12 +274,14 @@ class Brain:
         open_ids = {f.id for f in self.prospective.open()}
         for i in reply.asked:
             if i in open_ids:
-                self.prospective.close(i)
+                self.prospective.close(i, episode=episode_id)
 
-    def add_followup(self, text: str, due: str, now: datetime) -> None:
-        """A follow-up about an open promise points at it, so it is never let go (memory v3 §B2)."""
-        pact = self.store.pact_for(text)
-        self.prospective.add(text, due, source_memory=pact.id if pact else None, now=now)
+    def add_followup(self, text: str, due: str, now: datetime, episode_id: int | None = None) -> None:
+        """A follow-up points at what it is about (memory v3 §B1): an open promise, so it is never
+        let go; else the note of the same chat it overlaps most, whose result the close then hears."""
+        about = self.store.pact_for(text) or (self.store.source_for(text, episode_id)
+                                              if episode_id is not None else None)
+        self.prospective.add(text, due, source_memory=about.id if about else None, now=now)
 
     # --- she speaks first (decision 10) ----------------------------------------
 
@@ -308,7 +311,7 @@ class Brain:
         open_ids = {f.id for f in self.prospective.open()}
         for i in ro.asked:
             if i in open_ids:
-                self.prospective.close(i)
+                self.prospective.close(i, episode=ep.id)
         ReachPolicy(self.conn).record_sent(now, ro)
 
     def tick(self, send: Callable[[str], bool], channel: str = "wechat",
@@ -345,26 +348,42 @@ class Brain:
     def close_episode(self, ep: Episode, now: datetime) -> Episode:
         """Sum up a chat that is over. It sees every turn not yet folded into the running
         summary, and what it writes is dated when the chat was, not when it is closed (the
-        next message, or the night, can be hours later)."""
+        next message, or the night, can be hours later). It hears how things he mentioned
+        turned out (memory v3 §B2): a result goes onto the event it belongs to when that is one
+        it was shown, else it is noted as an event of its own. A reply that does not parse still
+        keeps the summary."""
         turns = self.window.unfolded(ep.id)
         at = datetime.fromisoformat(ep.last_active)
         already = [m.text for m in self.store.alive() if m.source_episode == ep.id]
         if not turns and not ep.running_summary:
             return self.episodes.close(ep.id, summary="", gist="", importance=1, valence=0.0, now=now)
         pacts = self.store.pacts()
+        asked = self.prospective.asked_in(ep.id)
+        chat = " ".join([ep.running_summary, *(t.text for t in turns)])
+        waiting = self.store.awaiting_outcome(chat, at, also={f.source_memory for f in asked if f.source_memory})
         raw = self.llm.chat(
             build_close_messages(ep.running_summary, turns, already, ep.started[:10],  # the chat's own date
-                                 known=[m.text for m in self.store.profile()], pacts=pacts),
-            json_mode=True, temperature=0.3, max_tokens=600,
+                                 known=[m.text for m in self.store.profile()], pacts=pacts,
+                                 asked=asked, waiting=waiting),
+            json_mode=True, temperature=0.3, max_tokens=CLOSE_TOKENS,
         )
-        fallback = ep.running_summary or "、".join(t.text for t in turns)[:200]
+        # what the chat said, word for word, when even the summary cannot be read from the reply
+        fallback = "；".join(filter(None, [ep.running_summary, "、".join(t.text for t in turns)]))[:200]
         closed = parse_episode_close(raw, fallback)
         for n in closed.notes:
             self.store.note(n.kind, n.text, importance=n.importance, valence=n.valence,
                             arousal=n.arousal, about=n.about, source_episode=ep.id, tags=n.tags, now=at,
                             heard="close")
         for f in closed.followups:
-            self.add_followup(f.text, f.due, at)
+            self.add_followup(f.text, f.due, at, ep.id)
+        shown_events = {m.id for m in waiting}  # only an event she was shown, still current, gets it
+        for memory_id, text in closed.outcomes:
+            if memory_id in shown_events and self.store.get(memory_id).alive:
+                self.store.set_outcome(memory_id, text, now=at)
+            else:
+                said = text if text.startswith(("他", "我")) else owner_words("他说") + text
+                self.store.note("event", said, importance=5, about="日常", source_episode=ep.id, now=at,
+                                heard="close")
         shown = {p.id for p in pacts}  # only a promise she was shown can be settled
         for pact_id, state in closed.pact_done:
             if pact_id in shown:

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 from fish.memory.longterm import iso
 from fish.memory.retrieval import BigramEmbedder
+from fish.memory.scrub import secret
 
 # A friend keeps a few things in mind, asks within a day or so, and lets the rest go (decision 17).
 GRACE_DAYS = 1  # an open follow-up this many days past due is given up on
@@ -22,8 +23,9 @@ class Followup:
     text: str
     due: str  # YYYY-MM-DD
     created: str
-    source_memory: int | None
+    source_memory: int | None  # the memory it is about: a note of the same chat, or an open promise
     status: str  # open | asked | expired
+    asked_episode: int | None = None  # the chat she asked it in (memory v3 §B1)
 
 
 def _overlap(a: str, b: str) -> float:
@@ -32,7 +34,8 @@ def _overlap(a: str, b: str) -> float:
 
 
 def _from_row(r: sqlite3.Row) -> Followup:
-    return Followup(r["id"], r["text"], r["due"], r["created"], r["source_memory"], r["status"])
+    return Followup(r["id"], r["text"], r["due"], r["created"], r["source_memory"], r["status"],
+                    r["asked_episode"] if "asked_episode" in r.keys() else None)
 
 
 class ProspectiveStore:
@@ -41,8 +44,11 @@ class ProspectiveStore:
 
     def add(self, text: str, due: str, *, source_memory: int | None = None,
             now: datetime | None = None) -> Followup | None:
-        """None when she already has enough on her mind, or already means to ask this."""
+        """None when she already has enough on her mind, or already means to ask this, or it
+        holds a secret (scrub.py)."""
         now = now or datetime.now()
+        if secret(text):
+            return None
         held = self.open()
         if len(held) >= MAX_OPEN or any(_overlap(text, f.text) >= SAME_AS for f in held):
             return None
@@ -72,9 +78,16 @@ class ProspectiveStore:
         )
         return [_from_row(r) for r in rows]
 
-    def close(self, followup_id: int, status: str = "asked") -> None:
-        self.conn.execute("UPDATE prospective SET status = ? WHERE id = ?", (status, followup_id))
+    def close(self, followup_id: int, status: str = "asked", *, episode: int | None = None) -> None:
+        """episode: the chat she asked it in; its close hears how it went (memory v3 §B2)."""
+        self.conn.execute("UPDATE prospective SET status = ?, asked_episode = COALESCE(?, asked_episode)"
+                          " WHERE id = ?", (status, episode, followup_id))
         self.conn.commit()
+
+    def asked_in(self, episode_id: int) -> list[Followup]:
+        rows = self.conn.execute("SELECT * FROM prospective WHERE status = 'asked' AND asked_episode = ?"
+                                 " ORDER BY id", (episode_id,))
+        return [_from_row(r) for r in rows]
 
     def expire(self, now: datetime | None = None, grace_days: int = GRACE_DAYS) -> list[Followup]:
         """Nightly: give up on follow-ups she never got to ask; returns them. They are only closed,

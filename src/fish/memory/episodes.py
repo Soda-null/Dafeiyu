@@ -2,7 +2,7 @@
 
 A new episode starts when the last message is more than GAP_MINUTES old or on another
 calendar day. Closing an episode needs a summary from the brain; this module only keeps
-the records. Levels: 0 full (messages still cited), 1 summary only, 2 gist only.
+the records, without a sentence that holds a secret (scrub.py). Levels: 0 full (messages still cited), 1 summary only, 2 gist only.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from fish.memory.longterm import days_between, iso
+from fish.memory.scrub import redact
 
 GAP_MINUTES = 30
 SUMMARY_ONLY_AFTER_DAYS = 7
@@ -90,7 +91,7 @@ class EpisodeManager:
 
     def fold_in(self, episode_id: int, running_summary: str) -> None:
         self.conn.execute(
-            "UPDATE episodes SET running_summary = ? WHERE id = ?", (running_summary, episode_id)
+            "UPDATE episodes SET running_summary = ? WHERE id = ?", (redact(running_summary), episode_id)
         )
         self.conn.commit()
 
@@ -99,7 +100,7 @@ class EpisodeManager:
         self.conn.execute(
             "UPDATE episodes SET ended = ?, summary = ?, gist = ?, importance = ?, valence = ?"
             " WHERE id = ?",
-            (iso(now or datetime.now()), summary, gist, importance, valence, episode_id),
+            (iso(now or datetime.now()), redact(summary), redact(gist), importance, valence, episode_id),
         )
         self.conn.commit()
         return self.get(episode_id)

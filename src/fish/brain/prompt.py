@@ -215,18 +215,38 @@ def build_fold_messages(summary: str, turns: list[Turn]) -> list[dict[str, str]]
     return [{"role": "user", "content": content}]
 
 
+def render_asked(asked: list[Followup]) -> str:
+    """What she asked him in this chat, with the memory each question is about."""
+    return "\n".join(f"- {f.text}" + (f"（问的是 #{f.source_memory}）" if f.source_memory else "")
+                     for f in asked) or "（没有）"
+
+
+def render_waiting(waiting: list[Memory]) -> str:
+    """Events this chat touched that end in a result, by id, for `outcomes` (memory v3 §B2)."""
+    lines = []
+    for m in waiting:
+        day = told_day(m)
+        when = f"（{day.month}月{day.day}日）" if day else ""
+        known = f"（已记的结果：{m.outcome}）" if m.outcome else ""
+        lines.append(f"- [#{m.id}] {m.text}{when}{known}——" + owner_words("他说结果了吗？"))
+    return "\n".join(lines) or "（没有）"
+
+
 def build_close_messages(summary: str, turns: list[Turn], already: list[str],
                          today: str, known: list[str] | None = None,
-                         pacts: list[Memory] | None = None) -> list[dict[str, str]]:
+                         pacts: list[Memory] | None = None, *, asked: list[Followup] | None = None,
+                         waiting: list[Memory] | None = None) -> list[dict[str, str]]:
     """known: what she always carries about him (her profile), so the close can see what is
     still missing and fill in what the chat forgot to write down. today: YYYY-MM-DD; the
     weekday is added here so the notes do not work it out wrong. pacts: the promises still
-    open, by id, for `pact_done`."""
+    open, by id, for `pact_done`. asked: the follow-ups she asked in this chat; waiting: the
+    events it touched that end in a result, by id, for `outcomes`."""
     content = render(
         load_template("close_episode"), summary=summary or "（无）", turns=render_turns(turns),
         already="\n".join(f"- {a}" for a in already) or "（无）",
         today=f"{today} 周{WEEKDAYS[date.fromisoformat(today[:10]).weekday()]}",
         known="\n".join(f"- {k}" for k in known or []) or "（还没有）",
-        pacts=render_pacts(pacts or []),
+        pacts=render_pacts(pacts or []), asked=render_asked(asked or []),
+        waiting=render_waiting(waiting or []),
     )
     return [{"role": "user", "content": content}]

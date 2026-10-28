@@ -30,6 +30,10 @@ def day_of(start: date, stamp: str) -> int:
     return (datetime.fromisoformat(stamp).date() - start).days + 1
 
 
+def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+
+
 def coverage(db: Path, script: dict) -> list[dict]:
     """One row per fact and set of keys its questions use: where the keys appear, first day in
     each layer, and at how many of those questions a note with it already existed (and was not
@@ -37,7 +41,10 @@ def coverage(db: Path, script: dict) -> list[dict]:
     start = date.fromisoformat(script["start"])
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
-    mems = [dict(r) for r in conn.execute("SELECT id, text, created, superseded_by FROM memories")]
+    # a result hung on an event counts as noted (memory v3 §B1); older databases have no such column
+    outcome = "COALESCE(outcome, '')" if "outcome" in _columns(conn, "memories") else "''"
+    mems = [dict(r) for r in conn.execute(
+        f"SELECT id, text || ' ' || {outcome} AS text, created, superseded_by FROM memories")]
     eps = [dict(r) for r in conn.execute(
         "SELECT id, started, running_summary, summary, gist, level FROM episodes")]
     his = [dict(r) for r in conn.execute("SELECT ts, text FROM messages WHERE role = 'user' ORDER BY id")]
@@ -91,7 +98,9 @@ def forbidden(db: Path, script: dict) -> dict[str, dict[str, int]]:
     """For each forbidden word: how often in her notes, summaries and diary, and in his lines."""
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     texts = {
-        "笔记": [r[0] for r in conn.execute("SELECT text FROM memories")],
+        "笔记": [t for r in conn.execute(
+            "SELECT text, outcome FROM memories" if "outcome" in _columns(conn, "memories")
+            else "SELECT text, NULL FROM memories") for t in r if t],
         "摘要": [t for r in conn.execute("SELECT running_summary, summary, gist FROM episodes") for t in r if t],
         "日记": [r[0] for r in conn.execute("SELECT text FROM diary")],
         "他的原话": [r[0] for r in conn.execute("SELECT text FROM messages WHERE role = 'user'")],

@@ -1,6 +1,7 @@
 """The night's model calls (docs/memory_design_zh.md §5.4): merge duplicates, spot
 contradictions, rewrite often-repeated things as gists (decision 20), reflect, write her diary. Each is one call that returns JSON; a bad reply
-means "do nothing tonight", never an exception, so the mechanical steps still run.
+means "do nothing tonight", never an exception, so the mechanical steps still run. A rewrite
+that holds a secret (memory.scrub) is dropped; the diary loses such a sentence when written.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from dataclasses import dataclass
 from fish.brain.llm import LLM
 from fish.brain.parse import extract_json
 from fish.brain.prompt import load_template, render
-from fish.memory import Memory
+from fish.memory import Memory, secret
 from fish.memory import stability as st
 
 DIARY_MAX_CHARS = 120
@@ -79,7 +80,7 @@ class Consolidator:
             ids = item.get("ids")
             merged = str(item.get("text", "")).strip()
             if (isinstance(ids, list) and len(ids) == 2 and all(isinstance(i, int) for i in ids)
-                    and frozenset(ids) in allowed and merged
+                    and frozenset(ids) in allowed and merged and not secret(merged)
                     and keeps_subject(allowed[frozenset(ids)], merged)):
                 merges.append(Merge(tuple(ids), merged[:200]))
         return merges
@@ -93,7 +94,8 @@ class Consolidator:
         allowed = {m.id for m in memories}
         out: dict[int, str] = {}
         for item in (data or {}).get("gists") or []:
-            if isinstance(item, dict) and item.get("id") in allowed and str(item.get("text", "")).strip():
+            if (isinstance(item, dict) and item.get("id") in allowed and str(item.get("text", "")).strip()
+                    and not secret(str(item["text"]))):
                 out[item["id"]] = str(item["text"]).strip()[:80]
         return out
 

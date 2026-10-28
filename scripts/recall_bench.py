@@ -152,7 +152,8 @@ def bench(db: Path, script: dict, *, cue: str = "his", skip_card: bool = False,
             now = at(start, p)
             alive = known_then(mems, now)
             keys = p.get("keys") or fact.get("keys", [])
-            answers = {m.id for m in alive if any(k in m.text for k in keys)}
+            # a result hung on the event counts (memory v3 §B1); when it was hung on is not stored
+            answers = {m.id for m in alive if any(k in m.text + (m.outcome or "") for k in keys)}
             asked += 1
             if not answers:
                 missing += 1
