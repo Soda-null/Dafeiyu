@@ -4,7 +4,8 @@ so the model never counts days itself.
 The model wrote "2027-01-24 周六" when that Saturday was the 23rd, and saw "现在是 2027-03-14"
 next to "他的生日是3月14日" without noticing it was his birthday. So the code says it:
 
-- a date table: yesterday, the day before, every day of this week and next, 下下周二;
+- a date table: yesterday, the day before, tomorrow, 后天, 大后天, every day of this week and
+  next, 下下周二;
 - his birthday (or an anniversary on her card) today or within 3 days;
 - what he said would happen today or tomorrow (`happened_on`, said before the day);
 - a line for a weekday pattern the night counted (patterns.py), if today is its day or he asks
@@ -56,8 +57,12 @@ def calendar(today: date) -> str:
     def week(start: date) -> str:
         return " ".join(f"{WEEKDAYS_CN[i]}{_md(start + timedelta(days=i))}" for i in range(7))
 
-    y, b = today - timedelta(days=1), today - timedelta(days=2)
-    return (f"昨天 {_md(y)} 周{WEEKDAYS_CN[y.weekday()]}，前天 {_md(b)} 周{WEEKDAYS_CN[b.weekday()]}。"
+    def day(word: str, k: int) -> str:
+        d = today + timedelta(days=k)
+        return f"{word} {_md(d)} 周{WEEKDAYS_CN[d.weekday()]}"
+
+    return ("，".join(day(w, k) for w, k in (("昨天", -1), ("前天", -2))) + "。"
+            + "，".join(day(w, k) for w, k in (("明天", 1), ("后天", 2), ("大后天", 3))) + "。"
             f"这周（一到日）：{week(monday)}。下周：{week(monday + timedelta(days=7))}。"
             f"下下周二 {_md(monday + timedelta(days=15))}。")
 

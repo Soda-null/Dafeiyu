@@ -201,7 +201,9 @@ def dates_in(text: str, today: date) -> list[tuple[int, int, date, str]]:
     return sorted(found)
 
 
-def _relative_days(text: str, today: date) -> set[date]:
+def _relative_days(text: str, today: date, *, yearly_skip: bool = True) -> set[date]:
+    """yearly_skip: "下个月十九号" next to 生日 names no day of the note (it is every year's);
+    reading his line for the one day it names, it does."""
     monday = today - timedelta(days=today.weekday())
     days = set()
     for m in _RELATIVE.finditer(text):
@@ -214,7 +216,7 @@ def _relative_days(text: str, today: date) -> set[date]:
             week = {"上上": -2, "上": -1, "这": 0, "本": 0, "下": 1, "下下": 2}[m.group(1)]
             days.add(monday + timedelta(days=7 * week + WEEKDAY[m.group(2)]))
         elif m.group(4):  # "下个月十九号"; a birthday's is every year's (written_day)
-            if ANNUAL.search(text):
+            if yearly_skip and ANNUAL.search(text):
                 continue
             year, month = months_from(today, MONTH_OFF[m.group(4)])
             if 1 <= (day := day_num(m.group(5))) <= monthrange(year, month)[1]:
@@ -268,6 +270,56 @@ def day_of(text: str, now: datetime, said: str = "") -> date | None:
         if days:
             return None  # "明天面试，今天先复习": more than one day, so not this one
     return None
+
+
+# --- writing: a date the model counted from his words (memory v3 §14.3) ---------------------------
+# He said "大后天就我生日了" on 5/4; the model wrote "他的生日是2028-05-08". A date it wrote out is
+# never read again by `absolute`, so the code counts his words itself and the near miss is moved.
+NEAR_DAYS = 3  # a date this close to the day his line names is the model counting wrong
+# Words that name a day the code cannot place, or a stretch of days: with one of them in his line,
+# "the day his line names" is not known ("周五" last or next, "下周", "过几天", "19号" of which month).
+_VAGUE_DAY = re.compile(
+    rf"{WEEK}[一二三四五六日天末]|周末|(?:上上|下下|上|下|这|本)个?(?:{WEEK}|月)|月[初中底末]"
+    r"|\d{1,2}\s*[号日]|[二三]?十[一二三四五六七八九]?[号日]|过[几两]天|这几天|改天|回头")
+
+
+def line_day(said: str, today: date) -> date | None:
+    """The one day his line names, counted here: "大后天" said on 2028-05-04 is 05-07,
+    "下下周二", "下个月8号", "5月7号" too. `today` is the day he said it (her day: a line at 01:00
+    belongs to the day before). None when it names no day, more than one ("明天面试，今天先复习"),
+    a habit, or a day the code cannot place ("周五", "下周", "19号")."""
+    if not said or HABIT.search(said):
+        return None
+    if _VAGUE_DAY.search(_RELATIVE.sub("|", CN_DATE.sub("|", ISO_DATE.sub("|", said)))):
+        return None
+    days = {d for _, _, d, _ in dates_in(said, today)} | _relative_days(said, today, yearly_skip=False)
+    return days.pop() if len(days) == 1 else None
+
+
+def agree_with_line(text: str, said: str, today: date, told: date | None = None) -> str:
+    """A note's written-out dates ("2028-05-08") that miss the one day his line names by a few
+    days become that day, with a weekday written right next to it. Untouched: a note his line does
+    not date (no shared word with the part that names the day), one that already has the right
+    day, a date far off (another thing), the day he said it (`told`, default `today`)."""
+    day = line_day(said, today)
+    if day is None or not _about_the_note(said, text):
+        return text
+    isos = [(a, b, d) for a, b, d, form in dates_in(text, today) if form == "iso"]
+    if any(d == day for _, _, d in isos):
+        return text
+    said_on = {today, told or today}  # "他2028-05-04说……": the day he said it, by either clock
+    out = text
+    for a, b, d in reversed(isos):
+        if d in said_on or not 0 < abs((d - day).days) <= NEAR_DAYS:
+            continue
+        tail = out[b:]
+        if w := re.match(rf"\s*[（(]?\s*{WEEK}([一二三四五六日天])", tail):
+            tail = tail[:w.start(1)] + WEEKDAYS_CN[day.weekday()] + tail[w.end(1):]
+        head = out[:a]
+        if w := re.search(rf"{WEEK}([一二三四五六日天])\s*[（(]?\s*$", head):
+            head = head[:w.start(1)] + WEEKDAYS_CN[day.weekday()] + head[w.end(1):]
+        out = head + day.isoformat() + tail
+    return out
 
 
 # --- writing: a note's time words as the days they name (memory v3 §14) -------------------------

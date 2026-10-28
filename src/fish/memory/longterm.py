@@ -16,7 +16,8 @@ from datetime import date, datetime, timedelta
 from fish.memory import pacts as pk
 from fish.memory import stability as st
 from fish.memory.scrub import secret
-from fish.memory.when import absolute, day_of, fix_weekday, written_day
+from fish.memory.patterns import day_of as her_day
+from fish.memory.when import absolute, agree_with_line, day_of, fix_weekday, written_day
 
 KINDS = ("fact", "event", "howto", "insight", "self", "world")  # world: things she saw online
 PROFILE_IMPORTANCE = 8  # facts at or above this importance form the always-present profile
@@ -362,7 +363,8 @@ class MemoryStore:
         if its kind is over its cap, the least stable one of that kind is pushed out.
         said: his line the note came from; for an event, its time words date the note when the
         note's own text names no day (memory v3 §B1). A date that disagrees with the weekday written
-        next to it is moved to that weekday first (§B2 D5).
+        next to it is moved to that weekday first (§B2 D5); a written-out date a few days off the one
+        day his line names ("大后天" counted wrong) becomes that day (§14.3, when.agree_with_line).
         heard: "chat" or "close" when the note comes from talking with him; only such a note can
         be a promise between them or his nickname for her (§B2 D1/D2, pacts.py).
         A note that holds a secret (a code, a password) is never written, whoever asks (scrub.py)."""
@@ -370,6 +372,8 @@ class MemoryStore:
         if secret(text):
             return None
         text = fix_weekday(text, now.date())
+        if said and heard in pk.HEARD:  # "大后天" counted by the model as 05-08 is 05-07 (§14.3)
+            text = agree_with_line(text, said, her_day(now), told=now.date())
         if kind in ABOUT_HIM_KINDS and ABOUT_THE_CHAT.search(text):
             return None
         said_as = text  # the words as said, for the day they name (two days named: no one day)
