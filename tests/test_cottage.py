@@ -378,3 +378,17 @@ def test_mood_moves_only_within_its_bounds():
     node.on_moved(MoodMoved(MON, energy=+25, boredom=-10))
     node.on_moved(MoodMoved(MON, energy=-5))
     assert (s.mood.energy, s.mood.boredom, s.mood.hunger) == (95, 0, 50)  # 100 then 95; not 115 − 5 = 110 → 100
+
+
+def test_an_hour_awake_is_an_hour_however_often_the_clock_ticks(tmp_path):
+    """10-28: WeChat ticks about every half minute, and each tick counted a whole quarter hour
+    awake: an hour after dinner she was starving (hunger 91) and spent (energy 0)."""
+    c = home(tmp_path, datetime(2026, 11, 2, 14, 0))
+    t, hunger, energy = datetime(2026, 11, 2, 14, 0), 0.0, 0.0
+    while t < datetime(2026, 11, 2, 15, 0):
+        t += timedelta(seconds=27)
+        ch = c.advance(t)
+        hunger, energy = hunger + ch.hunger, energy + ch.energy
+    assert round(hunger, 3) == 3.015 and round(energy, 4) == -2.5125  # 134 ticks = 60.3 minutes: 3 and 2.5 an hour
+    c2 = home(tmp_path / "night", datetime(2026, 11, 2, 23, 50))
+    assert round(c2.advance(datetime(2026, 11, 3, 8, 10)).energy, 3) == round(-2.5 * 20 / 60, 3)  # 10 min + 10 min up

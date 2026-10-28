@@ -13,7 +13,7 @@ import os
 import re
 from collections import Counter
 from dataclasses import asdict, dataclass, field, fields
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 from fish.config import owner_words
@@ -85,7 +85,7 @@ class Offer:
 def fresh(now: datetime) -> Room:
     today = now.date().isoformat()
     return Room(fridge=[{"name": "鸡蛋", "meals": 3, "bought": today}, {"name": "青菜", "meals": 1, "bought": today}],
-                last=_iso(now))
+                last=now.isoformat(timespec="seconds"))
 
 
 def rice_word(rice: int) -> str:
@@ -115,11 +115,17 @@ def _wake_between(last: datetime, now: datetime) -> bool:
 
 
 def _awake_hours(last: datetime, now: datetime) -> float:
-    step, t, n = timedelta(minutes=15), max(last, now - timedelta(hours=48)), 0
+    """Hours she was up between two moments, to the second: the night's sleep (SLEEP_FROM to
+    WAKE_AT) does not count. Counting in whole quarter hours made every poll (half a minute
+    apart) a quarter hour awake: 10-28 she was starving and spent an hour after a meal."""
+    t, awake = max(last, now - timedelta(hours=48)), 0.0
     while t < now:
-        n += not asleep_hours(t)
-        t += step
-    return n / 4
+        end = min(now, datetime.combine(t.date() + timedelta(days=1), time(0)))
+        night = (datetime.combine(t.date(), SLEEP_FROM), datetime.combine(t.date(), WAKE_AT))
+        asleep = max(0.0, (min(end, night[1]) - max(t, night[0])).total_seconds())
+        awake += (end - t).total_seconds() - asleep
+        t = end
+    return awake / 3600
 
 
 class Cottage:
@@ -210,7 +216,7 @@ class Cottage:
 
         room.events = [e for e in room.events if now - datetime.fromisoformat(e["ts"]) < KEEP_EVENTS]
         room.meals = room.meals[-KEEP_MEALS:]
-        room.last = _iso(now)
+        room.last = now.isoformat(timespec="seconds")  # to the second: polls are half a minute apart
         self.save(room)
         return change
 
