@@ -80,17 +80,23 @@ class ActionsMixin:
             # she eats (advance). Until then she is not fed, and has not eaten.
             change.hunger = 0.0
             room.rice -= 1
+            two = self.guest_here(room, now)  # he is here: enough for both (decision 41)
+            if two and room.rice > 0:
+                room.rice -= 1
             if key == "rice":
                 room.sink.append("电饭煲内胆")
-                line = f"开始煮{meal}的白饭" if meal else "开始煮一锅白饭"
-                done = f"{meal}的白饭煮好了，吃了" if meal else "白饭煮好了，吃了"
+                line = (f"开始煮{meal}的白饭" if meal else "开始煮一锅白饭") + ("（两人份）" if two else "")
+                done = f"{meal}的白饭煮好了，" if meal else "白饭煮好了，"
+                done += "和他一起吃了" if two else "吃了"
             else:
                 used = self._take_for_meal(room, now.date())
+                if two:
+                    used += [n for n in self._take_for_meal(room, now.date()) if n not in used]
                 room.sink.append("锅")
-                line = f"开始做{meal or '饭'}，用{'、'.join(used)}"
+                line = f"开始做{meal or '饭'}{'（两人份）' if two else ''}，用{'、'.join(used)}"
                 # what was in it, said again when it is eaten: the start may be out of sight by then
                 # (10-29 checkup: asked what lunch was, she guessed "煎蛋" over 青菜豆腐)
-                done = (f"{meal}做好了，吃了（{'、'.join(used)}）" if meal else f"饭做好了，吃了（{'、'.join(used)}）")
+                done = (f"{meal}做好了，" if meal else "饭做好了，") + ("和他一起吃了" if two else "吃了") + f"（{'、'.join(used)}）"
             room.pending = {"hunger": action.hunger, "line": done, "routine": routine}
         elif key == "wash":
             line = "开始洗碗"

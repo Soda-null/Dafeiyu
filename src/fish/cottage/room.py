@@ -18,6 +18,7 @@ from pathlib import Path
 from fish.config import owner_words
 from fish.cottage.actions import ActionsMixin
 from fish.cottage.drawer import DrawerMixin
+from fish.cottage.guest import GuestMixin
 from fish.cottage.rules import (ACTIONS, ATE_RECENTLY_HOURS, ENERGY_PER_HOUR, HUNGER_PER_HOUR, HUNGRY, SLEEP_FROM,
                                 WAKE_AT, asleep_hours, mealtime)
 from fish.cottage.shop import ShopMixin
@@ -51,7 +52,7 @@ def _awake_hours(last: datetime, now: datetime) -> float:
     return awake / 3600
 
 
-class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin):
+class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin):
     put_in = staticmethod(put_in)  # into the fridge (state.py), kept here for old callers
 
     def __init__(self, path: Path) -> None:
@@ -121,6 +122,8 @@ class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin):
             woke = datetime.combine(now.date() if now.time() >= WAKE_AT else now.date() - timedelta(days=1), WAKE_AT)
             change.slept.append((datetime.combine(woke.date(), SLEEP_FROM), woke))
 
+        self._guest_step(room, now, change)  # he comes at the hour he said, goes at the hour he leaves
+
         for item in list(room.fridge):
             if _days_left(item, now.date()) <= 0:
                 room.fridge.remove(item)
@@ -128,7 +131,7 @@ class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin):
 
         meal = mealtime(now)
         key = f"{now.date().isoformat()} {meal}"
-        if meal and key not in room.meals and not room.doing:
+        if meal and key not in room.meals and not room.doing and not self.waiting_for_him(room, now):
             room.meals.append(key)
             if room.ate and now - datetime.fromisoformat(room.ate) < timedelta(hours=ATE_RECENTLY_HOURS):
                 pass  # she cooked a little while ago; that was this meal
@@ -154,12 +157,15 @@ class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin):
             meals[i["name"]] += i["meals"]
         food = "冰箱里有" + "、".join(f"{n}（够 {k} 顿）" for n, k in meals.items()) if meals else "冰箱空了"
         sink = "、".join(n if k == 1 else f"{COUNT_WORDS.get(k, k)}个{n}" for n, k in Counter(room.sink).items())
-        return {
+        out = {
             "food": f"{food}；米缸{rice_word(room.rice)}",
             "sink": f"水槽里有{sink}没洗" if room.sink else "水槽是干净的",
             "bed": BED_WORDS.get(room.bed, room.bed),
             "sill": "窗台上：" + "、".join(room.sill) if room.sill else "窗台空着",
         }
+        if room.guest:  # him, here or coming (decision 41)
+            out["guest"] = GuestMixin.guest_line(room)
+        return out
 
     @staticmethod
     def doing_line(room: Room, *, chatting: bool = False, now: datetime | None = None) -> str:
@@ -181,7 +187,7 @@ class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin):
         that matter now, and what happened at home today."""
         room = self.load(now)
         all_lines = self.lines(room)
-        wanted = []
+        wanted = ["guest"] if room.guest else []
         if hunger >= HUNGRY or mealtime(now) or not room.fridge or room.rice < 4:
             wanted.append("food")
         if len(room.sink) >= 2:

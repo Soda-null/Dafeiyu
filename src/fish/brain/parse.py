@@ -125,6 +125,10 @@ class Reply:
     sticker: int | None = None  # a sticker from her album to send with this reply
     do: str | None = None  # something in her room she starts now, as she says so (decision 35)
     do_arg: str = ""  # what she wants to buy, when `do` is the shop
+    guest: str | None = None  # "arrive" / "leave": he says he is at her door, or going home (decision 41)
+    guest_since: str = ""  # "HH:MM" when he comes later today
+    guest_until: str = ""  # "HH:MM" when he says he will go
+    guest_why: str = ""  # what he comes for ("吃晚饭")
     parsed: bool = True
 
 
@@ -250,6 +254,8 @@ def parse_reply(raw: str) -> Reply:
     if sticker is None and named:
         sticker = named
     # a say that went on into a made-up turn of his: what she noted may be what "he" said there
+    guest = str(data.get("guest") or "").strip()
+    guest = guest if guest in ("arrive", "leave") and not fake else None  # a made-up turn of his says nothing
     return Reply(
         say=say,
         mood=mood if mood in MOODS else None,
@@ -265,6 +271,10 @@ def parse_reply(raw: str) -> Reply:
         sticker=sticker,
         do=str(data.get("do") or "").strip()[:12] or None if not fake else None,
         do_arg=str(data.get("do_arg") or "").strip()[:40] if not fake else "",
+        guest=guest,
+        guest_since=str(data.get("guest_since") or "").strip()[:5],
+        guest_until=str(data.get("guest_until") or "").strip()[:5],
+        guest_why=str(data.get("guest_why") or "").strip()[:20],
     )
 
 

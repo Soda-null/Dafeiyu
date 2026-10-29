@@ -41,6 +41,7 @@ class Room:
     meals: list[str] = field(default_factory=list)  # "2026-10-28 午饭": that mealtime is done with
     ate: str = ""  # when she last ate
     pending: dict = field(default_factory=dict)  # what comes at `until`: a meal ({"hunger", "line"}) or the shopping ({"buy"})
+    guest: dict = field(default_factory=dict)  # him at her place: {"since", "until", "why", "here"} (decision 41)
     events: list[dict] = field(default_factory=list)  # {"ts", "line"}, the last two days
     last: str = ""  # up to when time has moved the room
 

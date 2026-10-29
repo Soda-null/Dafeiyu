@@ -241,6 +241,8 @@ class ReachNode:
         policy = ReachPolicy(self.conn, enabled=self.enabled, max_per_day=self.max_per_day)
         if policy.refused(now) is not None:
             return None
+        if self.room is not None and self.room.here(now):  # he is in her room: no need to text him (decision 41)
+            return None
         mood = MoodStore.apply_clock(MoodStore(self.conn).load(), now, kitchen=self.room is not None)
         trig = policy.triggers(now, mood, home=self.room.lately(now, HOME_LATELY) if self.room is not None else [])
         if not trig.any:

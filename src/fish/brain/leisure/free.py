@@ -107,6 +107,8 @@ class Leisure:
                                max_per_day=brain.settings.leisure_max_per_day)
         if policy.refused(now) is not None:
             return None
+        if getattr(brain, "room", None) is not None and brain.room.here(now):  # he is here: she is with him (decision 41)
+            return None
         kit = self.kit(now)
         moment_id = kit.pastimes.begin_moment(now)
         choices = self.menu(kit)

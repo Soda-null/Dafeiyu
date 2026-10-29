@@ -678,3 +678,95 @@ def test_her_letters_in_the_drawer_and_she_knows_when_he_looked(tmp_path, capsys
     capsys.readouterr()
     show_room(s, None, [])  # `yu room`
     assert "好好吃饭" not in capsys.readouterr().out
+
+
+def test_he_comes_for_dinner_and_she_cooks_for_two(tmp_path):
+    """Decision 41: he says he comes at 18:00 for dinner and stays till 21:00. She waits for him
+    to cook; dinner is for two; while he is there she does not text him or wander off to her
+    free time; at 21:00 he goes home."""
+    c = home(tmp_path, MON.replace(hour=12))
+    c.give("豆腐", MON.replace(hour=13), 2)
+    noon = MON.replace(hour=16)
+    assert c.expect(noon, MON.replace(hour=18), MON.replace(hour=21), "吃晚饭") == "他说 18:00 过来（吃晚饭）"
+    assert c.lines(c.load(noon))["guest"] == "他说 18:00 过来（待到 21:00，吃晚饭）"
+    c.advance(MON.replace(hour=17, minute=45))  # dinnertime, but he is not here yet
+    assert not any("做晚饭" in e["line"] for e in c.load(MON.replace(hour=17, minute=45)).events)
+    eggs = sum(i["meals"] for i in c.load(MON.replace(hour=17, minute=45)).fridge)
+    c.advance(MON.replace(hour=18, minute=5))
+    room = c.load(MON.replace(hour=18, minute=5))
+    assert c.guest_here(room, MON.replace(hour=18, minute=5))
+    lines = [e["line"] for e in room.events]
+    assert "他来了（吃晚饭），说待到 21:00" in lines and lines[-1].startswith("开始做晚饭（两人份），用")
+    assert sum(i["meals"] for i in room.fridge) == eggs - 4  # two kinds, twice
+    c.advance(MON.replace(hour=19))
+    assert c.load(MON.replace(hour=19)).events[-1]["line"].startswith("晚饭做好了，和他一起吃了（")
+    c.advance(MON.replace(hour=21, minute=5))
+    room = c.load(MON.replace(hour=21, minute=5))
+    assert room.events[-1]["line"] == "他回去了" and room.guest == {}
+
+
+def test_a_chat_says_he_is_at_her_door_and_she_stays_with_him(tmp_path):
+    from fish.memory import Relationship
+
+    conn = connect(tmp_path / "fish.db")
+    s = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db", cottage=True)
+    replies = iter([{"say": "门没锁 进来吧", "guest": "arrive", "guest_until": "21:00", "guest_why": "吃晚饭"},
+                    {"say": "你坐 饭马上好"}, {"say": "路上慢点", "guest": "leave"}])
+    prompts = []
+
+    def respond(messages, json_mode):
+        text = messages[-1]["content"] if isinstance(messages[-1]["content"], str) else ""
+        if "你是检查员" in text:
+            return json.dumps({"ok": True})
+        if "要不要先给他发条消息" in text or "pick" in text:
+            prompts.append("想发或想空闲了")
+            return json.dumps({"say": "在干嘛", "pick": 1})
+        if messages[0]["role"] != "system":  # the close of a chat that went quiet, and such
+            return json.dumps({"summary": "聊了晚饭", "gist": "聊了晚饭", "notes": []}, ensure_ascii=False)
+        prompts.append(messages[0]["content"])
+        return json.dumps(next(replies), ensure_ascii=False)
+
+    brain = Brain(conn, s, FakeLLM(respond), persona_text="你是大肥鱼。")
+    brain.leisure = Leisure(brain, [CottageActivity(brain.cottage)], sources=[])
+    brain.cottage.load(MON.replace(hour=17))
+    Relationship(conn).note_active_day(MON.replace(hour=12))
+    brain.respond("我到你家门口了", now=MON.replace(hour=18))
+    brain.respond("饭好了没", now=MON.replace(hour=18, minute=20))
+    assert "他这会儿就在你屋里（18:00 来的，说待到 21:00，吃晚饭）" in prompts[-1]
+    assert brain.tick(lambda text: True, now=MON.replace(hour=19, minute=50)) is False
+    assert "想发或想空闲了" not in prompts  # he is here: no texting him, no free time of her own
+    brain.respond("我先回去啦", now=MON.replace(hour=20, minute=30))
+    assert brain.cottage.load(MON.replace(hour=20, minute=30)).events[-1]["line"] == "他回去了"
+
+
+def test_his_plain_words_take_him_to_her_place():
+    from fish.brain.home_command import Op, carry_out
+
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        c = home(Path(tmp))
+        assert carry_out(c, [Op("visit", "home", "吃晚饭", None, "", "21:00")], MON) == ["他来了（吃晚饭），说待到 21:00"]
+        assert carry_out(c, [Op("go_home", "home", "")], MON.replace(hour=20)) == ["他回去了"]
+        assert carry_out(c, [Op("go_home", "home", "")], MON.replace(hour=20, minute=5)) == ["他本来就不在她那"]
+
+
+def test_a_planned_visit_waits_for_its_hour_and_he_stays_till_he_goes(tmp_path):
+    """10-29 trial: "今晚我去你那吃饭吧，六点到" at 16:00 counted as here at 16:00, and with no
+    hour to leave he was sent home at 20:00 while still at the table."""
+    c = home(tmp_path, MON.replace(hour=12))
+    assert c.expect(MON.replace(hour=16), MON.replace(hour=18), None, "吃晚饭") == "他说 18:00 过来（吃晚饭）"
+    assert not c.guest_here(c.load(MON.replace(hour=16)), MON.replace(hour=17))
+    c.expect(MON.replace(hour=17, minute=50), None, None)  # at her door early, says nothing more
+    room = c.load(MON.replace(hour=17, minute=50))
+    assert room.guest["why"] == "吃晚饭" and room.guest["until"].endswith("23:30")
+    assert c.lines(room)["guest"] == "他这会儿就在你屋里（17:50 来的，吃晚饭）"  # no hour he never said
+    c.advance(MON.replace(hour=21, minute=10))
+    assert c.guest_here(c.load(MON.replace(hour=21, minute=10)), MON.replace(hour=21, minute=10))  # still here
+    assert c.send_off(MON.replace(hour=21, minute=15)) == "他回去了"
+
+
+def test_his_words_of_going_home_send_him_home_when_her_reply_forgets():
+    from fish.cottage import leaving_words
+
+    assert leaving_words("我先回去啦，明天见") and leaving_words("到家了") and leaving_words("我走了哦")
+    assert not leaving_words("我回去拿个东西再来") and not leaving_words("今晚吃啥")

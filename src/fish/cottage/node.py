@@ -17,6 +17,15 @@ from fish.cottage.room import Cottage
 from fish.msgs import HomeEvent, MoodMoved, SheAte, SheSlept, TimePassed
 
 
+def _at(now: datetime, hhmm: str) -> datetime | None:
+    """"18:30" today; None when it does not read as a time."""
+    try:
+        h, m = (int(x) for x in hhmm.strip().replace("：", ":").split(":")[:2])
+        return now.replace(hour=h, minute=m, second=0, microsecond=0)
+    except (ValueError, AttributeError):
+        return None
+
+
 class RoomNode:
     def __init__(self, bus: Bus, cottage: Cottage) -> None:
         self.bus = bus
@@ -76,6 +85,25 @@ class RoomNode:
         except ValueError:
             return ""
         return "\n".join(lines)
+
+    def here(self, now: datetime) -> bool:
+        """He is at her place right now (decision 41)."""
+        try:
+            return self.cottage.guest_here(self.cottage.load(now), now)
+        except ValueError:
+            return False
+
+    def visit(self, what: str, now: datetime, since: str = "", until: str = "", why: str = "") -> str | None:
+        """His comings and goings, from a chat ("arrive" / "leave") or his plain words. Times are
+        "HH:MM" today; a time already past means now."""
+        try:
+            if what == "leave":
+                return self.cottage.send_off(now)
+            if what == "arrive":
+                return self.cottage.expect(now, _at(now, since), _at(now, until), why)
+        except ValueError:
+            return None
+        return None
 
     def act(self, key: str, now: datetime, arg: str = "") -> bool:
         """She starts something because she said so in a chat (decision 35). The room's rules

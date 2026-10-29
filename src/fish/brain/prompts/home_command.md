@@ -7,14 +7,15 @@
 {text}
 
 ## 怎么翻
-- op 有三种：put（放进去）、take（拿走）、peek（打开看看）。
+- op 有五种：put（放进去）、take（拿走）、peek（打开看看）、visit（他去她那儿）、go_home（他从她那儿回去）。
 - where：fridge（冰箱，吃的喝的）、rice（米缸，只放米）、sill（窗台：送她的东西、摆件、花、纸条；她给他留的东西也在这）。
 - put 到冰箱：what 写吃的名字（"牛奶""鸡蛋"），句子里看得出几份就填 meals（"两盒牛奶"是 2，"一打鸡蛋"是 12），看不出就不填。
 - put 到窗台：what 写那东西完整的样子（"一束向日葵""一张写着早点睡的纸条"）。
 - 往米缸放米：op put，where rice，what 米。
 - take：what 写"屋里现在"里那个东西的名字，原样照抄；屋里没有的别写。"她给我留的""她放的"指窗台上标"给他留的"那些。
 - 想看她床头抽屉里的东西（打开抽屉、翻翻她的抽屉、看看她写的东西）：op peek，where drawer，what 抽屉。
+- 他去她那儿（"我现在过去吃晚饭""我今晚六点去她那，待到九点"）：op visit，where home，what 写去干嘛（"吃晚饭"，没说就空），说了几点到就填 since（"18:00"，24 小时制，现在就去不填），说了几点走就填 until。他要回去了：op go_home，where home。
 - 一句话里有几件事就写几条。看不懂、或者跟放东西拿东西无关，ops 留空，say 里用一句话说为什么。
 
 只输出一个 JSON 对象（json）：
-{"ops": [{"op": "put", "where": "fridge", "what": "牛奶", "meals": 2}], "say": ""}
+{"ops": [{"op": "put", "where": "fridge", "what": "牛奶", "meals": 2}, {"op": "visit", "where": "home", "what": "吃晚饭", "since": "18:00", "until": "21:00"}], "say": ""}

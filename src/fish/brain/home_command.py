@@ -9,7 +9,8 @@ from datetime import datetime
 
 from fish.brain.ask import ask_json
 from fish.brain.llm import LLM
-from fish.cottage import Cottage
+from fish.bus import Bus
+from fish.cottage import Cottage, RoomNode
 
 PLACES = ("fridge", "rice", "sill", "drawer")
 
@@ -20,6 +21,8 @@ class Op:
     where: str  # fridge / rice / sill
     what: str
     meals: int | None = None
+    since: str = ""  # visit: "HH:MM" he comes (now when empty or past)
+    until: str = ""  # visit: "HH:MM" he leaves
 
 
 def plan(llm: LLM, text: str, room: str) -> tuple[list[Op], str]:
@@ -33,6 +36,8 @@ def plan(llm: LLM, text: str, room: str) -> tuple[list[Op], str]:
         meals = o.get("meals") if isinstance(o.get("meals"), int) and 0 < o["meals"] <= 30 else None
         if op == "peek" and where == "drawer":
             ops.append(Op(op, where, what or "抽屉"))
+        elif op in ("visit", "go_home"):
+            ops.append(Op(op, "home", what, None, str(o.get("since") or "")[:5], str(o.get("until") or "")[:5]))
         elif op in ("put", "take") and where in PLACES and where != "drawer" and what:
             ops.append(Op(op, where, what, meals))
     return ops, str(data.get("say") or "").strip()[:80]
@@ -42,7 +47,10 @@ def carry_out(cottage: Cottage, ops: list[Op], now: datetime) -> list[str]:
     """Each operation through the room's rules; one line each of what happened."""
     out = []
     for o in ops:
-        if o.op == "peek":
+        if o.op in ("visit", "go_home"):
+            out.append(RoomNode(Bus(), cottage).visit("arrive" if o.op == "visit" else "leave", now, o.since, o.until, o.what)
+                       or "他本来就不在她那")
+        elif o.op == "peek":
             letters = cottage.open_drawer(now)
             out.append(f"床头的抽屉里有 {len(letters)} 封信：" if letters else "床头的抽屉里空空的。")
             out += [f"\n【{day}】\n{text}" for day, text in letters]

@@ -28,7 +28,7 @@ from fish.bus import Bus
 from fish.clock import Clock
 from fish.brain.reply import FALLBACK_SAY, PLAIN_REMINDER, Replier, plain_text  # noqa: F401 (tests import them here)
 from fish.config import Settings, owner_words
-from fish.cottage import Cottage, RoomNode, invented_act
+from fish.cottage import Cottage, RoomNode, invented_act, leaving_words
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
 from fish.msgs import Chatted, HeSaid, SheSaid
 from fish.memory import (ABOUT_HIM_KINDS, FOLD_BATCH, PACT_LINK, Diary, Episode, EpisodeManager, Memory,
@@ -203,6 +203,10 @@ class Brain:
         reply, seen_source = self.replier.reply(sit)
         if reply.do and self.room is not None:  # she said she is off to do it: the room does it now
             self.room.act(reply.do, now, reply.do_arg)
+        if reply.guest and self.room is not None:  # he says he is at her door, or going home (decision 41)
+            self.room.visit(reply.guest, now, reply.guest_since, reply.guest_until, reply.guest_why)
+        elif self.room is not None and self.room.here(now) and leaving_words(incoming.text):
+            self.room.visit("leave", now)  # he said he is off home; her reply forgot to say he went
         if self.room is not None:  # what she says of her home, held against the room (decision 38)
             reply.say, why = check_home(self.llm, self.room.record(now), incoming.text, reply.say)
             if why:
