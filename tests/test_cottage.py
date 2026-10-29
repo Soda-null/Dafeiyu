@@ -124,9 +124,16 @@ def test_shopping_fills_the_jar_and_the_fridge_but_not_with_what_is_not_sold(tmp
     have = next(g for g in stock if g not in ("米", "鸡蛋", "青菜"))
     change = c.act("shop", MON, f"米、{have}、火锅底料")
     room = c.load()
-    assert room.rice == 12 and have in [i["name"] for i in room.fridge]
-    assert change.lines == [f"去菜店买了米、{have}（想要的火锅底料没有）"]
-    assert c.doing_line(room).startswith("你出门去菜店了")
+    # decision 35: out of the door, nothing bought yet; the food comes home with her
+    assert change.lines == [f"出门去镇上的菜店（想买米、{have}、火锅底料）"]
+    assert room.rice == 1 and have not in [i["name"] for i in room.fridge]
+    assert c.doing_line(room).startswith("你出门去菜店了") and "10:30 到家" in c.doing_line(room)
+    back = c.advance(MON + timedelta(minutes=31))
+    room = c.load()
+    assert back.lines == [f"从菜店回来了，买了米、{have}（想要的火锅底料没有）"]
+    assert room.rice == 12 and have in [i["name"] for i in room.fridge] and not room.doing
+    assert c.today(room, MON + timedelta(minutes=31))[-2:] == [
+        f"10:00 出门去镇上的菜店（想买米、{have}、火锅底料）", f"10:30 从菜店回来了，买了米、{have}（想要的火锅底料没有）"]
 
 
 def test_what_she_says_changes_nothing_in_the_room(tmp_path):
@@ -405,3 +412,49 @@ def test_show_lists_the_book_she_is_reading(tmp_path, capsys):
     Pastimes(conn).start("book", "西遊記", "https://zh.wikisource.org/wiki/西遊記", {"chapter": 1, "part": 0}, now=MON)
     show(conn, MON)
     assert "在追的：西遊記" in capsys.readouterr().out
+
+
+def test_what_she_says_she_is_off_to_do_she_does_and_it_takes_its_time(tmp_path):
+    """Decision 35 (10-29: "我也出门买菜了" and "买了米和鸡蛋" in the same minute, the room never
+    left): in a chat she sees what she can start; saying she is off to the shop with `do` sends
+    her out for real, the food is home half an hour later, and the rules still decide."""
+    conn = connect(tmp_path / "fish.db")
+    s = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db", cottage=True)
+    replies = iter([{"say": "我也出门买菜了", "do": "shop", "do_arg": "米、鸡蛋"},
+                    {"say": "在路上了", "do": "shop", "do_arg": "米"},
+                    {"say": "到家了"}])
+    llm = FakeLLM(lambda messages, json_mode: json.dumps(next(replies), ensure_ascii=False))
+    brain = Brain(conn, s, llm, persona_text="你是大肥鱼。")
+    brain.cottage.load(MON - timedelta(hours=2))
+    brain.respond("今天要去买菜吗", now=MON)
+    assert "你现在能做的（说要去做就在 do 里填前面的英文）：" in llm.calls[0][0][0]["content"]
+    assert "shop 去镇上的菜店买菜" in llm.calls[0][0][0]["content"]
+    room = brain.cottage.load(MON)
+    assert room.doing == "去菜店" and room.rice == 6  # out of the door, nothing bought yet
+    brain.respond("到了没", now=MON + timedelta(minutes=10))  # on the way: no second trip
+    assert "你现在能做的（说要去做" not in llm.calls[-1][0][0]["content"]
+    assert [e["line"] for e in brain.cottage.load(MON + timedelta(minutes=10)).events].count("出门去镇上的菜店（想买米、鸡蛋）") == 1
+    brain.respond("回来了吗", now=MON + timedelta(minutes=35))
+    room = brain.cottage.load(MON + timedelta(minutes=35))
+    assert room.rice == 12 and not room.doing
+    assert any(e["line"].startswith("从菜店回来了，买了米") for e in room.events)
+
+
+def test_a_closed_shop_is_closed_however_she_puts_it(tmp_path):
+    conn = connect(tmp_path / "fish.db")
+    s = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db", cottage=True)
+    llm = FakeLLM([json.dumps({"say": "去买菜", "do": "shop", "do_arg": "米"}, ensure_ascii=False)])
+    brain = Brain(conn, s, llm, persona_text="你是大肥鱼。")
+    brain.cottage.load(TUE - timedelta(hours=2))
+    brain.respond("去买菜吗", now=TUE)
+    assert "shop" not in llm.calls[0][0][0]["content"].split("你现在能做的")[-1].split("。")[0]
+    assert brain.cottage.load(TUE).doing == ""  # Tuesday: the shop rests, she stays home
+
+
+def test_just_back_from_the_shop_she_does_not_go_again(tmp_path):
+    c = home(tmp_path)
+    c.act("shop", MON, "米")
+    c.advance(MON + timedelta(minutes=31))
+    later = MON + timedelta(minutes=40)
+    assert "shop" not in [o.key for o in c.offers(later, 80, 80)] and c.act("shop", later, "米") is None
+    assert "shop" in [o.key for o in c.offers(MON + timedelta(hours=3), 80, 80)]

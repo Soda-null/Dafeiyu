@@ -58,6 +58,7 @@ RICE = "米"
 SHOP_OPEN, SHOP_CLOSE = time(7, 0), time(19, 0)
 SHOP_REST_WEEKDAY = 1  # Tuesday
 SHOP_WALK_MINUTES = 10
+SHOP_AGAIN_HOURS = 2  # just back from the shop, she does not go again (10-29 trial: back at 09:23, out at 09:30)
 GREENS_GONE_AFTER = time(15, 0)
 EVERY_DAY = ("鸡蛋", "青菜", "豆腐", "肉", "西红柿", "土豆")
 IN_SEASON = {9: "南瓜", 10: "南瓜", 11: "南瓜", 12: "萝卜", 1: "萝卜", 2: "萝卜"}

@@ -54,9 +54,26 @@ class RoomNode:
         except ValueError:
             return []
 
-    def view(self, now: datetime, hunger: float) -> str:
-        """The few lines of the room she sees in a chat turn; "" when the file is broken."""
+    def view(self, now: datetime, hunger: float, energy: float | None = None) -> str:
+        """The few lines of the room she sees in a chat turn, and what she could start now;
+        "" when the file is broken."""
         try:
-            return self.cottage.for_chat(now, hunger)
+            text = self.cottage.for_chat(now, hunger)
+            menu = self.cottage.menu_for_chat(now, hunger, energy) if energy is not None else ""
         except ValueError:
             return ""
+        return text + ("\n" + menu if menu else "")
+
+    def act(self, key: str, now: datetime, arg: str = "") -> bool:
+        """She starts something because she said so in a chat (decision 35). The room's rules
+        decide whether it can be done and what comes of it; what it costs her goes out as a
+        MoodMoved. False when the room does not allow it now."""
+        try:
+            change = self.cottage.act(key, now, arg)
+        except (ValueError, KeyError):
+            return False
+        if change is None:
+            return False
+        if change.hunger or change.energy:
+            self.bus.publish(MoodMoved(now, hunger=change.hunger, energy=change.energy, why="家务"))
+        return True

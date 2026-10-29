@@ -18,7 +18,7 @@ from pathlib import Path
 
 from fish.config import owner_words
 from fish.cottage.rules import (ACTIONS, ATE_RECENTLY_HOURS, CARRY, ENERGY_PER_HOUR, FRIDGE_SLOTS, GOODS, HUNGER_PER_HOUR,
-                                HUNGRY, RICE, RICE_FULL, SHOP_WALK_MINUTES, SINK_LIMIT, SLEEP_FROM, TIRED, WAKE_AT, Good,
+                                HUNGRY, RICE, RICE_FULL, SHOP_AGAIN_HOURS, SHOP_WALK_MINUTES, SINK_LIMIT, SLEEP_FROM, TIRED, WAKE_AT, Good,
                                 asleep_hours, in_stock, mealtime, shop_open)
 
 KEEP_EVENTS = timedelta(days=2)
@@ -52,7 +52,7 @@ class Room:
     sill: list[str] = field(default_factory=list)  # what he put on the windowsill
     meals: list[str] = field(default_factory=list)  # "2026-10-28 午饭": that mealtime is done with
     ate: str = ""  # when she last ate
-    pending: dict = field(default_factory=dict)  # a meal on the stove: {"hunger", "line", "routine"} at `until`
+    pending: dict = field(default_factory=dict)  # what comes at `until`: a meal ({"hunger", "line"}) or the shopping ({"buy"})
     events: list[dict] = field(default_factory=list)  # {"ts", "line"}, the last two days
     last: str = ""  # up to when time has moved the room
 
@@ -94,6 +94,12 @@ def rice_word(rice: int) -> str:
 
 def can_cook(room: Room) -> bool:
     return room.rice > 0 and bool(room.fridge) and len(room.sink) <= SINK_LIMIT
+
+
+def just_shopped(room: Room, now: datetime) -> bool:
+    """Back from the shop less than SHOP_AGAIN_HOURS ago."""
+    return any(e["line"].startswith("从菜店回来了") and now - datetime.fromisoformat(e["ts"]) < timedelta(hours=SHOP_AGAIN_HOURS)
+               for e in room.events)
 
 
 def _good(name: str) -> Good:
@@ -180,7 +186,12 @@ class Cottage:
             if room.doing == ACTIONS["nap"].doing:
                 room.bed = "乱"
                 change.slept.append((done - timedelta(minutes=ACTIONS["nap"].minutes), done))
-            if room.pending:  # the meal is ready: she eats now, not when she started cooking
+            if room.pending.get("buy") is not None:  # home from the shop: what she bought is in now (decision 35)
+                at_shop = done - timedelta(minutes=SHOP_WALK_MINUTES)
+                line = "从菜店回来了，" + self._buy(room, room.pending["buy"], at_shop).removeprefix("去菜店")
+                self.note(room, done, line, change, routine=room.pending.get("routine", False))
+                room.pending = {}
+            elif room.pending:  # the meal is ready: she eats now, not when she started cooking
                 self.note(room, done, room.pending["line"], change, routine=room.pending.get("routine", False))
                 change.hunger += room.pending["hunger"]
                 change.ate.append((done, room.pending["hunger"]))
@@ -238,7 +249,7 @@ class Cottage:
             out.append(Offer("bed", "叠被子"))
         if energy < TIRED:
             out.append(Offer("nap", "睡个午觉"))
-        if shop_open(now) and shop_open(now + timedelta(minutes=SHOP_WALK_MINUTES)):
+        if shop_open(now) and shop_open(now + timedelta(minutes=SHOP_WALK_MINUTES)) and not just_shopped(room, now):
             out.append(Offer("shop", f"去镇上的菜店买菜（今天有：{'、'.join(in_stock(now))}）",
                              f"想买的，用顿号隔开，最多 {CARRY} 样"))
         return out
@@ -257,7 +268,7 @@ class Cottage:
         if room.doing or key not in ACTIONS:
             return False
         return {"cook": can_cook(room), "rice": room.rice > 0, "wash": bool(room.sink),
-                "bed": room.bed == "乱", "nap": True, "shop": shop_open(now)}[key]
+                "bed": room.bed == "乱", "nap": True, "shop": shop_open(now) and not just_shopped(room, now)}[key]
 
     def _apply(self, room: Room, key: str, now: datetime, *, arg: str = "", meal: str | None = None,
                routine: bool = False) -> Change:
@@ -288,7 +299,11 @@ class Cottage:
             room.bed = "在睡"
             line = "睡了个午觉"
         else:
-            line = self._buy(room, arg, now)
+            # out of the door now; what she buys is bought at the shop and in the fridge only when
+            # she is home again (advance), half an hour later (decision 35)
+            wanted = "、".join(w for w in (x.strip() for x in SPLIT.split(arg)) if w)
+            line = f"出门去镇上的菜店（想买{wanted}）" if wanted else "出门去镇上的菜店"
+            room.pending = {"buy": arg, "routine": routine}
         room.doing, room.until = action.doing, _iso(now + timedelta(minutes=action.minutes))
         self.note(room, now, line, change, routine=routine)
         return change
@@ -422,6 +437,15 @@ class Cottage:
         if done:
             out.append("你今天在家：" + "；".join(done) + "。")
         return "\n".join(out)
+
+    def menu_for_chat(self, now: datetime, hunger: float, energy: float) -> str:
+        """What she could start right now, by key, for a chat turn (decision 35). "" when she is
+        busy with something, so a trip to the shop is not started twice."""
+        offers = self.offers(now, hunger, energy)
+        if not offers:
+            return ""
+        return "你现在能做的（说要去做就在 do 里填前面的英文）：" + "；".join(
+            f"{o.key} {o.line}" + (f"（{o.arg_hint}，写在 do_arg）" if o.arg_hint else "") for o in offers) + "。"
 
     def for_leisure(self, now: datetime) -> str:
         """Everything in the room, for the moment she decides what to do."""

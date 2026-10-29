@@ -123,6 +123,8 @@ class Reply:
     image_note: str | None = None  # her one-line reading of a picture he sent
     keep_sticker: str | None = None  # caption, when she wants to keep his picture as a sticker
     sticker: int | None = None  # a sticker from her album to send with this reply
+    do: str | None = None  # something in her room she starts now, as she says so (decision 35)
+    do_arg: str = ""  # what she wants to buy, when `do` is the shop
     parsed: bool = True
 
 
@@ -261,6 +263,8 @@ def parse_reply(raw: str) -> Reply:
         image_note=image_note,
         keep_sticker=keep_sticker,
         sticker=sticker,
+        do=str(data.get("do") or "").strip()[:12] or None if not fake else None,
+        do_arg=str(data.get("do_arg") or "").strip()[:40] if not fake else "",
     )
 
 

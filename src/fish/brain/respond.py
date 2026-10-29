@@ -157,8 +157,8 @@ class Brain:
         time, or she texts "饭做好了" twice a day (the 10-28 trial)."""
         return self.room.lately(now, HOME_LATELY) if self.room is not None else []
 
-    def cottage_text(self, now: datetime, hunger: float) -> str:
-        return self.room.view(now, hunger) if self.room is not None else ""
+    def cottage_text(self, now: datetime, hunger: float, energy: float | None = None) -> str:
+        return self.room.view(now, hunger, energy) if self.room is not None else ""
 
     def day_fields(self, now: datetime) -> dict[str, str]:
         """What day it is, what she is following, what she did with her free time today (decision 24)."""
@@ -220,7 +220,7 @@ class Brain:
             seen=r.seen,
             stage=stage, stage_rules=self.stages.get(stage, ""), howto=r.howto,
             phase=r.phase, growth=self.growth_lines(), **self.place_fields(),
-            **self.day_fields(now), cottage=self.cottage_text(now, mood.hunger),
+            **self.day_fields(now), cottage=self.cottage_text(now, mood.hunger, mood.energy),
             stickers=self.album.offer(), user_image=data_url(image) if image else None,
             shared=shared, today_section=r.today, pacts=r.pacts, stars=r.stars,
             pages=r.pages, nothing_found=r.nothing_found,
@@ -255,6 +255,8 @@ class Brain:
             self.window.append("fish", f"[表情包：{outgoing.sticker_caption}]", channel, episode_id, now)
         self.episodes.touch(episode_id, now)
         self.record(reply, episode_id, now, seen_source=seen_source, said=user_text)
+        if reply.do and self.room is not None:  # she said she is off to do it: the room does it now
+            self.room.act(reply.do, now, reply.do_arg)
         if image is not None and reply.keep_sticker:
             self.album.add(image, sniff_mime(image) or "image/jpeg", reply.keep_sticker, now=now)
 
