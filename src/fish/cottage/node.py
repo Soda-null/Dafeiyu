@@ -64,6 +64,19 @@ class RoomNode:
             return ""
         return text + ("\n" + menu if menu else "")
 
+    def record(self, now: datetime) -> str:
+        """The whole room as it is and everything that happened in it these two days: what the
+        checker holds her words against (decision 38; "牛奶是你放的" was cut on the next morning
+        when only today was shown). "" when the file is broken."""
+        try:
+            room = self.cottage.load(now)
+            doing = self.cottage.doing_line(room, now=now) or "你在家，没在忙什么"
+            lines = [f"此刻：{doing}", *(f"- {x}" for x in self.cottage.lines(room).values()), "这两天屋里发生的："]
+            lines += [f"- {e['ts'][5:16].replace('T', ' ')} {e['line']}" for e in room.events] or ["- （还什么都没有）"]
+        except ValueError:
+            return ""
+        return "\n".join(lines)
+
     def act(self, key: str, now: datetime, arg: str = "") -> bool:
         """She starts something because she said so in a chat (decision 35). The room's rules
         decide whether it can be done and what comes of it; what it costs her goes out as a

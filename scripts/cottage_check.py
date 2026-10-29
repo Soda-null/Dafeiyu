@@ -145,17 +145,26 @@ def one_run(script: dict, settings, run: int) -> list[dict]:
                     heard(x["say"], out.text, at, False)
                     context += [f"他：{x['say']}", f"她：{out.text}"]
             t += STEP
+        for f in brain.home_fixes:  # what the checker mended before it went out (decision 38)
+            print(f"  检查员改过 {f['at'][11:]}：{f['why']}")
+        rows.append({"run": run, "at": "", "his": "", "hers": "", "first": False, "label": "检查员改过",
+                     "why": "；".join(f"{f['at'][11:]} {f['why']}" for f in brain.home_fixes), "truth": ""}
+                    ) if brain.home_fixes else None
         print(f"  （这一遍：她的模型调用 {talker.calls} 次，读进 {talker.chars_in} 字）")
     return rows
 
 
 def report(rows: list[dict], runs: int, day: str) -> str:
+    fixes = [r for r in rows if r["label"] == "检查员改过"]
+    rows = [r for r in rows if r["label"] != "检查员改过"]
     counts = Counter(r["label"] for r in rows)
     total = len(rows)
     out = [f"# 小屋体检 {day}（{runs} 遍）", "",
            "> **是什么：** 她说的屋里的事，和小屋真实记录对不对得上（决定 37，`scripts/cottage_check.py`，剧本 `evals/cottage_day.json`）。",
            "> **地位：** 结果，不改。", "> **读法：** 先看总数，再看下面每一句对不上的。", "",
            f"她一共说了 {total} 句（含主动发的）。" + "，".join(f"{k} {counts.get(k, 0)}" for k in (*LABELS, "裁判坏了") if counts.get(k)), ""]
+    if fixes:
+        out += ["## 检查员在发出去之前改过的", ""] + [f"- 第 {r['run']} 遍：{r['why']}" for r in fixes] + [""]
     bad = [r for r in rows if r["label"] != "一致"]
     if bad:
         out += ["## 对不上的", ""]
@@ -193,7 +202,7 @@ def main() -> None:
     stem = RESULTS / f"{day}-cottage{('-' + args.name) if args.name else ''}"
     stem.with_suffix(".json").write_text(json.dumps(rows, ensure_ascii=False, indent=1), encoding="utf-8")
     stem.with_suffix(".md").write_text(report(rows, args.runs, day), encoding="utf-8")
-    counts = Counter(r["label"] for r in rows)
+    counts = Counter(r["label"] for r in rows if r["label"] != "检查员改过")
     print("\n" + "，".join(f"{k} {v}" for k, v in counts.most_common()) + f"\n写进了 {stem}.md")
 
 

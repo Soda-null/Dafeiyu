@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from typing import Callable
 
 from fish.brain.ask import ask_json
+from fish.brain.checker import check_home
 from fish.bus import Bus
 from fish.brain.llm import LLM
 from fish.brain.parse import clean_say, texting
@@ -175,7 +176,9 @@ class Reacher:
         self.llm = llm
         self.persona = persona
 
-    def decide(self, now: datetime, mood: Mood, trig: Triggers, recent: list[str]) -> ReachOut | None:
+    def decide(self, now: datetime, mood: Mood, trig: Triggers, recent: list[str], room: str = "") -> ReachOut | None:
+        """room: her room as it is now (10-29: with only "他在窗台上放了一本《雪国》" to go by she
+        texted "冰箱里那本《雪国》是你放的吧")."""
         reasons: list[str] = []
         for m in trig.seen:
             reasons.append(f"- 今天看到的（见闻 #{m.id}）：{m.text}")
@@ -195,7 +198,8 @@ class Reacher:
         when = f"{now.strftime('%Y-%m-%d')} 周{WEEKDAYS[now.weekday()]} {now.strftime('%H:%M')}"
         data = ask_json(self.llm, "reach_out", persona=self.persona, now=when, since=since,
                         mood=mood.describe(), reasons="\n".join(reasons) or "（没什么特别的）",
-                        recent="\n".join(f"- {r}" for r in recent) or "（还没聊过）", temperature=1.0)
+                        recent="\n".join(f"- {r}" for r in recent) or "（还没聊过）",
+                        room=room or "（没有）", temperature=1.0)
         if not data:
             return None
         say = texting(clean_say(str(data.get("say") or "")))
@@ -221,7 +225,9 @@ class ReachNode:
     def __init__(self, bus: Bus, conn: sqlite3.Connection, *, enabled: bool, max_per_day: int,
                  llm: Callable[[], LLM], persona: str, window: Window, kitchen: bool,
                  home_lately: Callable[[datetime], list[str]], say: Callable[[str], bool],
-                 channel: Callable[[], str]) -> None:
+                 channel: Callable[[], str], room: Callable[[datetime, Mood], str] | None = None,
+                 record: Callable[[datetime], str] | None = None,
+                 fixed: Callable[[dict], None] | None = None) -> None:
         self.bus = bus
         self.conn = conn
         self.enabled = enabled
@@ -233,6 +239,9 @@ class ReachNode:
         self.home_lately = home_lately
         self.say = say  # the channel's send for this tick; True when it went through
         self.channel = channel
+        self.room = room  # her room as she sees it now, for what she says about home
+        self.record = record  # the whole room, for the checker (decision 38)
+        self.fixed = fixed  # told when the checker mended a line
 
     def consider(self, now: datetime) -> ReachOut | None:
         """Whether she wants to say something right now. Cheap unless the gate opens."""
@@ -244,7 +253,16 @@ class ReachNode:
         if not trig.any:
             return None
         policy.record_considered(now)  # before asking, so a crash cannot loop on the model
-        return Reacher(self.llm(), self.persona).decide(now, mood, trig, recent_lines(self.window))
+        room = self.room(now, mood) if self.room is not None else ""
+        ro = Reacher(self.llm(), self.persona).decide(now, mood, trig, recent_lines(self.window), room)
+        if ro is None or self.record is None:
+            return ro
+        said, why = check_home(self.llm(), self.record(now), "", ro.text)
+        if not why:
+            return ro
+        if self.fixed is not None:
+            self.fixed({"at": now.isoformat(timespec="minutes"), "why": why, "said": said, "first": True})
+        return ReachOut(said, ro.asked, ro.shared)
 
     def on_time(self, m: TimePassed) -> None:
         ro = self.consider(m.now)

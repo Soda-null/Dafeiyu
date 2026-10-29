@@ -271,6 +271,8 @@ def test_what_happened_at_home_is_a_reason_to_text_him(tmp_path):
     prompts = []
 
     def respond(messages, json_mode):
+        if "你是检查员" in messages[-1]["content"]:
+            return json.dumps({"ok": True})
         prompts.append(messages[-1]["content"])
         return json.dumps({"say": "青菜放坏了，心疼", "asked": [], "shared": []}, ensure_ascii=False)
 
@@ -423,7 +425,8 @@ def test_what_she_says_she_is_off_to_do_she_does_and_it_takes_its_time(tmp_path)
     replies = iter([{"say": "我也出门买菜了", "do": "shop", "do_arg": "米、鸡蛋"},
                     {"say": "在路上了", "do": "shop", "do_arg": "米"},
                     {"say": "到家了"}])
-    llm = FakeLLM(lambda messages, json_mode: json.dumps(next(replies), ensure_ascii=False))
+    llm = FakeLLM(lambda messages, json_mode: json.dumps(
+        {"ok": True} if "你是检查员" in messages[-1]["content"] else next(replies), ensure_ascii=False))
     brain = Brain(conn, s, llm, persona_text="你是大肥鱼。")
     brain.cottage.load(MON - timedelta(hours=2))
     brain.respond("今天要去买菜吗", now=MON)
@@ -432,7 +435,8 @@ def test_what_she_says_she_is_off_to_do_she_does_and_it_takes_its_time(tmp_path)
     room = brain.cottage.load(MON)
     assert room.doing == "去菜店" and room.rice == 6  # out of the door, nothing bought yet
     brain.respond("到了没", now=MON + timedelta(minutes=10))  # on the way: no second trip
-    assert "你现在能做的（说要去做" not in llm.calls[-1][0][0]["content"]
+    last_chat = [c for c in llm.calls if c[0][0]["role"] == "system"][-1][0][0]["content"]
+    assert "你是大肥鱼" in last_chat and "你现在能做的（说要去做" not in last_chat
     assert [e["line"] for e in brain.cottage.load(MON + timedelta(minutes=10)).events].count("出门去镇上的菜店（想买米、鸡蛋）") == 1
     brain.respond("回来了吗", now=MON + timedelta(minutes=35))
     room = brain.cottage.load(MON + timedelta(minutes=35))
@@ -558,3 +562,75 @@ def test_the_shopping_trip_has_its_three_parts(tmp_path):
     room = c.load(MON + timedelta(minutes=31))
     assert room.rice == 12 and "豆腐" in [i["name"] for i in room.fridge]
     assert room.events[-1]["line"] == "从菜店回来了，买了米、豆腐（想要的火锅底料没有）"
+
+
+def test_texting_first_she_sees_her_room(tmp_path):
+    """10-29: "冰箱里那本《雪国》是你放的吧" — the book was on the windowsill; texting first she had
+    only the line "他在窗台上放了……" to go by, not her room."""
+    from fish.memory import Relationship
+
+    conn = connect(tmp_path / "fish.db")
+    s = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db", cottage=True)
+    prompts = []
+
+    def respond(messages, json_mode):
+        if "你是检查员" in messages[-1]["content"]:
+            return json.dumps({"ok": True})
+        prompts.append(messages[-1]["content"])
+        return json.dumps({"say": "窗台上那本书是你放的吧", "asked": [], "shared": []}, ensure_ascii=False)
+
+    brain = Brain(conn, s, FakeLLM(respond), persona_text="你是大肥鱼。")
+    brain.window.append("user", "在吗", "wechat", None, MON - timedelta(hours=2))
+    Relationship(conn).note_active_day(MON - timedelta(hours=2))
+    brain.cottage.load(MON - timedelta(hours=1))
+    brain.cottage.put_on_sill("一本《雪国》小说", MON - timedelta(minutes=30))
+    assert brain.consider_reach_out(MON).text == "窗台上那本书是你放的吧"
+    room = prompts[-1].split("## 你屋里此刻")[1].split("##")[0]
+    assert "窗台上：一本《雪国》小说（他 11-2 送的）" in room and "冰箱里有" in room
+
+
+def test_the_checker_mends_what_does_not_match_the_room(tmp_path):
+    """Decision 38 (10-29: "冰箱里那本《雪国》" — on the windowsill): a line of hers about her home
+    is held against the room's whole record and mended only where it does not match; a line not
+    about her home is not checked; a checker that fails leaves her line as it was."""
+    from fish.brain.checker import check_home
+
+    conn = connect(tmp_path / "fish.db")
+    s = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db", cottage=True)
+    asked = []
+
+    def respond(messages, json_mode):
+        text = messages[-1]["content"]
+        if "你是检查员" in text:
+            asked.append(text)
+            return json.dumps({"ok": False, "fixed": "窗台上那本《雪国》是你放的吧\n我刚翻到第一页。",
+                               "why": "书在窗台上，不在冰箱里"}, ensure_ascii=False)
+        return json.dumps({"say": "冰箱里那本《雪国》是你放的吧\n我刚翻到第一页"}, ensure_ascii=False)
+
+    brain = Brain(conn, s, FakeLLM(respond), persona_text="你是大肥鱼。")
+    brain.cottage.load(MON - timedelta(hours=1))
+    brain.cottage.put_on_sill("一本《雪国》小说", MON - timedelta(minutes=30))
+    assert brain.respond("看到我放的东西没", now=MON) == "窗台上那本《雪国》是你放的吧\n我刚翻到第一页"
+    assert "窗台上：一本《雪国》小说（他 11-2 送的）" in asked[0] and "这两天屋里发生的：" in asked[0]
+    assert brain.home_fixes[-1]["why"] == "书在窗台上，不在冰箱里"
+    assert [t.text for t in brain.window.recent()][-1] == "窗台上那本《雪国》是你放的吧\n我刚翻到第一页"
+    # nothing about home: not checked; a checker that says nothing usable changes nothing
+    assert check_home(FakeLLM([]), "记录", "在吗", "今天图书馆人好多") == ("今天图书馆人好多", "")
+    assert check_home(FakeLLM(["不是json"]), "记录", "在吗", "冰箱里有蛋") == ("冰箱里有蛋", "")
+
+
+def test_the_checker_only_mends_it_never_writes_more():
+    from fish.brain.checker import check_home
+
+    def checker(fixed):
+        return FakeLLM([json.dumps({"ok": False, "fixed": fixed, "why": "x"}, ensure_ascii=False)])
+
+    said = "米和肉\n青菜没买着\n就这些"
+    grown = "米、肉、西红柿、鸡蛋和豆腐\n青菜没买着\n就这些"
+    record = "- 冰箱里有鸡蛋（够 2 顿）；米缸还有一半\n- 窗台上：一本《雪国》小说（他 11-2 送的）"
+    assert check_home(checker(grown), record, "昨天买了啥", said) == (said, "")  # five things she never said
+    assert check_home(checker("今天天气真好"), record, "冰箱有啥", "冰箱里有蛋\n还有牛奶") == ("冰箱里有蛋\n还有牛奶", "")
+    assert check_home(checker("冰箱里有蛋"), record, "冰箱有啥", "冰箱里有蛋\n还有西瓜") == ("冰箱里有蛋", "x")
+    assert check_home(checker("青菜豆腐中午吃掉了"), record, "冰箱有啥", "青菜豆腐昨晚上吃掉了") == ("青菜豆腐昨晚上吃掉了", "")
+    assert check_home(checker("买了菜"), record, "干了啥", "买了菜 冰箱塞满了") == ("买了菜", "x")  # a piece of a line
+    assert check_home(checker("米缸还有一半 想买点米"), record, "去买菜吗", "米快见底了 想买点米") == ("米缸还有一半 想买点米", "x")

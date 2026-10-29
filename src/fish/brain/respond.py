@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Callable
 
 from fish.app import wire
+from fish.brain.checker import check_home
 from fish.brain.leisure import Leisure, LeisureNode, away, default_activities, moment_line, pastimes_line
 from fish.brain.llm import LLM
 from fish.brain.parse import Reply, parse_episode_close
@@ -87,6 +88,7 @@ class Brain:
         self.leisure: Leisure | None = None  # built on the first free moment; tests set their own
         # her lakeside cottage (decision 26), next to her database like her pictures; None when off
         self.cottage = Cottage(settings.db_path.parent / "cottage" / "now.json") if settings.cottage else None
+        self.home_fixes: list[dict] = []  # her lines the checker mended (decision 38); the checkup reads them
         self.recollector = Recollector(conn, store=self.store, prospective=self.prospective,
                                        episodes=self.episodes, window=self.window, diary=self.diary,
                                        phases=self.phases, relationship=self.relationship)
@@ -99,7 +101,10 @@ class Brain:
         self.reach = ReachNode(self.bus, conn, enabled=settings.reach_out, max_per_day=settings.reach_max_per_day,
                                llm=lambda: self.llm, persona=self.persona, window=self.window,
                                kitchen=self.cottage is not None, home_lately=self.home_lately,
-                               say=lambda text: self._say(text), channel=lambda: self._channel)
+                               say=lambda text: self._say(text), channel=lambda: self._channel,
+                               room=lambda now, mood: self.cottage_text(now, mood.hunger),
+                               record=lambda now: self.room.record(now) if self.room is not None else "",
+                               fixed=self.home_fixes.append)
         self.leisure_node = LeisureNode(self.free_time)
         self.room = RoomNode(self.bus, self.cottage) if self.cottage is not None else None
         self.mood_node = MoodNode(self.moods, kitchen=self.cottage is not None)
@@ -200,6 +205,12 @@ class Brain:
 
         sit, shared_note = self.situation(incoming, ep, mood, stage, now)
         reply, seen_source = self.replier.reply(sit)
+        if reply.do and self.room is not None:  # she said she is off to do it: the room does it now
+            self.room.act(reply.do, now, reply.do_arg)
+        if self.room is not None:  # what she says of her home, held against the room (decision 38)
+            reply.say, why = check_home(self.llm, self.room.record(now), incoming.text, reply.say)
+            if why:
+                self.home_fixes.append({"at": now.isoformat(timespec="minutes"), "why": why, "said": reply.say})
         return self.remember_turn(incoming, reply, seen_source, shared_note, ep.id, now, channel)
 
     def situation(self, incoming: Incoming, ep: Episode, mood: Mood, stage: str,
@@ -255,8 +266,6 @@ class Brain:
             self.window.append("fish", f"[表情包：{outgoing.sticker_caption}]", channel, episode_id, now)
         self.episodes.touch(episode_id, now)
         self.record(reply, episode_id, now, seen_source=seen_source, said=user_text)
-        if reply.do and self.room is not None:  # she said she is off to do it: the room does it now
-            self.room.act(reply.do, now, reply.do_arg)
         if image is not None and reply.keep_sticker:
             self.album.add(image, sniff_mime(image) or "image/jpeg", reply.keep_sticker, now=now)
 
