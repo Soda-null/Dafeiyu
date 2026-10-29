@@ -189,7 +189,8 @@ HOME_WORDS = re.compile(r"米|冰箱|菜|窗台|买|饭|吃|葱|蛋|碗|锅|床|
 
 def home_check(cottage: str) -> str:
     lines = [x for x in cottage.splitlines() if not x.startswith("你现在能做的")]
-    return owner_words("（屋里此刻：" + " ".join(lines) + " 说屋里的事照这个；跟你前面聊天里说的对不上，就是那时没做成，顺口改口）")
+    return owner_words("（屋里此刻：" + " ".join(lines) + " 说屋里的事照这个：做了什么菜、吃了什么、给他留了什么，只说这里有的，"
+                       "别添；谁放的就说谁放的。跟你前面聊天里说的对不上，就是那时没做成，顺口改口）")
 
 
 NOTHING_FOUND = ("（他这句话的字眼让你什么也没想起来，可他可能换了个说法问：先看看上面“你一直记得的”和"

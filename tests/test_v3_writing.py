@@ -270,7 +270,7 @@ def test_no_prompt_holds_an_answer_of_the_scripted_friends():
     for path in sorted((Path(__file__).resolve().parents[1] / "evals").glob("*.json")):
         script = json.loads(path.read_text(encoding="utf-8"))
         keys |= set(script.get("forbidden", []))
-        for fact in script["facts"]:
+        for fact in script.get("facts", []):  # the cottage checkup's script has none
             keys |= set(fact.get("keys", [])) | {k for p in fact["probes"] for k in p.get("keys", [])}
     for prompt in sorted(PROMPTS_DIR.glob("*.md")):
         text = prompt.read_text(encoding="utf-8")

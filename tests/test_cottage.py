@@ -58,10 +58,10 @@ def test_at_mealtime_she_eats_what_there_is_once(tmp_path):
     assert change.hunger > 0 and room.rice == rice - 1 and room.sink == ["锅"]  # not fed yet
     assert [i["name"] for i in room.fridge] == ["鸡蛋"] and room.doing == "做饭" and not room.ate
     later = c.advance(datetime(2026, 11, 2, 13, 0))  # one lunch, not two; ready at 12:40
-    assert later.lines == ["午饭做好了，吃了"] and later.hunger < 0
+    assert later.lines == ["午饭做好了，吃了（青菜、鸡蛋）"] and later.hunger < 0
     room = c.load()
     assert room.ate == "2026-11-02T12:40" and room.doing == "" and not room.pending
-    assert c.today(room, datetime(2026, 11, 2, 13, 0)) == ["12:00 开始做午饭，用青菜、鸡蛋", "12:40 午饭做好了，吃了"]
+    assert c.today(room, datetime(2026, 11, 2, 13, 0)) == ["12:00 开始做午饭，用青菜、鸡蛋", "12:40 午饭做好了，吃了（青菜、鸡蛋）"]
 
 
 def test_hunger_and_energy_follow_the_day_not_the_chat(tmp_path):
@@ -356,7 +356,7 @@ def test_the_room_says_on_the_bus_what_time_did(tmp_path):
     assert kinds.count("SheSlept") == 1 and kinds.count("SheAte") == 1 and kinds.count("MoodMoved") == 2
     slept = next(m for m in heard if isinstance(m, SheSlept))
     assert (slept.start.hour, slept.end.hour) == (0, 8)
-    assert [m.line for m in heard if isinstance(m, HomeEvent)] == ["开始做午饭，用青菜、鸡蛋", "午饭做好了，吃了"]
+    assert [m.line for m in heard if isinstance(m, HomeEvent)] == ["开始做午饭，用青菜、鸡蛋", "午饭做好了，吃了（青菜、鸡蛋）"]
     assert all(m.routine for m in heard if isinstance(m, HomeEvent))
     assert 0.0 <= store.load().hunger <= 100.0  # 98 + a morning − a lunch, kept within bounds
     heard.clear()
@@ -521,3 +521,40 @@ def test_when_he_asks_about_her_room_its_truth_sits_right_at_his_line(tmp_path):
     assert "你现在能做的" not in his.split("（屋里此刻：")[1]
     brain.respond("今天图书馆人好多", now=MON + timedelta(minutes=1))
     assert "屋里此刻" not in llm.calls[-1][0][-1]["content"]
+
+
+def test_several_things_left_at_once_and_washing_takes_its_minutes(tmp_path):
+    """10-29 checkup: "牛奶搁窗台上了 顺便还有一盒鸡蛋" left only the milk; "刚洗完碗" while the sink
+    was already empty at the start of washing."""
+    c = home(tmp_path)
+    c.give("牛奶", MON, 2)
+    assert c.act("leave", MON, "牛奶、鸡蛋、火锅底料").lines == ["在窗台上给他留了牛奶、鸡蛋"]
+    assert c.load(MON).sill == ["牛奶（给他留的，11-2）", "鸡蛋（给他留的，11-2）"]
+    room = c.load(MON)
+    room.sink = ["锅"]
+    c.save(room)
+    later = MON + timedelta(minutes=2)
+    c.advance(later)  # leaving them took its minute
+    assert c.act("wash", later, "").lines == ["开始洗碗"]
+    assert c.load(later).sink == ["锅"]  # still in the sink while she washes
+    assert c.advance(later + timedelta(minutes=11)).lines == ["洗完了碗"]
+    assert c.load(later + timedelta(minutes=11)).sink == []
+
+
+def test_the_shopping_trip_has_its_three_parts(tmp_path):
+    c = home(tmp_path)
+    c.act("shop", MON, "米、豆腐、火锅底料")
+    on_way = MON + timedelta(minutes=5)
+    c.advance(on_way)
+    assert c.doing_line(c.load(on_way), now=on_way).startswith("你在去镇上菜店的路上")
+    in_shop = MON + timedelta(minutes=15)
+    c.advance(in_shop)
+    assert c.doing_line(c.load(in_shop), now=in_shop).startswith("你在菜店里挑菜")
+    back = MON + timedelta(minutes=25)
+    c.advance(back)
+    room = c.load(back)
+    assert c.doing_line(room, now=back).startswith("你拎着米、豆腐往回走") and room.rice == 6  # not home yet
+    c.advance(MON + timedelta(minutes=31))
+    room = c.load(MON + timedelta(minutes=31))
+    assert room.rice == 12 and "豆腐" in [i["name"] for i in room.fridge]
+    assert room.events[-1]["line"] == "从菜店回来了，买了米、豆腐（想要的火锅底料没有）"

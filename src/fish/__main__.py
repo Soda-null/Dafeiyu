@@ -111,7 +111,7 @@ def life(conn: sqlite3.Connection, settings: Settings, days: int = 3, now: datet
         except ValueError as e:
             raise SystemExit(str(e))
         if room.doing:
-            print("  " + home.doing_line(room).replace("你", "她", 1))
+            print("  " + home.doing_line(room, now=now).replace("你", "她", 1))
         for line in home.lines(room).values():
             print(f"  {line}")
         events = home.today(room, now)
@@ -166,7 +166,7 @@ def cottage(settings: Settings, sub: str | None, rest: list[str]) -> None:
         raise SystemExit(str(e))
     print(f"== 她的小屋（{home.path}）==")
     if room.doing:
-        print(f"  {home.doing_line(room)}")
+        print(f"  {home.doing_line(room, now=now)}")
     for line in home.lines(room).values():
         print(f"  {line}")
     for line in home.today(room, now):
