@@ -40,7 +40,9 @@ ACTIONS = {a.key: a for a in (
     Action("bed", "叠被子", 2),
     Action("nap", "睡午觉", 60, energy=25),
     Action("shop", "去菜店", 30, energy=-8),
+    Action("leave", "给他留东西", 1),  # something from the fridge, or a note, onto the windowsill for him
 )}
+NOTE_PREFIX = "纸条"  # "纸条：早点睡" is a note she writes; anything else she leaves must be in the fridge
 
 
 @dataclass(frozen=True)

@@ -458,3 +458,49 @@ def test_just_back_from_the_shop_she_does_not_go_again(tmp_path):
     later = MON + timedelta(minutes=40)
     assert "shop" not in [o.key for o in c.offers(later, 80, 80)] and c.act("shop", later, "米") is None
     assert "shop" in [o.key for o in c.offers(MON + timedelta(hours=3), 80, 80)]
+
+
+def test_she_leaves_him_what_she_has_and_he_takes_it(tmp_path):
+    """Decision 36: on the windowsill she can leave him something from the fridge or a note, never
+    what she does not have; he can take it (or anything on the sill or in the fridge) away."""
+    c = home(tmp_path)
+    assert c.act("leave", MON, "小葱") is None  # not in the fridge: she cannot leave it
+    assert c.act("leave", MON, "鸡蛋").lines == ["在窗台上给他留了鸡蛋"]
+    c.advance(MON + timedelta(minutes=2))
+    assert c.act("leave", MON + timedelta(minutes=2), "纸条：早点睡").lines == ["在窗台上给他留了一张纸条：早点睡"]
+    room = c.load(MON + timedelta(minutes=3))
+    assert room.sill == ["鸡蛋（给他留的，11-2）", "一张纸条：早点睡（给他留的，11-2）"]
+    assert next(i for i in room.fridge if i["name"] == "鸡蛋")["meals"] == 2  # one of three went
+    assert c.take("鸡蛋", MON + timedelta(minutes=5)) == "他从窗台上拿走了鸡蛋"  # the sill first
+    assert c.take("纸条", MON + timedelta(minutes=6), "sill") == "他从窗台上拿走了一张纸条：早点睡"
+    assert c.take("青菜", MON + timedelta(minutes=7), "fridge") == "他从冰箱里拿走了青菜"
+    assert c.take("火锅底料", MON + timedelta(minutes=8)) is None
+    room = c.load(MON + timedelta(minutes=9))
+    assert room.sill == [] and [i["name"] for i in room.fridge] == ["鸡蛋"]
+    assert c.today(room, MON + timedelta(minutes=9))[-1] == "10:07 他从冰箱里拿走了青菜"
+
+
+def test_his_plain_words_become_what_the_room_does(tmp_path):
+    """Decision 36: `yu 往冰箱放两盒牛奶，把窗台上的鸡蛋拿走` — the model only translates; the rules do it."""
+    from fish.brain import home_command
+
+    c = home(tmp_path)
+    c.act("leave", MON, "鸡蛋")
+    seen = []
+
+    def respond(messages, json_mode):
+        seen.append(messages[-1]["content"])
+        return json.dumps({"ops": [{"op": "put", "where": "fridge", "what": "牛奶", "meals": 2},
+                                   {"op": "take", "where": "sill", "what": "鸡蛋"},
+                                   {"op": "take", "where": "sill", "what": "小葱"},
+                                   {"op": "put", "where": "rice", "what": "米"},
+                                   {"op": "fly", "where": "moon", "what": "火箭"}], "say": ""}, ensure_ascii=False)
+
+    out = home_command(FakeLLM(respond), c, "往冰箱放两盒牛奶，把她给我留的鸡蛋拿走，小葱也拿走，米缸加满", MON + timedelta(minutes=5))
+    assert out == ["他往冰箱里放了牛奶", "他从窗台上拿走了鸡蛋", "屋里没找到「小葱」，没拿", "他把米缸装满了"]
+    assert "窗台上：鸡蛋（给他留的，11-2）" in seen[0] and "往冰箱放两盒牛奶" in seen[0]
+    room = c.load(MON + timedelta(minutes=6))
+    assert next(i for i in room.fridge if i["name"] == "牛奶")["meals"] == 2 and room.rice == 12 and room.sill == []
+    nothing = home_command(FakeLLM([json.dumps({"ops": [], "say": "这句跟放东西没关系"}, ensure_ascii=False)]),
+                           c, "今天天气不错", MON + timedelta(minutes=7))
+    assert nothing == ["这句跟放东西没关系"]

@@ -8,6 +8,8 @@ browse        make her browse now (by hand only: she browses in her free time wh
 show          print what she remembers: profile, memories, follow-ups, episodes, diary, mood.
 stickers      give her the pictures in a folder (and whatever is in data/stickers/inbox/): she
               looks at each now, names it and keeps it. The folder's files are copied, not moved.
+home          his plain words for her room (decision 36): `home 往冰箱放两盒牛奶`, `home 把窗台上的小葱拿走`;
+              `home -` reads the line from stdin. One model call to understand it; the room's rules do it.
 cottage       show her cottage as it is now (decision 26). `cottage put 鸡蛋 [顿数]` puts food in
               (米 fills the rice jar); `cottage sill 一盆薄荷` puts a present on her windowsill.
 wechat login  show a QR code; scan it in WeChat to bind her to your account.
@@ -23,7 +25,7 @@ from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from fish.brain import Brain, DeepSeekLLM
+from fish.brain import Brain, DeepSeekLLM, home_command
 from fish.channels import ILinkClient, TerminalChannel, WeChatChannel, WeChatState, login
 from fish.channels.wechat import STATE_FILE
 from fish.config import REPO_ROOT, Settings, load_settings, owner_words
@@ -171,22 +173,39 @@ def cottage(settings: Settings, sub: str | None, rest: list[str]) -> None:
         print(f"  今天 {line}")
 
 
+def home_words(settings: Settings, words: list[str]) -> None:
+    """His plain words for her room; then the room as it is now."""
+    text = sys.stdin.read() if words == ["-"] else " ".join(words)
+    if not text.strip():
+        raise SystemExit("用法：fish home 往冰箱放两盒牛奶 / fish home 把窗台上的小葱拿走")
+    room = Cottage(settings.db_path.parent / "cottage" / "now.json")
+    try:
+        for line in home_command(DeepSeekLLM(settings), room, text, datetime.now()):
+            print(line)
+    except ValueError as e:
+        raise SystemExit(str(e))
+    cottage(settings, None, [])
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="fish", description="大肥鱼")
-    ap.add_argument("command", nargs="?", choices=["chat", "nightly", "browse", "life", "show", "stickers", "cottage",
+    ap.add_argument("command", nargs="?", choices=["chat", "nightly", "browse", "life", "show", "stickers", "cottage", "home",
                                                    "wechat"], default="chat")
     ap.add_argument("subcommand", nargs="?", help="wechat: login; stickers: a folder of pictures; cottage: put / sill; life: how many diaries")
     ap.add_argument("rest", nargs="*", help="cottage put / sill: what")
     args = ap.parse_args(argv)
     if args.subcommand is not None and (args.command, args.subcommand) != ("wechat", "login") \
-            and args.command not in ("stickers", "cottage", "life"):
+            and args.command not in ("stickers", "cottage", "life", "home"):
         ap.error(f"unexpected argument: {args.subcommand}")
-    if args.rest and args.command != "cottage":
+    if args.rest and args.command not in ("cottage", "home"):
         ap.error(f"unexpected argument: {' '.join(args.rest)}")
 
     settings = load_settings()
     if args.command == "cottage":
         cottage(settings, args.subcommand, args.rest)
+        return
+    if args.command == "home":
+        home_words(settings, [w for w in [args.subcommand, *args.rest] if w is not None])
         return
     conn = connect(settings.db_path)
     if args.command == "show":

@@ -18,7 +18,7 @@ from pathlib import Path
 
 from fish.config import owner_words
 from fish.cottage.rules import (ACTIONS, ATE_RECENTLY_HOURS, CARRY, ENERGY_PER_HOUR, FRIDGE_SLOTS, GOODS, HUNGER_PER_HOUR,
-                                HUNGRY, RICE, RICE_FULL, SHOP_AGAIN_HOURS, SHOP_WALK_MINUTES, SINK_LIMIT, SLEEP_FROM, TIRED, WAKE_AT, Good,
+                                HUNGRY, NOTE_PREFIX, RICE, RICE_FULL, SHOP_AGAIN_HOURS, SHOP_WALK_MINUTES, SINK_LIMIT, SLEEP_FROM, TIRED, WAKE_AT, Good,
                                 asleep_hours, in_stock, mealtime, shop_open)
 
 KEEP_EVENTS = timedelta(days=2)
@@ -49,7 +49,7 @@ class Room:
     fridge: list[dict] = field(default_factory=list)  # {"name": "鸡蛋", "meals": 3, "bought": "2026-10-28"}
     rice: int = RICE_FULL // 2  # meals left in the rice jar
     sink: list[str] = field(default_factory=list)  # what is waiting to be washed
-    sill: list[str] = field(default_factory=list)  # what he put on the windowsill
+    sill: list[str] = field(default_factory=list)  # on the windowsill: his presents, and what she left him
     meals: list[str] = field(default_factory=list)  # "2026-10-28 午饭": that mealtime is done with
     ate: str = ""  # when she last ate
     pending: dict = field(default_factory=dict)  # what comes at `until`: a meal ({"hunger", "line"}) or the shopping ({"buy"})
@@ -94,6 +94,21 @@ def rice_word(rice: int) -> str:
 
 def can_cook(room: Room) -> bool:
     return room.rice > 0 and bool(room.fridge) and len(room.sink) <= SINK_LIMIT
+
+
+def _leaving(room: Room, arg: str) -> str:
+    """What she can leave him for `arg`: "纸条：……" as written, or the fridge item it names; ""
+    when neither (she cannot leave what she does not have)."""
+    arg = arg.strip()
+    if arg.startswith(NOTE_PREFIX):
+        words = arg[len(NOTE_PREFIX):].lstrip("：: ").strip()
+        return f"{NOTE_PREFIX}：{words}" if words else ""
+    return next((i["name"] for i in room.fridge if arg and (i["name"] in arg or arg in i["name"])), "")
+
+
+def sill_name(item: str) -> str:
+    """"小葱（给他留的，10-29）" -> "小葱"."""
+    return item.split("（")[0]
 
 
 def just_shopped(room: Room, now: datetime) -> bool:
@@ -249,6 +264,8 @@ class Cottage:
             out.append(Offer("bed", "叠被子"))
         if energy < TIRED:
             out.append(Offer("nap", "睡个午觉"))
+        out.append(Offer("leave", "在窗台上给他留点东西（冰箱里有的，或者写张纸条）",
+                         f"留什么：冰箱里的一样，或者\"{NOTE_PREFIX}：想写的话\""))
         if shop_open(now) and shop_open(now + timedelta(minutes=SHOP_WALK_MINUTES)) and not just_shopped(room, now):
             out.append(Offer("shop", f"去镇上的菜店买菜（今天有：{'、'.join(in_stock(now))}）",
                              f"想买的，用顿号隔开，最多 {CARRY} 样"))
@@ -257,7 +274,7 @@ class Cottage:
     def act(self, key: str, now: datetime, arg: str = "") -> Change | None:
         """Do what she picked. None when the room no longer allows it (nothing changes)."""
         room = self.load(now)
-        if not self._possible(room, key, now):
+        if not self._possible(room, key, now) or (key == "leave" and not _leaving(room, arg)):
             return None
         change = self._apply(room, key, now, arg=arg)
         self.save(room)
@@ -268,7 +285,8 @@ class Cottage:
         if room.doing or key not in ACTIONS:
             return False
         return {"cook": can_cook(room), "rice": room.rice > 0, "wash": bool(room.sink),
-                "bed": room.bed == "乱", "nap": True, "shop": shop_open(now) and not just_shopped(room, now)}[key]
+                "bed": room.bed == "乱", "nap": True, "shop": shop_open(now) and not just_shopped(room, now),
+                "leave": True}[key]
 
     def _apply(self, room: Room, key: str, now: datetime, *, arg: str = "", meal: str | None = None,
                routine: bool = False) -> Change:
@@ -298,6 +316,18 @@ class Cottage:
         elif key == "nap":
             room.bed = "在睡"
             line = "睡了个午觉"
+        elif key == "leave":
+            what = _leaving(room, arg)
+            if what.startswith(NOTE_PREFIX):
+                room.sill.append(f"一张{what}（给他留的，{now.month}-{now.day}）")
+                line = f"在窗台上给他留了一张{what}"
+            else:
+                item = next(i for i in room.fridge if i["name"] == what)
+                item["meals"] -= 1
+                if item["meals"] <= 0:
+                    room.fridge.remove(item)
+                room.sill.append(f"{what}（给他留的，{now.month}-{now.day}）")
+                line = f"在窗台上给他留了{what}"
         else:
             # out of the door now; what she buys is bought at the shop and in the fridge only when
             # she is home again (advance), half an hour later (decision 35)
@@ -379,6 +409,30 @@ class Cottage:
         room = self.load(now)
         room.sill.append(owner_words(f"{what}（他 {now.month}-{now.day} 送的）"))
         line = owner_words(f"他在窗台上放了{what}")
+        self.note(room, now, line)
+        self.save(room)
+        return line
+
+    def take(self, what: str, now: datetime, where: str = "") -> str | None:
+        """He takes something: off the windowsill (what she left him, or a present of his back)
+        or out of the fridge; where "" looks on the sill first. None when there is no such thing."""
+        room = self.load(now)
+        key = what.strip()
+        if not key:
+            return None
+        line = None
+        if where in ("", "sill"):
+            item = next((i for i in room.sill if key in sill_name(i) or sill_name(i) in key), None)
+            if item is not None:
+                room.sill.remove(item)
+                line = owner_words(f"他从窗台上拿走了{sill_name(item)}")
+        if line is None and where in ("", "fridge"):
+            item = next((i for i in room.fridge if key in i["name"] or i["name"] in key), None)
+            if item is not None:
+                room.fridge.remove(item)
+                line = owner_words(f"他从冰箱里拿走了{item['name']}")
+        if line is None:
+            return None
         self.note(room, now, line)
         self.save(room)
         return line

@@ -8,6 +8,8 @@
 #   yu 7              the same with a week of diaries (any number)
 #   yu mem            what she remembers (same as show)
 #   yu room           her cottage; yu put 鸡蛋 [顿数] / yu sill 一盆薄荷 put something in
+#   yu 往冰箱放两盒牛奶   anything else is plain words for her room: put things in, take things out
+#   yu 把窗台上的小葱拿走   (one model call to understand it; the room's rules do it; decision 36)
 #   yu log            live WeChat log
 #
 #   scripts/fish.sh show      what she remembers right now
@@ -47,5 +49,6 @@ case "${1:-life}" in
             "$folder/" "$BOX:$stage/"
         ssh "$BOX" "cd Dafeiyu && TZ=$TZ_USER .venv/bin/python -m fish stickers ~/$stage && rm -rf ~/$stage" ;;
     cottage)  shift; ssh "$BOX" "cd Dafeiyu && TZ=$TZ_USER .venv/bin/python -m fish cottage $*" ;;
-    *) echo "用法：yu [天数] | mem | room | put 东西 [顿数] | sill 东西 | log | sent | notebook | timers | browse | stickers <文件夹>" >&2; exit 2 ;;
+    -h|--help|help) echo "用法：yu [天数] | mem | room | put 东西 [顿数] | sill 东西 | log | sent | notebook | timers | browse | stickers <文件夹> | 一句大白话（往冰箱放两盒牛奶、把窗台上的小葱拿走）" ;;
+    *)        printf '%s' "$*" | ssh "$BOX" "cd Dafeiyu && TZ=$TZ_USER .venv/bin/python -m fish home -" ;;
 esac
