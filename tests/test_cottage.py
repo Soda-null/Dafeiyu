@@ -504,3 +504,20 @@ def test_his_plain_words_become_what_the_room_does(tmp_path):
     nothing = home_command(FakeLLM([json.dumps({"ops": [], "say": "这句跟放东西没关系"}, ensure_ascii=False)]),
                            c, "今天天气不错", MON + timedelta(minutes=7))
     assert nothing == ["这句跟放东西没关系"]
+
+
+def test_when_he_asks_about_her_room_its_truth_sits_right_at_his_line(tmp_path):
+    """10-29: she had said "买了米" before words could start things, and later twice answered
+    "米缸填好了 满满一缸" over an almost empty jar. A line of his about her room carries what the
+    room says right after it; "nothing done at home today" is said too."""
+    conn = connect(tmp_path / "fish.db")
+    s = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db", cottage=True)
+    llm = FakeLLM(lambda messages, json_mode: json.dumps({"say": "嗯"}, ensure_ascii=False))
+    brain = Brain(conn, s, llm, persona_text="你是大肥鱼。")
+    brain.cottage.load(MON - timedelta(hours=1))
+    brain.respond("米缸填好了吗", now=MON)
+    his = llm.calls[-1][0][-1]["content"]
+    assert his.startswith("米缸填好了吗\n（屋里此刻：") and "你今天在家还什么都没做。" in his
+    assert "你现在能做的" not in his.split("（屋里此刻：")[1]
+    brain.respond("今天图书馆人好多", now=MON + timedelta(minutes=1))
+    assert "屋里此刻" not in llm.calls[-1][0][-1]["content"]

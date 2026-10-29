@@ -267,7 +267,7 @@ class Cottage:
         out.append(Offer("leave", "在窗台上给他留点东西（冰箱里有的，或者写张纸条）",
                          f"留什么：冰箱里的一样，或者\"{NOTE_PREFIX}：想写的话\""))
         if shop_open(now) and shop_open(now + timedelta(minutes=SHOP_WALK_MINUTES)) and not just_shopped(room, now):
-            out.append(Offer("shop", f"去镇上的菜店买菜（今天有：{'、'.join(in_stock(now))}）",
+            out.append(Offer("shop", f"去镇上的菜店买菜、买米（米缸和冰箱只能这样补；今天有：{'、'.join(in_stock(now))}）",
                              f"想买的，用顿号隔开，最多 {CARRY} 样"))
         return out
 
@@ -488,8 +488,9 @@ class Cottage:
         out = [x for x in (self.doing_line(room, chatting=True),) if x]
         out.append("屋里：" + "；".join(all_lines[k] for k in picked) + "。")
         done = self.today(room, now)[-3:]
-        if done:
-            out.append("你今天在家：" + "；".join(done) + "。")
+        # said even when nothing happened: otherwise she goes by what she said in the chat (10-29:
+        # "买了米和鸡蛋" while the room never left, then "我去把米缸填上" with no rice to pour)
+        out.append("你今天在家：" + "；".join(done) + "。" if done else "你今天在家还什么都没做。")
         return "\n".join(out)
 
     def menu_for_chat(self, now: datetime, hunger: float, energy: float) -> str:

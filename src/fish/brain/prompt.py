@@ -181,6 +181,17 @@ def render_profile(profile: list[Memory], mentioned: set[int] = frozenset(),
 # 10-28 runs v3e/v3f: the first wording ("这件你好像什么也没想起来") made her say she forgot things on
 # her card and in her promises when a year later he asked in other words than she wrote them down
 # (her nickname, his promise): it is only his words that matched nothing, so it sends her there first.
+# His line touches her room: what the room says is put right after it. In the middle of the
+# prompt it lost to what she had said earlier in the chat (10-29: she had made up "买了米" before
+# words could start things, and twice answered "米缸填好了 满满一缸" over an almost empty jar).
+HOME_WORDS = re.compile(r"米|冰箱|菜|窗台|买|饭|吃|葱|蛋|碗|锅|床|被子|鱼缸|留|屋|家里|拿")
+
+
+def home_check(cottage: str) -> str:
+    lines = [x for x in cottage.splitlines() if not x.startswith("你现在能做的")]
+    return owner_words("（屋里此刻：" + " ".join(lines) + " 说屋里的事照这个；跟你前面聊天里说的对不上，就是那时没做成，顺口改口）")
+
+
 NOTHING_FOUND = ("（他这句话的字眼让你什么也没想起来，可他可能换了个说法问：先看看上面“你一直记得的”和"
                  "“你们之间的约定”，意思对得上的就照那里说。那里、“这句话让你想起的”和这次聊天里都真没有，"
                  "就直说忘了、让他提醒你；别说任何具体的东西，也别顺着他问法里的说法往下编）")
@@ -287,6 +298,8 @@ def build_chat_messages(ctx: Situation) -> list[dict[str, str]]:
     user_text = ctx.user_text
     if ctx.nothing_found:  # said right at his line, where the guess would be made
         user_text = f"{user_text}\n" + owner_words(NOTHING_FOUND)
+    if ctx.cottage and HOME_WORDS.search(ctx.user_text):  # he asks about her room: its truth right at his line
+        user_text = f"{user_text}\n" + home_check(ctx.cottage)
     if ctx.user_image:  # pictures may only ride in a user message (DeepSeek's rule)
         # With a picture in the message the model sometimes chats in prose before the JSON;
         # a reminder right next to the picture keeps it to the format.
