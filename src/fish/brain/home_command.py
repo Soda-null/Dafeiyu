@@ -11,12 +11,12 @@ from fish.brain.ask import ask_json
 from fish.brain.llm import LLM
 from fish.cottage import Cottage
 
-PLACES = ("fridge", "rice", "sill")
+PLACES = ("fridge", "rice", "sill", "drawer")
 
 
 @dataclass(frozen=True)
 class Op:
-    op: str  # put / take
+    op: str  # put / take / peek
     where: str  # fridge / rice / sill
     what: str
     meals: int | None = None
@@ -31,7 +31,9 @@ def plan(llm: LLM, text: str, room: str) -> tuple[list[Op], str]:
             continue
         op, where, what = str(o.get("op") or ""), str(o.get("where") or ""), str(o.get("what") or "").strip()[:40]
         meals = o.get("meals") if isinstance(o.get("meals"), int) and 0 < o["meals"] <= 30 else None
-        if op in ("put", "take") and where in PLACES and what:
+        if op == "peek" and where == "drawer":
+            ops.append(Op(op, where, what or "抽屉"))
+        elif op in ("put", "take") and where in PLACES and where != "drawer" and what:
             ops.append(Op(op, where, what, meals))
     return ops, str(data.get("say") or "").strip()[:80]
 
@@ -40,7 +42,11 @@ def carry_out(cottage: Cottage, ops: list[Op], now: datetime) -> list[str]:
     """Each operation through the room's rules; one line each of what happened."""
     out = []
     for o in ops:
-        if o.op == "put" and o.where == "sill":
+        if o.op == "peek":
+            letters = cottage.open_drawer(now)
+            out.append(f"床头的抽屉里有 {len(letters)} 封信：" if letters else "床头的抽屉里空空的。")
+            out += [f"\n【{day}】\n{text}" for day, text in letters]
+        elif o.op == "put" and o.where == "sill":
             out.append(cottage.put_on_sill(o.what, now))
         elif o.op == "put":
             out.append(cottage.give("米" if o.where == "rice" else o.what, now, o.meals))

@@ -97,7 +97,10 @@ def can_cook(room: Room) -> bool:
 
 
 LEAVE_AT_ONCE = 3
-TODAY_SHOWN = 6  # what happened at home today, shown in a chat turn (two lines a meal since decision 32)
+TODAY_SHOWN = 6
+DRAWER = "抽屉"  # her letters to him, one a night, never sent (decision 39); next to the room's file
+PEEKED = "床头的抽屉被人翻过，信的顺序乱了"  # what a look into it leaves: she can tell
+LETTERS_SHOWN = 7  # what happened at home today, shown in a chat turn (two lines a meal since decision 32)
 
 
 def _leaving(room: Room, arg: str) -> list[str]:
@@ -445,6 +448,40 @@ class Cottage:
         self.note(room, now, line)
         self.save(room)
         return line
+
+    # --- her drawer (decision 39) ---------------------------------------------
+
+    @property
+    def drawer(self) -> Path:
+        return self.path.parent / DRAWER
+
+    def put_letter(self, day: date, text: str) -> Path:
+        """Tonight's letter into her drawer; a night written twice keeps the later one."""
+        self.drawer.mkdir(parents=True, exist_ok=True)
+        path = self.drawer / f"{day.isoformat()}.md"
+        path.write_text(f"# {day.isoformat()}\n\n{text.strip()}\n", encoding="utf-8")
+        return path
+
+    def letter(self, day: date) -> str:
+        path = self.drawer / f"{day.isoformat()}.md"
+        if not path.exists():
+            return ""
+        return path.read_text(encoding="utf-8").split("\n", 2)[-1].strip()
+
+    def open_drawer(self, now: datetime, n: int = LETTERS_SHOWN) -> list[tuple[str, str]]:
+        """Someone looks into her drawer: her letters, newest first; and the room keeps a trace
+        she will notice."""
+        room = self.load(now)
+        self.note(room, now, PEEKED)
+        self.save(room)
+        paths = sorted(self.drawer.glob("*.md"), reverse=True)[:n] if self.drawer.is_dir() else []
+        return [(p.stem, p.read_text(encoding="utf-8").split("\n", 2)[-1].strip()) for p in paths]
+
+    def peeked(self, start: datetime, end: datetime) -> list[str]:
+        """When her drawer was looked into, between two moments ("12:30")."""
+        room = self.load(end)
+        return [e["ts"][11:16] for e in room.events
+                if e["line"] == PEEKED and start <= datetime.fromisoformat(e["ts"]) < end]
 
     def take(self, what: str, now: datetime, where: str = "") -> str | None:
         """He takes something: off the windowsill (what she left him, or a present of his back)

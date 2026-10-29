@@ -6,7 +6,7 @@ may move a slider a notch."""
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fish.brain import away, moment_line
 from fish.cottage import invented_act
@@ -50,13 +50,33 @@ def write_diary(night: Night) -> None:
                                             leisure=leisure, home=home)
     if not text:
         return
-    night.line = line
+    night.line, night.diary_text, night.gists = line, text, gists
     diary.write(day.isoformat(), text)
     if home is not None:  # with a room, what she did is in it; her notes keep thoughts
         notes = [n for n in notes if not invented_act(n[0])]
     for note, importance in strongest(notes, SELF_NOTES_PER_NIGHT):
         store.note("self", note, importance=importance, now=now)
     night.report["diary"] = True
+
+
+def write_letter(night: Night) -> None:
+    """5a. a letter to him for her bedside drawer, never sent (decision 39): her day and what
+    she did not say; she knows when the drawer was looked into."""
+    brain = night.brain
+    if not (night.thinker and night.diary_text and brain is not None and brain.cottage is not None):
+        return
+    room = brain.cottage
+    try:
+        home = room.between(night.day_start, night.day_end)
+        peeked = room.peeked(night.day_start, night.day_end)
+    except ValueError:
+        return
+    text = night.thinker.letter(night.day.isoformat(), night.moods.load().describe(), night.gists, home,
+                                night.diary_text, yesterday=room.letter(night.day - timedelta(days=1)),
+                                peeked=peeked)
+    if text:
+        room.put_letter(night.day, text)
+        night.report["letter"] = True
 
 
 def step_phase(night: Night) -> None:

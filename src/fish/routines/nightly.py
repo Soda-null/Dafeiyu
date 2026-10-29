@@ -47,6 +47,7 @@ NIGHT_STEPS: list[Callable[[Night], None]] = [
     tidy.gist_repeats,           # 3b
     reflect.look_back,           # 4
     diary.write_diary,           # 5
+    diary.write_letter,          # 5a
     diary.step_phase,            # 5b
     diary.look_at_herself,       # 5c
     upkeep.sleep,                # 6

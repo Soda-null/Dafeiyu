@@ -634,3 +634,47 @@ def test_the_checker_only_mends_it_never_writes_more():
     assert check_home(checker("青菜豆腐中午吃掉了"), record, "冰箱有啥", "青菜豆腐昨晚上吃掉了") == ("青菜豆腐昨晚上吃掉了", "")
     assert check_home(checker("买了菜"), record, "干了啥", "买了菜 冰箱塞满了") == ("买了菜", "x")  # a piece of a line
     assert check_home(checker("米缸还有一半 想买点米"), record, "去买菜吗", "米快见底了 想买点米") == ("米缸还有一半 想买点米", "x")
+
+
+def test_her_letters_in_the_drawer_and_she_knows_when_he_looked(tmp_path, capsys):
+    """Decision 39: each night, after her diary, a letter to him goes into her bedside drawer.
+    Nothing shows it (her room, her notebook); opening the drawer in plain words does, and leaves a
+    trace she reads the next night."""
+    from fish.__main__ import cottage as show_room
+    from fish.brain import home_command
+    from fish.routines import run_nightly
+
+    conn = connect(tmp_path / "fish.db")
+    s = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db", cottage=True)
+    asked = []
+
+    def respond(messages, json_mode):
+        text = messages[-1]["content"]
+        if "床头的抽屉里拿出信纸" in text:
+            asked.append(text)
+            return json.dumps({"letter": f"今天你又没好好吃饭。第{len(asked)}封。"}, ensure_ascii=False)
+        if "写日记" in text:
+            return json.dumps({"diary": "买了菜，困。", "self_notes": [], "phase_line": "懒"}, ensure_ascii=False)
+        if "你是检查员" in text:
+            return json.dumps({"ok": True})
+        return json.dumps({"say": "嗯", "summary": "聊了吃饭", "gist": "聊了吃饭"}, ensure_ascii=False)
+
+    brain = Brain(conn, s, FakeLLM(respond), persona_text="你是大肥鱼。")
+    brain.cottage.load(MON - timedelta(hours=3))
+    brain.respond("吃饭没", now=MON)
+    run_nightly(conn, MON + timedelta(days=1, hours=-6, minutes=-29), brain=brain, export_path=tmp_path / "export.md")
+    assert brain.cottage.letter(MON.date()) == "今天你又没好好吃饭。第1封。"
+    assert "（没人动过）" in asked[0] and "聊了吃饭" in asked[0]
+    # nowhere he usually looks
+    assert "好好吃饭" not in (tmp_path / "export.md").read_text(encoding="utf-8")
+    peek = FakeLLM([json.dumps({"ops": [{"op": "peek", "where": "drawer", "what": "抽屉"}], "say": ""})])
+    tue = MON + timedelta(days=1, hours=2)
+    out = home_command(peek, brain.cottage, "偷偷打开她的抽屉看看", tue)
+    assert out[0] == "床头的抽屉里有 1 封信：" and "今天你又没好好吃饭" in out[1]
+    assert brain.cottage.today(brain.cottage.load(tue), tue)[-1] == "12:00 床头的抽屉被人翻过，信的顺序乱了"
+    brain.respond("在吗", now=tue + timedelta(minutes=30))
+    run_nightly(conn, MON + timedelta(days=2, hours=-6, minutes=-29), brain=brain)
+    assert "12:00 你发现抽屉被人翻过" in asked[-1] and "今天你又没好好吃饭" in asked[-1]  # last letter, and the peek
+    capsys.readouterr()
+    show_room(s, None, [])  # `yu room`
+    assert "好好吃饭" not in capsys.readouterr().out

@@ -46,6 +46,8 @@ class Night:
     new: list[Memory] = field(default_factory=list)  # notes written today (take_stock)
     merged_away: set[int] = field(default_factory=set)  # merged tonight, not candidates after
     line: str | None = None  # the diary's sentence for "这阵子的你" (diary -> phase)
+    diary_text: str = ""  # tonight's diary (diary -> letter)
+    gists: list[str] = field(default_factory=list)  # today's chats, one line each (diary -> letter)
     phase: Phase | None = None  # tonight's phase (phase -> sleep)
 
     @property

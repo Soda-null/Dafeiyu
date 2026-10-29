@@ -15,6 +15,7 @@ from fish.memory import Memory, secret
 from fish.memory import stability as st
 
 DIARY_MAX_CHARS = 120
+LETTER_MAX_CHARS = 600  # her letter, for the drawer (decision 39)
 INSIGHT_IMPORTANCE = (6, 8)
 SELF_NOTE_IMPORTANCE = (3, 5)
 
@@ -189,6 +190,18 @@ class Consolidator:
                  for n in (data.get("self_notes") or []) if isinstance(n, dict) and str(n.get("text", "")).strip()]
         line = str(data.get("phase_line") or data.get("recent") or "").strip()[:60]
         return str(data["diary"]).strip()[:DIARY_MAX_CHARS], notes[:3], line
+
+    def letter(self, day: str, mood: str, gists: list[str], home: list[str], diary: str,
+               yesterday: str = "", peeked: list[str] | None = None) -> str:
+        """Tonight's letter to him, for her drawer (decision 39); "" when the reply is no good."""
+        seen = ("今天 " + "、".join(peeked) + " 你发现抽屉被人翻过，信的顺序乱了。这屋里只有他能动你的东西。"
+                if peeked else "（没人动过）")
+        data = self._ask("letter", persona=self.persona, day=day, mood=mood, gists=_lines(gists, "（今天没聊）"),
+                         home=_lines(home, "（没什么事）"), diary=diary or "（没写）", peeked=seen,
+                         yesterday=yesterday or "（这是第一封）", temperature=0.9)
+        if not data:
+            return ""
+        return str(data.get("letter") or "").strip()[:LETTER_MAX_CHARS]
 
     def grow(self, day: str, days_known: int, diary: list[str], phases: list[str],
              traits: list[str]) -> tuple[str, dict[str, float]]:
