@@ -98,15 +98,11 @@ class Brain:
         self._say: Callable[[str], bool] = lambda text: False  # the channel's send, set each tick
         self._channel = "wechat"
         self._first_lines = 0  # lines she said first, so tick can tell its channel
-        self.reach = ReachNode(self.bus, conn, enabled=settings.reach_out, max_per_day=settings.reach_max_per_day,
-                               llm=lambda: self.llm, persona=self.persona, window=self.window,
-                               kitchen=self.cottage is not None, home_lately=self.home_lately,
-                               say=lambda text: self._say(text), channel=lambda: self._channel,
-                               room=lambda now, mood: self.cottage_text(now, mood.hunger),
-                               record=lambda now: self.room.record(now) if self.room is not None else "",
+        self.room = RoomNode(self.bus, self.cottage) if self.cottage is not None else None
+        self.reach = ReachNode(self.bus, conn, settings, llm=lambda: self.llm, persona=self.persona, window=self.window,
+                               room=self.room, say=lambda text: self._say(text), channel=lambda: self._channel,
                                fixed=self.home_fixes.append)
         self.leisure_node = LeisureNode(self.free_time)
-        self.room = RoomNode(self.bus, self.cottage) if self.cottage is not None else None
         self.mood_node = MoodNode(self.moods, kitchen=self.cottage is not None)
         wire(self.bus, room=self.room, mood=self.mood_node, reach=self.reach, leisure=self.leisure_node,
              chat=self.keep_her_line)

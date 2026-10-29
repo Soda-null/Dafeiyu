@@ -28,8 +28,8 @@ from fish.bus import Bus
 from fish.brain.llm import LLM
 from fish.brain.parse import clean_say, texting
 from fish.brain.prompt import WEEKDAYS
-from fish.config import owner_words
-from fish.cottage import asleep_hours
+from fish.config import Settings, owner_words
+from fish.cottage import RoomNode, asleep_hours
 from fish.memory import (DUE_SHOWN, Followup, Memory, MemoryStore, ProspectiveStore, Relationship, Window, iso,
                          last_his_message)
 from fish.mood import Mood, MoodStore
@@ -222,25 +222,18 @@ class ReachNode:
     him; when she says something and it goes through, the line goes out on the bus for whoever
     keeps the chat, and the gate's own ledger notes it. It does not know who listens."""
 
-    def __init__(self, bus: Bus, conn: sqlite3.Connection, *, enabled: bool, max_per_day: int,
-                 llm: Callable[[], LLM], persona: str, window: Window, kitchen: bool,
-                 home_lately: Callable[[datetime], list[str]], say: Callable[[str], bool],
-                 channel: Callable[[], str], room: Callable[[datetime, Mood], str] | None = None,
-                 record: Callable[[datetime], str] | None = None,
-                 fixed: Callable[[dict], None] | None = None) -> None:
+    def __init__(self, bus: Bus, conn: sqlite3.Connection, settings: Settings, *, llm: Callable[[], LLM],
+                 persona: str, window: Window, room: RoomNode | None, say: Callable[[str], bool],
+                 channel: Callable[[], str], fixed: Callable[[dict], None] | None = None) -> None:
         self.bus = bus
         self.conn = conn
-        self.enabled = enabled
-        self.max_per_day = max_per_day
+        self.enabled, self.max_per_day = settings.reach_out, settings.reach_max_per_day
         self.llm = llm  # read each time: tests swap the model after building
         self.persona = persona
         self.window = window
-        self.kitchen = kitchen
-        self.home_lately = home_lately
+        self.room = room  # her cottage, asked what happened lately, what she sees, its whole record; None when off
         self.say = say  # the channel's send for this tick; True when it went through
         self.channel = channel
-        self.room = room  # her room as she sees it now, for what she says about home
-        self.record = record  # the whole room, for the checker (decision 38)
         self.fixed = fixed  # told when the checker mended a line
 
     def consider(self, now: datetime) -> ReachOut | None:
@@ -248,16 +241,16 @@ class ReachNode:
         policy = ReachPolicy(self.conn, enabled=self.enabled, max_per_day=self.max_per_day)
         if policy.refused(now) is not None:
             return None
-        mood = MoodStore.apply_clock(MoodStore(self.conn).load(), now, kitchen=self.kitchen)
-        trig = policy.triggers(now, mood, home=self.home_lately(now))
+        mood = MoodStore.apply_clock(MoodStore(self.conn).load(), now, kitchen=self.room is not None)
+        trig = policy.triggers(now, mood, home=self.room.lately(now, HOME_LATELY) if self.room is not None else [])
         if not trig.any:
             return None
         policy.record_considered(now)  # before asking, so a crash cannot loop on the model
-        room = self.room(now, mood) if self.room is not None else ""
+        room = self.room.view(now, mood.hunger) if self.room is not None else ""
         ro = Reacher(self.llm(), self.persona).decide(now, mood, trig, recent_lines(self.window), room)
-        if ro is None or self.record is None:
+        if ro is None or self.room is None:
             return ro
-        said, why = check_home(self.llm(), self.record(now), "", ro.text)
+        said, why = check_home(self.llm(), self.room.record(now), "", ro.text)
         if not why:
             return ro
         if self.fixed is not None:

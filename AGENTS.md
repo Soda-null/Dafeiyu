@@ -25,7 +25,8 @@
 
 ## 代码
 
-- 所有代码在 `src/fish/`，按 `docs/architecture_zh.md` 的七个模块放；跨模块只通过各模块 `__init__.py` 导出的接口调用。
+- **积木化，不许写成屎山**（用户 10-29，决定 40）：照 ROS 的思路，每个模块是一个节点，只管自己的事；节点之间只传 `src/fish/msgs.py` 里的消息、只调对方 `__init__.py` 导出的东西，谁订什么写在 `src/fish/app.py`（夜里的在 `routines/nightly.py` 的 `NIGHT_STEPS`）。**加功能 = 加一块积木（一个文件）加一行接线，改一样东西 = 只改一个文件。** 一个文件开始装好几件事（超过三四百行、或一改要连带改别处），就先拆再加；拆是纯搬家，拆前拆后行为逐字节一样。`docs/nodes_design_zh.md` 是做法，`tests/test_skeleton.py` 把越界的写法拦下。
+- 所有代码在 `src/fish/`，按 `docs/architecture_zh.md` 的模块放；跨模块只通过各模块 `__init__.py` 导出的接口调用。
 - **大脑不认识电话线。** `brain/` 和 `memory/` 不能 import `channels/`；换终端还是换微信，大脑一行不改。
 - 用户的聊天记录和鱼的记忆是私人数据，只放 `data/`（已 gitignore）。测试用临时目录，不碰 `data/`。
 - **仓库是公开的**（决定 16）。跟踪的文件里不写用户的私事：住的城市、学校、真名、聊天原文、机器的地址。要举例就编一个（测试里的城市用 Springfield）。
