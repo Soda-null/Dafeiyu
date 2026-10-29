@@ -205,7 +205,7 @@ class Consolidator:
 
 def similarity(a: str, b: str) -> float:
     """Dice overlap of character bigrams, the same measure recall uses without a model."""
-    from fish.memory.retrieval import BigramEmbedder
+    from fish.memory import BigramEmbedder
 
     x, y = BigramEmbedder.bigrams(a), BigramEmbedder.bigrams(b)
     if not x or not y:

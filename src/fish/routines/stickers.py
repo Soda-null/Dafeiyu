@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from fish.memory import Sticker
 
 if TYPE_CHECKING:
-    from fish.brain.respond import Brain
+    from fish.brain import Brain
 
 STICKER_TYPES = (".jpg", ".jpeg", ".png", ".gif", ".webp")
 MAX_BYTES = 5_000_000  # bigger than any sticker; a photo that size is not one
@@ -48,7 +48,7 @@ def import_folder(src: Path, inbox: Path) -> int:
 
 
 def adopt_inbox(brain: "Brain", now: datetime, limit: int | None = None) -> Adopted:
-    from fish.brain.ask import ask_json
+    from fish.brain import ask_json
     from fish.messages import data_url, sniff_mime
 
     inbox = inbox_of(brain)

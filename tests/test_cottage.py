@@ -392,3 +392,16 @@ def test_an_hour_awake_is_an_hour_however_often_the_clock_ticks(tmp_path):
     assert round(hunger, 3) == 3.015 and round(energy, 4) == -2.5125  # 134 ticks = 60.3 minutes: 3 and 2.5 an hour
     c2 = home(tmp_path / "night", datetime(2026, 11, 2, 23, 50))
     assert round(c2.advance(datetime(2026, 11, 3, 8, 10)).energy, 3) == round(-2.5 * 20 / 60, 3)  # 10 min + 10 min up
+
+
+def test_show_lists_the_book_she_is_reading(tmp_path, capsys):
+    """`fish show` named a memory's source `where`, hiding the bookmark function of the same
+    name: with a book on, it crashed."""
+    from fish.__main__ import show
+    from fish.memory import MemoryStore, Pastimes
+
+    conn = connect(tmp_path / "fish.db")
+    MemoryStore(conn).add("world", "看到个候鸟的视频", importance=3, source="https://example.com", now=MON)
+    Pastimes(conn).start("book", "西遊記", "https://zh.wikisource.org/wiki/西遊記", {"chapter": 1, "part": 0}, now=MON)
+    show(conn, MON)
+    assert "在追的：西遊記" in capsys.readouterr().out

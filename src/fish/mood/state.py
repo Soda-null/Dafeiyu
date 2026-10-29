@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 
 from fish.config import owner_words
-from fish.memory.longterm import iso
+from fish.memory import iso
 
 KEYS = ("energy", "boredom", "hunger")
 DEFAULTS = {"energy": 70.0, "boredom": 20.0, "hunger": 40.0}

@@ -11,13 +11,14 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from fish.bus import Bus
-from fish.msgs import MoodMoved, SheSaid, TimePassed
+from fish.msgs import Chatted, MoodMoved, SheSaid, TimePassed
 
 
 def wire(bus: Bus, *, room: Any | None, mood: Any, reach: Any, leisure: Any,
          chat: Callable[[SheSaid], None]) -> None:
     # how she feels moves only when something says it moved: the room, a free moment (step 4)
     bus.subscribe(MoodMoved, mood.on_moved)
+    bus.subscribe(Chatted, mood.on_chatted)
     # every tick, in this order: time moves her room (which says what that did to her); then she
     # may think of him and text him; then, unless she just did, she may have a free moment
     if room is not None:  # no cottage (FISH_COTTAGE=0): nothing moves with time but her

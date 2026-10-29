@@ -11,14 +11,14 @@ import sqlite3
 from datetime import datetime, time
 from typing import TYPE_CHECKING
 
-from fish.brain.world import Browser
+from fish.brain import Browser
 from fish.memory import EpisodeManager, MemoryStore
 from fish.routines.nightly import SELF_NOTES_PER_NIGHT, fish_day, strongest
 from fish.routines.runs import claim_run, last_run
 from fish.world import Fetch, Item, gather, load_sources, open_item, urllib_fetch
 
 if TYPE_CHECKING:
-    from fish.brain.respond import Brain
+    from fish.brain import Brain
 
 BROWSE_TIME = time(9, 30)
 MAX_ITEMS = 60

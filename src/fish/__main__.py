@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import sqlite3
+import sys
 from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -63,8 +64,8 @@ def show(conn: sqlite3.Connection, now: datetime | None = None) -> None:
             flag = "模糊"
         else:
             flag = "清楚"
-        where = f"  ← {m.source}" if m.source else ""
-        print(f"  [#{m.id}] {m.kind:7} 重要{m.importance:2} R={r:.2f} {flag}  {m.line()}{where}")
+        source = f"  ← {m.source}" if m.source else ""  # not `where`: that is the book's bookmark, below
+        print(f"  [#{m.id}] {m.kind:7} 重要{m.importance:2} R={r:.2f} {flag}  {m.line()}{source}")
     print("== 惦记 ==")
     for f in ProspectiveStore(conn).open():
         print(f"  [#{f.id}] {f.due}  {f.text}")
@@ -202,6 +203,11 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     brain = Brain(conn, settings, DeepSeekLLM(settings), searcher=WikiSearcher(), reader=read_page)
+    # running for real, a node that fails is logged and the others go on: one broken listener must
+    # not cost him her reply (tests keep the default, which raises once everyone has run)
+    brain.bus.on_error = lambda message, handler, e: print(
+        f"（{type(message).__name__} 的订阅者 {getattr(handler, '__qualname__', handler)} 出错：{type(e).__name__}: {e}）",
+        file=sys.stderr)
     if args.command == "stickers":
         give_stickers(brain, Path(args.subcommand).expanduser() if args.subcommand else None)
         return

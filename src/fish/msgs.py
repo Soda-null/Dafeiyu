@@ -65,6 +65,18 @@ class HomeEvent:
 
 
 @dataclass(frozen=True)
+class Chatted:
+    """One chat turn is over: what he said, what she answered, the mood she reported, what it
+    was about and what the turn before was about (a topic going round and round bores her)."""
+    at: datetime
+    he: str
+    she: str
+    mood: str | None = None
+    topic: str | None = None
+    last_topic: str | None = None
+
+
+@dataclass(frozen=True)
 class MoodMoved:
     """Something moved how she feels: hours awake, a meal, a nap, a chore, a free moment.
     Deltas, added by the mood node one after another, each kept within 0–100."""
@@ -73,6 +85,15 @@ class MoodMoved:
     energy: float = 0.0
     boredom: float = 0.0
     why: str = ""
+
+
+@dataclass(frozen=True)
+class Rested:
+    """The night's sleep (03:30): she wakes where this stretch of days leaves her, keen or low
+    (the phase's tone and drive), a bit hungry. Not a delta: the mood node sets her anew."""
+    at: datetime
+    tone: float
+    drive: float
 
 
 @dataclass(frozen=True)

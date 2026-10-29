@@ -6,8 +6,7 @@ from __future__ import annotations
 from fish.brain.leisure.base import Activity, Choice, Kit, Material
 from fish.memory import Pastime
 from fish.world import Fetch, FetchError, Item
-from fish.world.http import bot_fetch
-from fish.world.wikisource import find_book, page_url, read_part
+from fish.world import bot_fetch, find_book, page_url, read_part
 
 KIND = "book"
 PART_CHARS = 3000

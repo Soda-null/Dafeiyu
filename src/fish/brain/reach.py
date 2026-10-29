@@ -29,9 +29,8 @@ from fish.brain.parse import clean_say, texting
 from fish.brain.prompt import WEEKDAYS
 from fish.config import owner_words
 from fish.cottage import asleep_hours
-from fish.memory import Followup, Memory, MemoryStore, ProspectiveStore, Relationship, Window
-from fish.memory.longterm import iso
-from fish.memory.prospective import DUE_SHOWN
+from fish.memory import (DUE_SHOWN, Followup, Memory, MemoryStore, ProspectiveStore, Relationship, Window, iso,
+                         last_his_message)
 from fish.mood import Mood, MoodStore
 from fish.msgs import SheSaid, TimePassed
 
@@ -130,8 +129,7 @@ class ReachPolicy:
             self.kv.set("reach_shared", json.dumps(sorted(self.shared_ids() | set(ro.shared))), now)
 
     def last_his_message(self) -> datetime | None:
-        row = self.conn.execute("SELECT MAX(ts) FROM messages WHERE role = 'user'").fetchone()
-        return datetime.fromisoformat(row[0]) if row and row[0] else None
+        return last_his_message(self.conn)
 
     # --- the gate --------------------------------------------------------------
 

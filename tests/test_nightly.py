@@ -161,3 +161,29 @@ def test_a_change_the_merge_step_declines_still_replaces_the_old_fact(tmp_path):
     run_nightly(conn, NIGHT, brain=brain)
     assert "他住3号楼" in prompt_of(brain.llm, "看起来很像")  # alike enough to be offered for merging
     assert store.get(old.id).superseded_by == new.id  # and still checked as a change
+
+
+def test_a_new_night_step_is_one_line_and_a_broken_one_stops_nothing(tmp_path, monkeypatch):
+    """Nodes step 5: the night is a list of subscribers to DayEnded. A step added to the list
+    runs, with the night's notebook; a step that fails leaves the rest to run and is reported
+    once the night is done."""
+    import pytest
+
+    from fish.bus import BusError
+    from fish.routines import nightly
+
+    conn = connect(tmp_path / "fish.db")
+    seen = []
+
+    def broken(night):
+        raise RuntimeError("a step with a bug")
+
+    def count_new(night):
+        seen.append((night.day, night.report.get("compressed")))
+
+    steps = list(nightly.NIGHT_STEPS)
+    monkeypatch.setattr(nightly, "NIGHT_STEPS", [broken] + steps + [count_new])
+    with pytest.raises(BusError) as e:
+        nightly.run_nightly(conn, datetime(2026, 10, 29, 3, 31))
+    assert seen == [(date(2026, 10, 28), 0)]  # it ran last, after everything the bug did not stop
+    assert "broken" in str(e.value)

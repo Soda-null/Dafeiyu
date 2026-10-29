@@ -47,18 +47,8 @@ SQL = re.compile(r"\.execute(?:many|script)?\(")
 SQL_OWNERS = ("storage/", "memory/", "mood/", "routines/runs.py")  # mood and runs own their tables
 LAUNCH = ("__main__.py",)  # the launch file wires nodes together; it may reach in
 
-KNOWN_DEEP_IMPORTS = {
-    "brain/leisure/book.py -> world.http", "brain/leisure/book.py -> world.wikisource",
-    "brain/reach.py -> memory.longterm", "brain/reach.py -> memory.prospective",
-    "routines/outside.py -> world.days", "routines/outside.py -> world.http", "routines/outside.py -> world.place",
-    # imported inside functions (found by the test, not by eye)
-    "brain/consolidate.py -> memory.retrieval",
-    "mood/state.py -> memory.longterm", "routines/browse.py -> brain.respond", "routines/browse.py -> brain.world",
-    "routines/nightly.py -> brain.consolidate", "routines/nightly.py -> brain.leisure",
-    "routines/nightly.py -> brain.respond", "routines/outside.py -> brain.ask", "routines/outside.py -> brain.respond",
-    "routines/stickers.py -> brain.ask", "routines/stickers.py -> brain.respond",
-}
-KNOWN_SQL = {"brain/reach.py", "brain/leisure/free.py", "routines/nightly.py"}
+KNOWN_DEEP_IMPORTS: set[str] = set()  # all paid (10-28)
+KNOWN_SQL: set[str] = set()  # all paid (10-28)
 
 
 def _node_files():
@@ -99,10 +89,10 @@ def test_the_launch_file_knows_only_the_bus_and_the_messages():
     assert used <= {"bus", "msgs"}, f"app.py wires nodes it is handed; it imports none: {sorted(used)}"
 
 
-# step 4: how she feels changes only through MoodMoved and the mood node. Old debts: a chat
-# turn's own nudge (respond.remember_turn) and the night's rest (routines/nightly.py, step 5)
+# step 4: how she feels changes only through the mood node (MoodMoved, Chatted, Rested); the
+# chat turn's nudge and the night's rest were the last old debts, paid in step 5
 MOOD_WRITE = re.compile(r"moods?\.save\(|MoodStore\([^)]*\)\.save\(|\.rest\(")
-KNOWN_MOOD_WRITERS = {"brain/respond.py", "routines/nightly.py"}
+KNOWN_MOOD_WRITERS: set[str] = set()  # all paid (10-28)
 
 
 def test_only_the_mood_node_changes_how_she_feels():

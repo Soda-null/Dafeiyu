@@ -744,6 +744,14 @@ class MemoryStore:
             " ORDER BY happened_on, id", wanted)
         return [_from_row(r) for r in rows]
 
+    def count_of_kind(self, kind: str, ids: list[int]) -> int:
+        """How many of these memories are of this kind (her free time counts its self notes)."""
+        if not ids:
+            return 0
+        marks = ",".join("?" * len(ids))
+        return self.conn.execute(f"SELECT COUNT(*) FROM memories WHERE kind = ? AND id IN ({marks})",
+                                 [kind, *ids]).fetchone()[0]
+
     def seen_recently(self, now: datetime, days: int = 7) -> list[Memory]:
         """World memories from the last `days`, newest first (also the URLs not to reopen)."""
         since = iso(now - timedelta(days=days))

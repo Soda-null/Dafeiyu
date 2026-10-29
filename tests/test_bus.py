@@ -97,3 +97,22 @@ def test_a_new_node_only_subscribes(tmp_path):
     assert brain.tick(lambda text: True, now=noon) is True
     assert screen == [("she", "在干嘛", True), ("tick", 12)]  # she spoke inside the tick, before the screen's turn
     assert [t.text for t in brain.window.recent()][-1] == "在干嘛"
+
+
+def test_a_turn_says_on_the_bus_who_said_what(tmp_path):
+    """Nodes step 5: his line, her answer and the turn's end go out on the bus, for any node."""
+    import json
+
+    from fish.brain import Brain, FakeLLM
+    from fish.config import Settings
+    from fish.msgs import Chatted
+    from fish.storage import connect
+
+    llm = FakeLLM([json.dumps({"say": "吃了\n你呢", "mood": "开心", "topic": "吃饭"}, ensure_ascii=False)])
+    s = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db")
+    brain = Brain(connect(s.db_path), s, llm, persona_text="你是大肥鱼。")
+    heard = []
+    for topic in (HeSaid, SheSaid, Chatted):
+        brain.bus.subscribe(topic, lambda m: heard.append((type(m).__name__, getattr(m, "text", None) or getattr(m, "she", ""))))
+    brain.respond("吃饭没", now=T)
+    assert heard == [("HeSaid", "吃饭没"), ("SheSaid", "吃了\n你呢"), ("Chatted", "吃了\n你呢")]

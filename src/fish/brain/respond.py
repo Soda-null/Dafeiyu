@@ -29,7 +29,7 @@ from fish.brain.reply import FALLBACK_SAY, PLAIN_REMINDER, Replier, plain_text  
 from fish.config import Settings, owner_words
 from fish.cottage import Cottage, RoomNode, invented_act
 from fish.messages import Incoming, Outgoing, data_url, sniff_mime
-from fish.msgs import SheSaid
+from fish.msgs import Chatted, HeSaid, SheSaid
 from fish.memory import (ABOUT_HIM_KINDS, FOLD_BATCH, PACT_LINK, Diary, Episode, EpisodeManager, Memory,
                          MemoryStore, Moment, Pastimes, PhaseStore, ProspectiveStore, Recollector, Relationship,
                          StickerAlbum, TraitStore, Window, asks_recall, echoes_her, his_line, keys_of, overlap,
@@ -102,7 +102,7 @@ class Brain:
                                say=lambda text: self._say(text), channel=lambda: self._channel)
         self.leisure_node = LeisureNode(self.free_time)
         self.room = RoomNode(self.bus, self.cottage) if self.cottage is not None else None
-        self.mood_node = MoodNode(self.moods)
+        self.mood_node = MoodNode(self.moods, kitchen=self.cottage is not None)
         wire(self.bus, room=self.room, mood=self.mood_node, reach=self.reach, leisure=self.leisure_node,
              chat=self.keep_her_line)
 
@@ -184,6 +184,9 @@ class Brain:
     def handle(self, incoming: Incoming, channel: str = "terminal",
                now: datetime | None = None) -> Outgoing:
         now = now or datetime.now()
+        self.bus.publish(HeSaid(incoming.text, now, channel, image=incoming.image,
+                                file_name=incoming.file.name if incoming.file else "",
+                                file_data=incoming.file.data if incoming.file else None))
         stale = self.episodes.stale(now)
         if stale is not None:
             self.close_episode(stale, now)
@@ -197,7 +200,7 @@ class Brain:
 
         sit, shared_note = self.situation(incoming, ep, mood, stage, now)
         reply, seen_source = self.replier.reply(sit)
-        return self.remember_turn(incoming, reply, seen_source, shared_note, ep.id, base, now, channel)
+        return self.remember_turn(incoming, reply, seen_source, shared_note, ep.id, now, channel)
 
     def situation(self, incoming: Incoming, ep: Episode, mood: Mood, stage: str,
                   now: datetime) -> tuple[Situation, str]:
@@ -225,7 +228,7 @@ class Brain:
         return sit, shared_note
 
     def remember_turn(self, incoming: Incoming, reply: Reply, seen_source: str | None, shared_note: str,
-                      episode_id: int, base: Mood, now: datetime, channel: str) -> Outgoing:
+                      episode_id: int, now: datetime, channel: str) -> Outgoing:
         """What this turn leaves behind: both lines in the chat, her notes, a sticker kept or
         sent, how the turn moved her mood and closeness; the chat folded when it runs long."""
         user_text, image = incoming.text, incoming.image
@@ -255,11 +258,12 @@ class Brain:
         if image is not None and reply.keep_sticker:
             self.album.add(image, sniff_mime(image) or "image/jpeg", reply.keep_sticker, now=now)
 
-        last_topic = self.relationship.get("last_topic")
-        base = MoodStore.after_turn(base, user_text, reply.say, reported=reply.mood,
-                                    topic=reply.topic, last_topic=last_topic, kitchen=self.cottage is not None)
-        self.moods.save(base)
-        self.moods.log(base, reply.mood, now)  # layer C's trace, read by layer B at night
+        if reply.say.strip() or outgoing.sticker is not None:
+            self.bus.publish(SheSaid(reply.say, now, channel,
+                                     sticker=str(outgoing.sticker) if outgoing.sticker else ""))
+        # how the turn moved her is the mood node's to work out (nodes step 5)
+        self.bus.publish(Chatted(now, user_text, reply.say, mood=reply.mood, topic=reply.topic,
+                                 last_topic=self.relationship.get("last_topic")))
         self.relationship.bump_closeness(reply.mood, now)
         if reply.topic:
             self.relationship.set("last_topic", reply.topic, now)

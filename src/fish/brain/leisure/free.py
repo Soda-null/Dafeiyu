@@ -20,7 +20,7 @@ from fish.brain.leisure.cottage import KEY as COTTAGE_KEY
 from fish.cottage import invented_act, layout
 from fish.brain.prompt import WEEKDAYS
 from fish.brain.world import Browser
-from fish.memory import MemoryStore, Moment, Pastimes
+from fish.memory import MemoryStore, Moment, Pastimes, last_his_message
 from fish.mood import MoodStore
 from fish.msgs import MoodMoved, SheSaid, TimePassed
 from fish.world import Fetch, Searcher, load_sources, urllib_fetch
@@ -56,8 +56,8 @@ class LeisurePolicy:
             return "enough today"
         if moments and now - datetime.fromisoformat(moments[-1].ts) < MIN_GAP:
             return "too soon"
-        row = self.conn.execute("SELECT MAX(ts) FROM messages WHERE role = 'user'").fetchone()
-        if row and row[0] and now - datetime.fromisoformat(row[0]) < AFTER_HIS_MESSAGE:
+        his = last_his_message(self.conn)
+        if his is not None and now - his < AFTER_HIS_MESSAGE:
             return "talking"
         return None
 
@@ -157,12 +157,7 @@ class Leisure:
 
     def self_notes_today(self, kit: Kit) -> int:
         today = datetime.combine(kit.now.date(), time(0))
-        ids = [i for m in kit.pastimes.moments(today) for i in m.memories]
-        if not ids:
-            return 0
-        marks = ",".join("?" * len(ids))
-        return kit.conn.execute(f"SELECT COUNT(*) FROM memories WHERE kind = 'self' AND id IN ({marks})",
-                                ids).fetchone()[0]
+        return kit.store.count_of_kind("self", [i for m in kit.pastimes.moments(today) for i in m.memories])
 
     def finish(self, kit: Kit, moment_id: int, *, did_something: bool,
                moved: dict[str, float] | None = None) -> Moment:

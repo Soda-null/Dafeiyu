@@ -38,6 +38,24 @@ class Turn:
     ts: str
 
 
+def last_his_message(conn: sqlite3.Connection) -> datetime | None:
+    """When he last wrote, from anywhere: her gates for speaking first and free time ask this."""
+    row = conn.execute("SELECT MAX(ts) FROM messages WHERE role = 'user'").fetchone()
+    return datetime.fromisoformat(row[0]) if row and row[0] else None
+
+
+def first_message_at(conn: sqlite3.Connection) -> datetime | None:
+    """The first line ever said between them: no diary for days before she met him."""
+    first = conn.execute("SELECT MIN(ts) FROM messages").fetchone()[0]
+    return datetime.fromisoformat(first) if first else None
+
+
+def he_wrote_between(conn: sqlite3.Connection, start: datetime, end: datetime) -> bool:
+    return conn.execute("SELECT 1 FROM messages WHERE role = 'user' AND ts >= ? AND ts < ? LIMIT 1",
+                        (start.isoformat(timespec="seconds"), end.isoformat(timespec="seconds"))
+                        ).fetchone() is not None
+
+
 def _turns(rows) -> list[Turn]:
     return [Turn(r["id"], r["role"], r["text"], r["ts"]) for r in rows]
 

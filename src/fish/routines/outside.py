@@ -18,13 +18,12 @@ from typing import TYPE_CHECKING
 from fish.memory import MemoryStore, Relationship
 from fish.routines.nightly import fish_day
 from fish.routines.runs import claim_run
-from fish.world.days import refresh_holidays
-from fish.world.http import Fetch, FetchBytes, FetchPost, urllib_fetch, urllib_fetch_bytes, urllib_post
-from fish.world.place import (Home, Place, load_home, load_places, locate, nearby, neighbourhood_map,
-                              places_line, weather)
+from fish.world import (Fetch, FetchBytes, FetchPost, Home, Place, load_home, load_places, locate, nearby,
+                        neighbourhood_map, places_line, refresh_holidays, urllib_fetch, urllib_fetch_bytes,
+                        urllib_post, weather)
 
 if TYPE_CHECKING:
-    from fish.brain.respond import Brain
+    from fish.brain import Brain
 
 WEATHER_FROM = time(7, 0)
 PLACES_EVERY_DAYS = 30
@@ -88,7 +87,7 @@ def run_outside(conn: sqlite3.Connection, now: datetime | None = None, *, brain:
 
 
 def look_at_map(brain: "Brain", home: Home, places: list[Place], png: bytes, now: datetime) -> int:
-    from fish.brain.ask import ask_json
+    from fish.brain import ask_json
     from fish.messages import data_url
 
     data = ask_json(brain.llm, "look_map", persona=brain.persona, home=home.line(),
