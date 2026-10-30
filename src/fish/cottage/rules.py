@@ -41,6 +41,9 @@ ACTIONS = {a.key: a for a in (
     Action("nap", "睡午觉", 60, energy=25),
     Action("shop", "去菜店", 30, energy=-8),
     Action("leave", "给他留东西", 1),  # something from the fridge, or a note, onto the windowsill for him
+    Action("sow", "种东西", 10),  # her windowsill pots (decision 42, garden.py)
+    Action("water", "浇水", 3),
+    Action("pick", "摘菜", 5),
 )}
 NOTE_PREFIX = "纸条"  # "纸条：早点睡" is a note she writes; anything else she leaves must be in the fridge
 
@@ -55,8 +58,36 @@ class Good:
 GOODS = {g.name: g for g in (
     Good("鸡蛋", 3, 14), Good("青菜", 1, 3), Good("豆腐", 1, 3), Good("肉", 2, 3),
     Good("西红柿", 2, 7), Good("土豆", 2, 7), Good("南瓜", 3, 14), Good("萝卜", 2, 14),
+    Good("小葱", 1, 5), Good("小白菜", 2, 3), Good("小番茄", 1, 7),  # from her pots, never sold
 )}
 RICE = "米"
+
+
+@dataclass(frozen=True)
+class Plant:
+    """What grows in her pots (decision 42). Days count only days it was watered enough."""
+    name: str
+    also: tuple[str, ...]  # other words for it ("葱", "西红柿")
+    stages: tuple[tuple[int, str], ...]  # (growing days, what she sees that morning)
+    ripe_at: int  # growing days until the first picking
+    ready_words: str  # "能剪了"
+    meals: int  # what one picking puts in the fridge
+    again: int | None = None  # days until the next picking; None: picked once, the pot is empty
+    again_words: str = ""
+    cut: bool = False  # cut down when picked and grows back (spring onions), not picked off the plant
+
+
+PLANTS = {p.name: p for p in (
+    Plant("小葱", ("葱",), ((3, "冒芽了"), (8, "长到一指高了")), 14, "能剪了", 1,
+          again=7, again_words="又长起来了，能剪了", cut=True),
+    Plant("小白菜", ("白菜", "青菜"), ((3, "冒芽了"), (10, "长出四片叶子了")), 25, "能摘了", 2),
+    Plant("小番茄", ("番茄", "西红柿"), ((6, "冒芽了"), (20, "长到一尺高了"), (35, "开小黄花了"), (50, "结了青果子")),
+          60, "第一颗红了", 1, again=3, again_words="又红了一颗"),
+)}
+POTS = 2  # on the windowsill
+RIPE_AT_MOST = 6  # ripe ones waiting on one plant; spring onions are cut once ready
+WILT_DAYS, DIE_DAYS = 3, 6  # this many days without water: it wilts and stops growing; it dies
+
 SHOP_OPEN, SHOP_CLOSE = time(7, 0), time(19, 0)
 SHOP_REST_WEEKDAY = 1  # Tuesday
 SHOP_WALK_MINUTES = 10

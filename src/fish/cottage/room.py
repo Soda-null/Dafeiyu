@@ -3,7 +3,7 @@
 The room is reality; her head is memory. It changes three ways: him (visitor.py), the rules of
 what she does (actions.py, shop.py), and time (`advance`: she sleeps, eats at mealtimes, food
 goes off, what she started finishes). Her drawer is drawer.py; what everything is made of is
-state.py. The file is data/cottage/now.json, plain enough for him to read and edit. No model calls.
+state.py; her windowsill pots are garden.py. The file is data/cottage/now.json, plain enough for him to read and edit. No model calls.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from pathlib import Path
 from fish.config import owner_words
 from fish.cottage.actions import ActionsMixin
 from fish.cottage.drawer import DrawerMixin
+from fish.cottage.garden import GardenMixin
 from fish.cottage.guest import GuestMixin
 from fish.cottage.rules import (ACTIONS, ATE_RECENTLY_HOURS, ENERGY_PER_HOUR, HUNGER_PER_HOUR, HUNGRY, SLEEP_FROM,
                                 WAKE_AT, asleep_hours, mealtime)
@@ -52,7 +53,7 @@ def _awake_hours(last: datetime, now: datetime) -> float:
     return awake / 3600
 
 
-class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin):
+class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin, GardenMixin):
     put_in = staticmethod(put_in)  # into the fridge (state.py), kept here for old callers
 
     def __init__(self, path: Path) -> None:
@@ -123,6 +124,7 @@ class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin):
             change.slept.append((datetime.combine(woke.date(), SLEEP_FROM), woke))
 
         self._guest_step(room, now, change)  # he comes at the hour he said, goes at the hour he leaves
+        self._garden_step(room, now, change)  # each morning her pots grow a day, or wilt (garden.py)
 
         for item in list(room.fridge):
             if _days_left(item, now.date()) <= 0:
@@ -162,6 +164,7 @@ class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin):
             "sink": f"水槽里有{sink}没洗" if room.sink else "水槽是干净的",
             "bed": BED_WORDS.get(room.bed, room.bed),
             "sill": "窗台上：" + "、".join(room.sill) if room.sill else "窗台空着",
+            "pots": GardenMixin.pots_line(room),
         }
         if room.guest:  # him, here or coming (decision 41)
             out["guest"] = GuestMixin.guest_line(room)
@@ -194,6 +197,8 @@ class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin):
             wanted.append("sink")
         if room.bed == "乱" and (now.hour < 12 or now.hour >= 21):
             wanted.append("bed")
+        if self.pots_matter(room, now):
+            wanted.append("pots")
         if room.sill:
             wanted.append("sill")
         wanted.append("food")
