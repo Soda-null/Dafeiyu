@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fish.config import owner_words
-from fish.cottage.rules import RICE, RICE_FULL
+from fish.cottage.rules import FISH_KIND, RICE, RICE_FULL
 from fish.cottage.state import put_in, sill_name
 
 
@@ -46,6 +46,8 @@ class VisitorMixin:
         line = None
         if where in ("", "sill"):
             item = next((i for i in room.sill if key in sill_name(i) or sill_name(i) in key), None)
+            if item is not None and self.tank_holds(room, item):
+                return f"鱼缸里养着{FISH_KIND}，缸拿不走"
             if item is not None:
                 room.sill.remove(item)
                 line = owner_words(f"他从窗台上拿走了{sill_name(item)}")

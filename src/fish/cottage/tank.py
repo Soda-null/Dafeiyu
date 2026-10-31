@@ -1,4 +1,5 @@
-"""The goldfish on her table (decision 43): he gives her one, with its tank. What it does is
+"""The goldfish in her tank (decisions 43, 44): he puts one into the tank he gave her on the
+windowsill (a small tank comes with it only when there is none). What it does is
 drawn by lot from a short list, the same lot for the same hour of the same day, so it is
 nobody's to make up: she sees it in the room's lines and cannot write "it did a flip". She
 feeds it once a day and changes its water now and then, and names it. Left alone it sits on
@@ -67,16 +68,27 @@ class TankMixin:
     """Part of Cottage (room.py): the goldfish. Uses the room's load / save / note."""
 
     def give_fish(self, now: datetime) -> str:
-        """He puts a tank with a goldfish on her table. One fish: a second is refused."""
+        """He puts a goldfish into the tank on her windowsill (decision 44: he had given her a big
+        one on 10-28; a small one comes with the fish only when there is none). One fish: a
+        second is refused."""
         room = self.load(now)
         if room.tank:
             return f"缸里已经有一条{FISH_KIND}了"
         today = now.date().isoformat()
         room.tank = {"name": "", "since": today, "from": now.isoformat(timespec="minutes"), "fed": today, "water": today}
-        line = owner_words(f"他送来一个小鱼缸和一条{FISH_KIND}，摆在桌上")
+        if any("鱼缸" in i for i in room.sill):
+            line = owner_words(f"他往窗台上的鱼缸里放了一条{FISH_KIND}")
+        else:
+            room.sill.append(owner_words(f"一个小鱼缸（他 {now.month}-{now.day} 送的）"))
+            line = owner_words(f"他送来一个小鱼缸和一条{FISH_KIND}，放在窗台上")
         self.note(room, now, line)
         self.save(room)
         return line
+
+    @staticmethod
+    def tank_holds(room: Room, item: str) -> bool:
+        """The tank on the sill cannot be taken away while the fish is in it."""
+        return bool(room.tank) and "鱼缸" in item
 
     @staticmethod
     def tank_offers(room: Room, now: datetime) -> list[Offer]:
@@ -141,7 +153,7 @@ class TankMixin:
         water = _days(t["water"], at.date())
         eaten = "今天喂过了" if fed == 0 else "今天还没喂" if fed == 1 else f"{fed}天没喂了"
         clean = "水是干净的" if water < FISH_DIRTY_DAYS else f"水{'有点' if water < FISH_FOUL_DAYS else '很'}浑（{water}天没换）"
-        return (f"桌上鱼缸里养着一条{FISH_KIND}，" + (f"叫{t['name']}" if t.get("name") else "还没起名字")
+        return (f"窗台上的鱼缸里养着一条{FISH_KIND}，" + (f"叫{t['name']}" if t.get("name") else "还没起名字")
                 + f"，这会儿{doing_at(t, at)}（{eaten}；{clean}）")
 
     @staticmethod

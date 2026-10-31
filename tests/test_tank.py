@@ -134,3 +134,28 @@ def test_names_and_what_she_cannot_write_herself(tmp_path):
     c = home(tmp_path)
     c.give_fish(MON)
     assert "小金鱼" in c.for_chat(MON, 20)  # a fish that has just come is worth a line in a chat
+
+
+BIG = "一个长条的大鱼缸，底下铺着沙子，种着芦苇和水草，水面漂着浮萍，正对着湖"
+
+
+def test_the_fish_goes_into_the_tank_he_already_gave_her_and_the_tank_stays(tmp_path):
+    c = home(tmp_path)
+    c.put_on_sill(BIG, MON)  # 10-28: the big tank on her windowsill, with no fish in it yet
+    said = c.give_fish(MON)
+    assert said == "他往窗台上的鱼缸里放了一条小金鱼"
+    sill = c.load().sill
+    assert len(sill) == 1 and BIG in sill[0]  # no second tank
+    assert line(c, MON).startswith("窗台上的鱼缸里养着一条小金鱼")
+    # with the fish in it, the tank cannot be taken; before, it could
+    assert c.take("鱼缸", MON) == "鱼缸里养着小金鱼，缸拿不走" and len(c.load().sill) == 1
+
+    d = home(tmp_path / "b")
+    d.put_on_sill(BIG, MON)
+    assert d.take("鱼缸", MON).startswith("他从窗台上拿走了")
+
+
+def test_with_no_tank_on_the_sill_a_small_one_comes_with_the_fish(tmp_path):
+    c = home(tmp_path)
+    c.give_fish(MON)
+    assert any("小鱼缸" in i for i in c.load().sill) and "窗台上：" in c.lines(c.load())["sill"]
