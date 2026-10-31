@@ -47,6 +47,8 @@ ACTIONS = {a.key: a for a in (
     Action("feed", "喂小金鱼", 1),  # her goldfish on the table (decision 43, tank.py)
     Action("change", "给鱼缸换水", 10, energy=-2),
     Action("namefish", "给小金鱼起名字", 1),
+    Action("lake", "湖边码头坐着", 30),  # out of the door and she is there (decision 45, lake.py)
+    Action("florist", "去花店", 40, energy=-10),  # fifteen minutes each way, ten inside (florist.py)
 )}
 NOTE_PREFIX = "纸条"  # "纸条：早点睡" is a note she writes; anything else she leaves must be in the fridge
 
@@ -102,6 +104,42 @@ SHOP_AGAIN_HOURS = 2  # just back from the shop, she does not go again (10-29 tr
 GREENS_GONE_AFTER = time(15, 0)
 EVERY_DAY = ("鸡蛋", "青菜", "豆腐", "肉", "西红柿", "土豆")
 IN_SEASON = {9: "南瓜", 10: "南瓜", 11: "南瓜", 12: "萝卜", 1: "萝卜", 2: "萝卜"}
+
+LAKE_UNTIL = time(20, 0)  # after dark she stays in (decision 45)
+LAKE_AGAIN_HOURS = 2
+
+
+@dataclass(frozen=True)
+class Flower:
+    """A small potted plant from the flower shop, for her windowsill (decision 45). It does not
+    grow; watered it keeps, left dry `wilt_days` it droops, twice that it dies."""
+    name: str
+    also: tuple[str, ...]
+    wilt_days: int
+
+
+FLOWERS = {f.name: f for f in (
+    Flower("绿萝", (), 5), Flower("多肉", ("肉肉",), 10),
+    Flower("风信子", (), 3), Flower("茉莉", ("茉莉花",), 3), Flower("栀子", ("栀子花",), 3),
+    Flower("小菊花", ("菊花",), 3), Flower("桂花", (), 4), Flower("水仙", ("水仙花",), 3), Flower("仙客来", (), 4),
+)}
+FLOWERS_ALWAYS = ("绿萝", "多肉")
+FLOWERS_IN_SEASON = {3: ("风信子",), 4: ("风信子",), 5: ("茉莉",), 6: ("茉莉", "栀子"), 7: ("茉莉", "栀子"),
+                     8: ("茉莉",), 9: ("桂花",), 10: ("小菊花", "桂花"), 11: ("小菊花",), 12: ("仙客来",),
+                     1: ("水仙", "仙客来"), 2: ("水仙",)}
+FLOWER_SPOTS = 3  # her own flowers on the sill, beside the pots and his tank
+FLORIST_OPEN, FLORIST_CLOSE = time(9, 0), time(18, 0)
+FLORIST_REST_WEEKDAY = 0  # Monday
+FLORIST_WALK_MINUTES = 15
+FLORIST_AGAIN_HOURS = 2
+
+
+def florist_open(now: datetime) -> bool:
+    return now.weekday() != FLORIST_REST_WEEKDAY and FLORIST_OPEN <= now.time() < FLORIST_CLOSE
+
+
+def flowers_in_stock(now: datetime) -> list[str]:
+    return list(FLOWERS_ALWAYS) + list(FLOWERS_IN_SEASON.get(now.month, ()))
 
 
 def shop_open(now: datetime) -> bool:

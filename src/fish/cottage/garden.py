@@ -44,8 +44,11 @@ class GardenMixin:
     def garden_offers(room: Room, now: datetime) -> list[Offer]:
         planted = [p for p in room.pots if p]
         out = []
-        if any(_dry(p, now.date()) >= 1 for p in planted):
-            out.append(Offer("water", "给窗台上的" + "、".join(p["plant"] for p in planted) + "浇水"))
+        thirsty = [p["plant"] for p in planted if _dry(p, now.date()) >= 1]
+        thirsty += [f["name"] for f in room.flowers if _dry(f, now.date()) >= 1]  # her flowers (florist.py)
+        if thirsty:
+            names = [p["plant"] for p in planted] + [f["name"] for f in room.flowers]
+            out.append(Offer("water", "给窗台上的" + "、".join(names) + "浇水"))
         ready = [p["plant"] for p in planted if p.get("ready") and _fits(room, p["plant"])]
         if ready:
             out.append(Offer("pick", "摘" + "、".join(ready) + "（摘下来放冰箱）"))
@@ -66,9 +69,9 @@ class GardenMixin:
             return f"在窗台的花盆里种下了{plant.name}，浇了水"
         if key == "water":
             planted = [p for p in room.pots if p]
-            for p in planted:
+            for p in planted + room.flowers:
                 p["watered"] = today
-            return "给" + "、".join(p["plant"] for p in planted) + "浇了水"
+            return "给" + "、".join([p["plant"] for p in planted] + [f["name"] for f in room.flowers]) + "浇了水"
         picked = []
         for i, p in enumerate(room.pots):
             plant = PLANTS[p["plant"]] if p else None

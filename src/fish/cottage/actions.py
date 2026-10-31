@@ -1,5 +1,6 @@
 """What she can do in her room (decisions 26, 32, 35, 36): cook, boil rice, wash up, make the
-bed, nap, leave him something on the windowsill; the shop is shop.py, her pots garden.py, her goldfish tank.py. Only what would work is
+bed, nap, leave him something on the windowsill; the shop is shop.py, her pots garden.py, her goldfish tank.py,
+the pier lake.py, the flower shop florist.py. Only what would work is
 offered; the rules decide what it changes. Meals and washing take their time: they are started
 here and finished when `until` comes (`_finish`, called by the room's time step)."""
 
@@ -7,7 +8,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from fish.cottage import garden, tank
+from fish.cottage import florist, garden, lake, tank
 from fish.cottage.rules import ACTIONS, CARRY, HUNGRY, NOTE_PREFIX, SHOP_WALK_MINUTES, TIRED, in_stock, shop_open
 from fish.cottage.state import SPLIT, Change, Offer, Room, _days_left, _iso, can_cook
 
@@ -55,6 +56,7 @@ class ActionsMixin:
         if shop_open(now) and shop_open(now + timedelta(minutes=SHOP_WALK_MINUTES)) and not self.just_shopped(room, now):
             out.append(Offer("shop", f"去镇上的菜店买菜、买米（米缸和冰箱只能这样补；今天有：{'、'.join(in_stock(now))}）",
                              f"想买的，用顿号隔开，最多 {CARRY} 样"))
+        out += self.lake_offers(room, now) + self.florist_offers(room, now)
         return out
 
     def act(self, key: str, now: datetime, arg: str = "") -> Change | None:
@@ -73,6 +75,10 @@ class ActionsMixin:
             return self.garden_possible(room, key, now, arg)
         if key in tank.KEYS:
             return self.tank_possible(room, key, now, arg)
+        if key in lake.KEYS:
+            return self.lake_possible(room, key, now, arg)
+        if key in florist.KEYS:
+            return self.florist_possible(room, key, now, arg)
         return {"cook": can_cook(room), "rice": room.rice > 0, "wash": bool(room.sink),
                 "bed": room.bed == "乱", "nap": True, "shop": shop_open(now) and not self.just_shopped(room, now),
                 "leave": True}[key]
@@ -132,6 +138,10 @@ class ActionsMixin:
         elif key in tank.KEYS:
             line = self._tank_apply(room, key, now, arg)
             routine = routine or key != "namefish"  # feeding and changing the water are the day going as days go
+        elif key in lake.KEYS:
+            line = self._lake_apply(room, key, now, arg)
+        elif key in florist.KEYS:
+            line = self._florist_apply(room, key, now, arg)
         else:
             line = self._start_shop(room, arg, routine)
         room.doing, room.until = action.doing, _iso(now + timedelta(minutes=action.minutes))

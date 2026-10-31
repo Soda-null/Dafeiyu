@@ -3,7 +3,8 @@
 The room is reality; her head is memory. It changes three ways: him (visitor.py), the rules of
 what she does (actions.py, shop.py), and time (`advance`: she sleeps, eats at mealtimes, food
 goes off, what she started finishes). Her drawer is drawer.py; what everything is made of is
-state.py; her windowsill pots are garden.py, her goldfish tank.py. The file is data/cottage/now.json, plain enough for him to read and edit. No model calls.
+state.py; her windowsill pots are garden.py, her goldfish tank.py, the pier lake.py, the flower shop and her
+flowers florist.py. The file is data/cottage/now.json, plain enough for him to read and edit. No model calls.
 """
 
 from __future__ import annotations
@@ -18,8 +19,10 @@ from pathlib import Path
 from fish.config import owner_words
 from fish.cottage.actions import ActionsMixin
 from fish.cottage.drawer import DrawerMixin
+from fish.cottage.florist import FloristMixin
 from fish.cottage.garden import GardenMixin
 from fish.cottage.guest import GuestMixin
+from fish.cottage.lake import LakeMixin
 from fish.cottage.rules import (ACTIONS, ATE_RECENTLY_HOURS, ENERGY_PER_HOUR, HUNGER_PER_HOUR, HUNGRY, SLEEP_FROM,
                                 WAKE_AT, asleep_hours, mealtime)
 from fish.cottage.shop import ShopMixin
@@ -54,7 +57,8 @@ def _awake_hours(last: datetime, now: datetime) -> float:
     return awake / 3600
 
 
-class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin, GardenMixin, TankMixin):
+class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin, GardenMixin, TankMixin, LakeMixin,
+              FloristMixin):
     put_in = staticmethod(put_in)  # into the fridge (state.py), kept here for old callers
 
     def __init__(self, path: Path) -> None:
@@ -111,6 +115,10 @@ class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin, Ga
                 change.slept.append((done - timedelta(minutes=ACTIONS["nap"].minutes), done))
             if room.pending.get("buy") is not None:  # home from the shop: what she bought is in now (decision 35)
                 self._shop_home(room, done, change)
+            elif "lake" in room.pending:  # back from the pier (decision 45)
+                self._lake_home(room, done, change)
+            elif "florist" in room.pending:  # home from the flower shop: her flowers are on the sill now
+                self._florist_home(room, done, change)
             else:  # a meal is eaten, the washing up is done (actions.py)
                 self._finish(room, done, change)
             room.doing, room.until = "", ""
@@ -127,6 +135,7 @@ class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin, Ga
         self._guest_step(room, now, change)  # he comes at the hour he said, goes at the hour he leaves
         self._garden_step(room, now, change)  # each morning her pots grow a day, or wilt (garden.py)
         self._tank_step(room, now, change)  # her goldfish turns listless, or comes round, and does its little things (tank.py)
+        self._flowers_step(room, now, change)  # her flowers droop when left dry, or die (florist.py)
 
         for item in list(room.fridge):
             if _days_left(item, now.date()) <= 0:
@@ -165,13 +174,15 @@ class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin, Ga
             "food": f"{food}；米缸{rice_word(room.rice)}",
             "sink": f"水槽里有{sink}没洗" if room.sink else "水槽是干净的",
             "bed": BED_WORDS.get(room.bed, room.bed),
-            "sill": "窗台上：" + "、".join(room.sill) if room.sill else "窗台空着",
+            "sill": "窗台上：" + "、".join(room.sill) if room.sill else "窗台上除了你的花没别的" if room.flowers else "窗台空着",
             "pots": GardenMixin.pots_line(room),
         }
         if room.guest:  # him, here or coming (decision 41)
             out["guest"] = GuestMixin.guest_line(room)
         if room.tank:  # the goldfish he gave her (decision 43)
             out["tank"] = TankMixin.tank_line(room)
+        if room.flowers:  # from the flower shop (decision 45)
+            out["flowers"] = FloristMixin.flowers_line(room)
         return out
 
     @staticmethod
@@ -182,6 +193,8 @@ class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin, Ga
             return owner_words("你在睡觉，被他的消息吵醒了") if chatting else "你在睡觉"
         if room.doing == ACTIONS["shop"].doing:
             return ShopMixin.trip_line(room, now)
+        if room.doing == ACTIONS["florist"].doing:
+            return FloristMixin.florist_trip_line(room, now)
         return f"你这会儿在{room.doing}，大概到 {room.until[11:16]}"
 
     @staticmethod
@@ -205,6 +218,8 @@ class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin, Ga
             wanted.append("pots")
         if self.tank_matters(room, now):
             wanted.append("tank")
+        if self.flowers_matter(room, now):
+            wanted.append("flowers")
         if room.sill:
             wanted.append("sill")
         wanted.append("food")

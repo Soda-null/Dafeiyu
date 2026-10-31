@@ -40,11 +40,12 @@ class Room:
     sill: list[str] = field(default_factory=list)  # on the windowsill: his presents, and what she left him
     meals: list[str] = field(default_factory=list)  # "2026-10-28 午饭": that mealtime is done with
     ate: str = ""  # when she last ate
-    pending: dict = field(default_factory=dict)  # what comes at `until`: a meal ({"hunger", "line"}) or the shopping ({"buy"})
+    pending: dict = field(default_factory=dict)  # what comes at `until`: a meal ({"hunger", "line"}), the shopping ({"buy"}), the pier ({"lake"}), the flower shop ({"florist"})
     guest: dict = field(default_factory=dict)  # him at her place: {"since", "until", "why", "here"} (decision 41)
     pots: list[dict] = field(default_factory=lambda: [{} for _ in range(POTS)])  # her windowsill pots (decision 42)
     grew: str = ""  # the last morning the pots grew
     tank: dict = field(default_factory=dict)  # her goldfish: {"name", "since", "from", "fed", "water"} (decision 43)
+    flowers: list[dict] = field(default_factory=list)  # from the flower shop, on the sill: {"name", "bought", "watered"} (decision 45)
     events: list[dict] = field(default_factory=list)  # {"ts", "line"}, the last two days
     last: str = ""  # up to when time has moved the room
 

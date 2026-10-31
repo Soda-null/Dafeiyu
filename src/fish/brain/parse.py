@@ -30,6 +30,10 @@ _FAKE_TURN = re.compile(r"^\s*(?:<[|｜].*?[|｜]>|(?:user|assistant|system|sys|
 _FIELD_LINE = re.compile(r"^\s*[\"']?(?:say|mood|topic|notes|followups|asked|corrections|look|seen|image_note"
                          r"|keep_sticker|sticker|心情|话题)[\"']?\s*[:：=]", re.I)
 _OWN_LABEL = re.compile(r"^\s*(?:say|assistant|你)\s*[:：]\s*", re.I)
+# Our own reminder said back (10-31: "（照输出格式只输出一个json对象）" went out as one of her bubbles after
+# a reply written as plain lines): a line that is only a bracketed note about the output format is
+# the prompt talking, not her.
+_ECHO = re.compile(r"^\s*[（(][^）)]*(?:输出格式|json\s*对象|不用\s*json)[^）)]*[）)]?\s*$", re.I)
 
 
 MAX_BUBBLES = 5  # messages one reply may come in; more are joined into the last
@@ -68,7 +72,7 @@ def cut_say(text: str) -> tuple[str, bool]:
         if _FIELD_LINE.match(line) or line.lstrip().startswith("{") or '{"' in line:
             break
         kept.append(line)
-    return "\n".join(kept).strip(), fake
+    return "\n".join(line for line in kept if not _ECHO.match(line)).strip(), fake
 
 
 def clean_say(text: str) -> str:
