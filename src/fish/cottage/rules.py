@@ -44,6 +44,9 @@ ACTIONS = {a.key: a for a in (
     Action("sow", "种东西", 10),  # her windowsill pots (decision 42, garden.py)
     Action("water", "浇水", 3),
     Action("pick", "摘菜", 5),
+    Action("feed", "喂小金鱼", 1),  # her goldfish on the table (decision 43, tank.py)
+    Action("change", "给鱼缸换水", 10, energy=-2),
+    Action("namefish", "给小金鱼起名字", 1),
 )}
 NOTE_PREFIX = "纸条"  # "纸条：早点睡" is a note she writes; anything else she leaves must be in the fridge
 
@@ -88,6 +91,10 @@ POTS = 2  # on the windowsill
 RIPE_AT_MOST = 6  # ripe ones waiting on one plant; spring onions are cut once ready
 WILT_DAYS, DIE_DAYS = 3, 6  # this many days without water: it wilts and stops growing; it dies
 
+FISH_KIND = "小金鱼"
+FISH_DIRTY_DAYS, FISH_FOUL_DAYS = 3, 7  # days since the water was changed: cloudy; so bad it sits on the bottom
+FISH_LISTLESS_DAYS = 2  # days unfed: it sits on the bottom (it never dies: decision 43)
+FISH_MOMENTS = 2  # little things it does each day that go into the room's record
 SHOP_OPEN, SHOP_CLOSE = time(7, 0), time(19, 0)
 SHOP_REST_WEEKDAY = 1  # Tuesday
 SHOP_WALK_MINUTES = 10

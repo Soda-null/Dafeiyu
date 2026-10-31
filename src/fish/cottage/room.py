@@ -3,7 +3,7 @@
 The room is reality; her head is memory. It changes three ways: him (visitor.py), the rules of
 what she does (actions.py, shop.py), and time (`advance`: she sleeps, eats at mealtimes, food
 goes off, what she started finishes). Her drawer is drawer.py; what everything is made of is
-state.py; her windowsill pots are garden.py. The file is data/cottage/now.json, plain enough for him to read and edit. No model calls.
+state.py; her windowsill pots are garden.py, her goldfish tank.py. The file is data/cottage/now.json, plain enough for him to read and edit. No model calls.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from fish.cottage.guest import GuestMixin
 from fish.cottage.rules import (ACTIONS, ATE_RECENTLY_HOURS, ENERGY_PER_HOUR, HUNGER_PER_HOUR, HUNGRY, SLEEP_FROM,
                                 WAKE_AT, asleep_hours, mealtime)
 from fish.cottage.shop import ShopMixin
+from fish.cottage.tank import TankMixin
 from fish.cottage.state import (BED_WORDS, COUNT_WORDS, KEEP_EVENTS, KEEP_MEALS, Change, Offer, Room, _days_left,
                                 _iso, can_cook, fresh, invented_act, put_in, rice_word)
 from fish.cottage.visitor import VisitorMixin
@@ -53,7 +54,7 @@ def _awake_hours(last: datetime, now: datetime) -> float:
     return awake / 3600
 
 
-class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin, GardenMixin):
+class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin, GardenMixin, TankMixin):
     put_in = staticmethod(put_in)  # into the fridge (state.py), kept here for old callers
 
     def __init__(self, path: Path) -> None:
@@ -125,6 +126,7 @@ class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin, Ga
 
         self._guest_step(room, now, change)  # he comes at the hour he said, goes at the hour he leaves
         self._garden_step(room, now, change)  # each morning her pots grow a day, or wilt (garden.py)
+        self._tank_step(room, now, change)  # her goldfish turns listless, or comes round, and does its little things (tank.py)
 
         for item in list(room.fridge):
             if _days_left(item, now.date()) <= 0:
@@ -168,6 +170,8 @@ class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin, Ga
         }
         if room.guest:  # him, here or coming (decision 41)
             out["guest"] = GuestMixin.guest_line(room)
+        if room.tank:  # the goldfish he gave her (decision 43)
+            out["tank"] = TankMixin.tank_line(room)
         return out
 
     @staticmethod
@@ -199,6 +203,8 @@ class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin, Ga
             wanted.append("bed")
         if self.pots_matter(room, now):
             wanted.append("pots")
+        if self.tank_matters(room, now):
+            wanted.append("tank")
         if room.sill:
             wanted.append("sill")
         wanted.append("food")

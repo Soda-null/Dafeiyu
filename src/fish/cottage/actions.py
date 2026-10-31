@@ -1,5 +1,5 @@
 """What she can do in her room (decisions 26, 32, 35, 36): cook, boil rice, wash up, make the
-bed, nap, leave him something on the windowsill; the shop is shop.py, her pots garden.py. Only what would work is
+bed, nap, leave him something on the windowsill; the shop is shop.py, her pots garden.py, her goldfish tank.py. Only what would work is
 offered; the rules decide what it changes. Meals and washing take their time: they are started
 here and finished when `until` comes (`_finish`, called by the room's time step)."""
 
@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from fish.cottage import garden
+from fish.cottage import garden, tank
 from fish.cottage.rules import ACTIONS, CARRY, HUNGRY, NOTE_PREFIX, SHOP_WALK_MINUTES, TIRED, in_stock, shop_open
 from fish.cottage.state import SPLIT, Change, Offer, Room, _days_left, _iso, can_cook
 
@@ -49,7 +49,7 @@ class ActionsMixin:
             out.append(Offer("bed", "叠被子"))
         if energy < TIRED:
             out.append(Offer("nap", "睡个午觉"))
-        out += self.garden_offers(room, now)
+        out += self.garden_offers(room, now) + self.tank_offers(room, now)
         out.append(Offer("leave", "在窗台上给他留点东西（冰箱里有的，或者写张纸条）",
                          f"留什么：冰箱里的一样，或者\"{NOTE_PREFIX}：想写的话\""))
         if shop_open(now) and shop_open(now + timedelta(minutes=SHOP_WALK_MINUTES)) and not self.just_shopped(room, now):
@@ -71,6 +71,8 @@ class ActionsMixin:
             return False
         if key in garden.KEYS:
             return self.garden_possible(room, key, now, arg)
+        if key in tank.KEYS:
+            return self.tank_possible(room, key, now, arg)
         return {"cook": can_cook(room), "rice": room.rice > 0, "wash": bool(room.sink),
                 "bed": room.bed == "乱", "nap": True, "shop": shop_open(now) and not self.just_shopped(room, now),
                 "leave": True}[key]
@@ -127,6 +129,9 @@ class ActionsMixin:
         elif key in garden.KEYS:
             line = self._garden_apply(room, key, now, arg)
             routine = routine or key == "water"  # watering is the day going as days go, not news
+        elif key in tank.KEYS:
+            line = self._tank_apply(room, key, now, arg)
+            routine = routine or key != "namefish"  # feeding and changing the water are the day going as days go
         else:
             line = self._start_shop(room, arg, routine)
         room.doing, room.until = action.doing, _iso(now + timedelta(minutes=action.minutes))

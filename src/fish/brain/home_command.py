@@ -38,6 +38,8 @@ def plan(llm: LLM, text: str, room: str) -> tuple[list[Op], str]:
             ops.append(Op(op, where, what or "抽屉"))
         elif op in ("visit", "go_home"):
             ops.append(Op(op, "home", what, None, str(o.get("since") or "")[:5], str(o.get("until") or "")[:5]))
+        elif op == "put" and where == "tank":  # a goldfish and its tank, once
+            ops.append(Op(op, where, what or "小金鱼"))
         elif op in ("put", "take") and where in PLACES and where != "drawer" and what:
             ops.append(Op(op, where, what, meals))
     return ops, str(data.get("say") or "").strip()[:80]
@@ -54,6 +56,8 @@ def carry_out(cottage: Cottage, ops: list[Op], now: datetime) -> list[str]:
             letters = cottage.open_drawer(now)
             out.append(f"床头的抽屉里有 {len(letters)} 封信：" if letters else "床头的抽屉里空空的。")
             out += [f"\n【{day}】\n{text}" for day, text in letters]
+        elif o.op == "put" and o.where == "tank":
+            out.append(cottage.give_fish(now))
         elif o.op == "put" and o.where == "sill":
             out.append(cottage.put_on_sill(o.what, now))
         elif o.op == "put":

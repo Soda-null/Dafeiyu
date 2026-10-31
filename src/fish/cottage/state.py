@@ -13,7 +13,7 @@ KEEP_EVENTS = timedelta(days=2)
 # What she may not write about herself once she has a room: things done to it. Doing, buying
 # and eating happen through the rules and are in `events`; her own notes keep thoughts and
 # plans. Wanting to ("想做饭", "打算去买") is a thought and passes.
-INVENTED_ACT = re.compile(r"(?<![想要打算准备])(做|煮|炒|烧|吃|买|洗|叠|收拾|打扫|种|养|浇|摘|剪|睡|躺|煎|炖|蒸)(了|过|完|着|好)")
+INVENTED_ACT = re.compile(r"(?<![想要打算准备])(做|煮|炒|烧|吃|买|洗|叠|收拾|打扫|种|养|浇|摘|剪|喂|睡|躺|煎|炖|蒸)(了|过|完|着|好)")
 KEEP_MEALS = 6
 COUNT_WORDS = {2: "两", 3: "三", 4: "四", 5: "五"}
 BED_WORDS = {"叠好": "被子叠好了", "乱": "被子没叠", "在睡": "你在床上"}
@@ -44,6 +44,7 @@ class Room:
     guest: dict = field(default_factory=dict)  # him at her place: {"since", "until", "why", "here"} (decision 41)
     pots: list[dict] = field(default_factory=lambda: [{} for _ in range(POTS)])  # her windowsill pots (decision 42)
     grew: str = ""  # the last morning the pots grew
+    tank: dict = field(default_factory=dict)  # her goldfish: {"name", "since", "from", "fed", "water"} (decision 43)
     events: list[dict] = field(default_factory=list)  # {"ts", "line"}, the last two days
     last: str = ""  # up to when time has moved the room
 

@@ -184,7 +184,7 @@ def render_profile(profile: list[Memory], mentioned: set[int] = frozenset(),
 # His line touches her room: what the room says is put right after it. In the middle of the
 # prompt it lost to what she had said earlier in the chat (10-29: she had made up "买了米" before
 # words could start things, and twice answered "米缸填好了 满满一缸" over an almost empty jar).
-HOME_WORDS = re.compile(r"米|冰箱|菜|窗台|买|饭|吃|葱|蛋|碗|锅|床|被子|鱼缸|留|屋|家里|拿|花盆|浇|番茄|发芽|冒芽|种子|种的|种了")
+HOME_WORDS = re.compile(r"米|冰箱|菜|窗台|买|饭|吃|葱|蛋|碗|锅|床|被子|鱼缸|留|屋|家里|拿|花盆|浇|番茄|发芽|冒芽|种子|种的|种了|小鱼|金鱼|鱼食|喂|换水|缸")
 
 
 def home_check(cottage: str) -> str:
