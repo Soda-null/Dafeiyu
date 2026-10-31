@@ -10,6 +10,7 @@
 | `storage/` | SQLite 连接和建表（八张表，`memory_design_zh.md` §9） | 能用 |
 | `persona/` | 读 `docs/persona_zh.md`：底子（每轮原样进提示词）和"熟悉程度"三档（只有当前档进，决定 11） | 能用 |
 | `memory/` | 只有数据和数学，不调模型：`stability`（遗忘公式；决定 21 起牢固度从"说的是什么"和"多触动"算，一辈子的钉住）、`longterm`（长期条目：加 / 想起 / 改口 / 合并 / 底牌；`note` 是写之前挑：关于聊天本身的不记、重复的加固旧的、规律和相处方式各 20 条上限，决定 19；重复的事记次数、攒到 3 / 6 / 12 回夜里改写成大意，决定 20）、`retrieval`（召回：两道门 + 三项打分；`BigramEmbedder` 不用模型）、`window`（最近 N 轮 + 折叠）、`episodes`（一次聊天）、`prospective`（惦记）、`relationship`（关系账）、`diary` | 能用，30 个测试 |
+| `urges/` | 念头（决定 46）：她为什么想做一件事、有多想，不调模型；`urge.py` 是一个念头长什么样（`Urge`）和它看什么（`Scene`）；`him.py` 是想找他说话的六种由头（见闻、惦记到日子、他很久没来、纪念日、无聊、家里的事，10-31 从 `brain/reach.py` 原样搬来）；`rules.py` 是数字。`brain/reach.py` 问它 | 能用，`tests/test_urges.py` |
 | `mood/` | 性格最快的一层（决定 13）：`node.py` 的 `MoodNode` 是唯一改心情的：听 `MoodMoved`（加减）、`Chatted`（一轮聊天的微调和心情日志）、`Rested`（夜里回到这阵子的基线）；精力、无聊、饿每轮变，时钟加偏移不存，`log` 每轮记一行，`rest(tone, drive)` 夜里回到阶段定的基线；`stage_of` 按亲近值分档 | 能用 |
 | `memory/recollect.py`、`memory/daychat.py` | 节点化第 2 步：记忆节点给大脑的唯一回答。`Recollector.recollect` 是"他这句话让她想起什么"（底牌、碰到的、约定、召回、翻聊天摘要、"今天"一节、到期惦记、见闻、日记、阶段）；`day_chat` 是今天聊过的哪些还留原文（决定 32） | 能用 |
 | `memory/when.py` | 按时间想起（第二版第 5 步）："昨晚""上周三""一月初"读成日子，那几天的记忆算相关（时间越窄加得越多）；`TimeCued` 包在别的找法外面，第三版第 2 步起每轮聊天都用。第三版第 3 步加了反过来的：`day_of` 读一条笔记说的是哪天（"明天""下下周二"也认，填 `happened_on`）、`fix_weekday` 把和旁边"周X"对不上的日期挪过去、`spoken` 把日子说成"上周三 1月13日" | 能用 |
@@ -43,4 +44,4 @@
 | `routines/stickers.py` | 送她表情包：`import_folder` 把一个文件夹的图拷进收件箱，`adopt_inbox` 一张张让她起叫法收下（`fish stickers` 当场全收，夜里一晚 10 张） | 能用 |
 | `__main__.py` | `python3 -m fish [chat \| nightly \| browse \| show \| stickers [文件夹] \| cottage [put 东西 \| sill 东西] \| wechat [login]]` | 能跑 |
 
-依赖方向：`channels → brain → {persona, memory, mood, world, cottage} → storage`；`routines → {memory, mood, brain, world}`；`world` 只用标准库。`brain/`、`memory/`、`mood/` 不许 import `channels/`（`tests/test_skeleton.py` 查）；`memory/` 里没有任何模型调用，所以它的测试不用密钥。
+依赖方向：`channels → brain → {persona, memory, mood, world, cottage, urges} → storage`；`urges → {memory, mood}`；`routines → {memory, mood, brain, world}`；`world` 只用标准库。`brain/`、`memory/`、`mood/` 不许 import `channels/`（`tests/test_skeleton.py` 查）；`memory/` 里没有任何模型调用，所以它的测试不用密钥。

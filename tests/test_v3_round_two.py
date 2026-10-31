@@ -16,6 +16,7 @@ from fish.brain import Brain, Consolidator, FakeLLM
 from fish.brain.parse import clean_say, cut_say, parse_reply, parse_retry
 from fish.brain.prompt import PROMPTS_DIR, render_pacts
 from fish.brain.reach import Reacher, Triggers
+from fish.urges import HIM, Urge
 from fish.brain.respond import FALLBACK_SAY, PLAIN_REMINDER
 from fish.config import Settings
 from fish.memory import MemoryStore, asks_pact, asks_recall, echoes_her, his_line, triggered
@@ -134,7 +135,7 @@ def test_an_empty_retry_says_she_drifted_off(tmp_path):
 
 def test_what_she_says_first_is_cleaned_too(tmp_path):
     llm = FakeLLM([json.dumps({"say": "在干嘛\n\nmood：无聊"}, ensure_ascii=False)])
-    out = Reacher(llm, PERSONA).decide(T0, Mood(0.5, 0.5, 0.5), Triggers(bored=True), [])
+    out = Reacher(llm, PERSONA).decide(T0, Mood(0.5, 0.5, 0.5), Triggers([Urge(HIM, "bored", "你有点无聊")]), [])
     assert out is not None and out.text == "在干嘛"
 
 

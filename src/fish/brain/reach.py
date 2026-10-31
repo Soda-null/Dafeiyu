@@ -6,9 +6,9 @@ that it only paces how often the thought crosses her mind: a random 20–60 minu
 last thought of it, or after he last wrote, so a running chat is not cut into. No gaps between
 messages and no daily cap unless FISH_REACH_MAX sets one (decisions 30, 31).
 
-Then a trigger must exist: something she saw today worth sharing, a follow-up that came due,
-a long silence, an anniversary, something that happened at home (decision 26), or plain
-boredom. Only then is the model asked once whether she feels like saying something, and
+Then a trigger must exist: an urge to text him (urges/, decision 46: something she saw today
+worth sharing, a follow-up that came due, a long silence, an anniversary, something that
+happened at home, or plain boredom). Only then is the model asked once whether she feels like saying something, and
 what. She is told how long ago he wrote and how many of her messages are still unanswered;
 whether to say anything, and how often, is her call.
 """
@@ -30,37 +30,47 @@ from fish.brain.parse import clean_say, texting
 from fish.brain.prompt import WEEKDAYS
 from fish.config import Settings, owner_words
 from fish.cottage import RoomNode, asleep_hours
-from fish.memory import (DUE_SHOWN, Followup, Memory, MemoryStore, ProspectiveStore, Relationship, Window, iso,
-                         last_his_message)
+from fish.memory import Followup, Memory, Relationship, Window, iso, last_his_message
 from fish.mood import Mood, MoodStore
 from fish.msgs import SheSaid, TimePassed
+from fish.urges import Scene, Urge, about_him
 
 THINK_PAUSE_MINUTES = (20, 60)  # how long until the thought "should I text him" comes back
 HOME_LATELY = timedelta(hours=1)  # cottage events still fresh enough to mention
-SILENCE_TRIGGER_HOURS = 18
 # WeChat drops bot messages to someone silent for 24 h without telling us (community docs),
 # so after this long she cannot reach him and waits.
 WINDOW_HOURS = 23
-BORED_LEVEL, BORED_SILENCE_HOURS = 60, 6
-SHARE_IMPORTANCE = 4
-ANNIVERSARIES = (7, 30, 100, 365, 730)
 
 
 @dataclass
 class Triggers:
-    seen: list[Memory] = field(default_factory=list)
-    due: list[Followup] = field(default_factory=list)
+    urges: list[Urge] = field(default_factory=list)  # her urges to text him, in the order she is told them
     silence_hours: float = 0.0
-    anniversary: int | None = None
-    bored: bool = False
-    home: list[str] = field(default_factory=list)  # what happened in her cottage lately
     unanswered: int = 0  # her own first messages since he last wrote
     last_sent_hours: float | None = None  # how long ago she last texted first
 
     @property
     def any(self) -> bool:
-        return bool(self.seen or self.due or self.silence_hours >= SILENCE_TRIGGER_HOURS
-                    or self.anniversary or self.bored or self.home)
+        return bool(self.urges)
+
+    def _refs(self, source: str) -> list:
+        return [u.ref for u in self.urges if u.source == source]
+
+    @property
+    def seen(self) -> list[Memory]:
+        return self._refs("seen")
+
+    @property
+    def due(self) -> list[Followup]:
+        return self._refs("due")
+
+    @property
+    def anniversary(self) -> int | None:
+        return next(iter(self._refs("anniversary")), None)
+
+    @property
+    def home(self) -> list[str]:
+        return self._refs("home")
 
 
 @dataclass(frozen=True)
@@ -154,18 +164,11 @@ class ReachPolicy:
 
     def triggers(self, now: datetime, mood: Mood, home: list[str] | None = None) -> Triggers:
         """home: lines from her cottage's record for the last few hours, when she has one."""
-        store = MemoryStore(self.conn)
         his = self.last_his_message()
         silence = (now - his).total_seconds() / 3600 if his else 0.0
-        shared = self.shared_ids()
-        seen = [m for m in store.seen_recently(now, 1)
-                if m.importance >= SHARE_IMPORTANCE and m.id not in shared][:3]
-        due = ProspectiveStore(self.conn).due(now)[:DUE_SHOWN]
-        known = self.kv.days_known(now)
-        anniversary = known if known in ANNIVERSARIES or (known > 0 and known % 100 == 0) else None
-        bored = mood.boredom >= BORED_LEVEL and silence >= BORED_SILENCE_HOURS
+        urges = about_him(Scene(self.conn, now, mood, tuple(home or ()), frozenset(self.shared_ids())))
         last_sent = self._dt("reach_last_sent")
-        return Triggers(seen, due, silence, anniversary, bored, list(home or []), self.unanswered(),
+        return Triggers(urges, silence, self.unanswered(),
                         (now - last_sent).total_seconds() / 3600 if last_sent else None)
 
 
@@ -179,19 +182,7 @@ class Reacher:
     def decide(self, now: datetime, mood: Mood, trig: Triggers, recent: list[str], room: str = "") -> ReachOut | None:
         """room: her room as it is now (10-29: with only "他在窗台上放了一本《雪国》" to go by she
         texted "冰箱里那本《雪国》是你放的吧")."""
-        reasons: list[str] = []
-        for m in trig.seen:
-            reasons.append(f"- 今天看到的（见闻 #{m.id}）：{m.text}")
-        for f in trig.due:
-            reasons.append(f"- 惦记的事到日子了（惦记 #{f.id}）：{f.text}")
-        if trig.silence_hours >= SILENCE_TRIGGER_HOURS:
-            reasons.append(owner_words(f"- 他有 {int(trig.silence_hours)} 个小时没来找你了"))
-        if trig.anniversary:
-            reasons.append(f"- 今天是你们认识的第 {trig.anniversary} 天")
-        if trig.bored:
-            reasons.append("- 你有点无聊")
-        for line in trig.home:
-            reasons.append(f"- 家里的事：{line}")
+        reasons = [f"- {u.line}" for u in trig.urges]
         since = owner_words(f"他上次找你是{ago(trig.silence_hours)}。")
         if trig.unanswered and trig.last_sent_hours is not None:
             since += owner_words(f"你前面主动发的 {trig.unanswered} 条他还没回，最近一条是{ago(trig.last_sent_hours)}发的。")
