@@ -54,6 +54,7 @@ class LakeMixin:
         """Back from the pier: what she saw goes into the record."""
         seen = sight(datetime.fromisoformat(room.pending["lake"]))
         self.note(room, done, f"{BACK}，坐了半个钟头，看见{seen}", change, routine=room.pending.get("routine", False))
+        room.been["lake"] = done.isoformat(timespec="minutes")
         room.pending = {}
 
 

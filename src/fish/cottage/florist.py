@@ -85,6 +85,7 @@ class FloristMixin:
         if missing:
             line += f"（想要的{'、'.join(missing)}没有）"
         self.note(room, done, line, change, routine=room.pending.get("routine", False))
+        room.been["florist"] = done.isoformat(timespec="minutes")
         room.pending = {}
 
     @classmethod

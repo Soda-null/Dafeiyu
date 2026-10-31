@@ -770,3 +770,26 @@ def test_his_words_of_going_home_send_him_home_when_her_reply_forgets():
 
     assert leaving_words("我先回去啦，明天见") and leaving_words("到家了") and leaving_words("我走了哦")
     assert not leaving_words("我回去拿个东西再来") and not leaving_words("今晚吃啥")
+
+
+def test_what_she_half_wants_is_told_before_she_picks(tmp_path):
+    """Decision 46: an urge that clears its threshold, for something on the menu, is a section
+    of the prompt; she still picks, and going out is remembered for the next time."""
+    conn = connect(tmp_path / "fish.db")
+    s = Settings(api_key="t", base_url="", model="fake", db_path=tmp_path / "fish.db", cottage=True)
+    prompts = []
+
+    def respond(messages, json_mode):
+        content = messages[-1]["content"]
+        prompts.append(content)
+        n = next(line.split(".")[0] for line in content.splitlines() if "小码头" in line and line[0].isdigit())
+        return json.dumps({"pick": int(n), "why": "想看看湖"}, ensure_ascii=False)
+
+    brain = Brain(conn, s, FakeLLM(respond), persona_text="你是大肥鱼。")
+    brain.cottage.load(MON)
+    brain.leisure = Leisure(brain, [CottageActivity(brain.cottage)], rng=random.Random(0), sources=[])
+    at = datetime(2026, 11, 2, 15, 0)
+    assert brain.free_time(at).result == "出门去湖边码头坐一会儿"
+    assert "## 你心里有点想做的\n- 去湖边码头坐坐：你还没去过湖边码头\n" in prompts[0]
+    brain.cottage.advance(at + timedelta(minutes=31))
+    assert brain.cottage.been(at + timedelta(minutes=31))["lake"] == "2026-11-02T15:30"

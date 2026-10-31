@@ -41,6 +41,7 @@ class ShopMixin:
         self._pick(room, done - timedelta(minutes=SHOP_WALK_MINUTES))  # if no tick fell in the shop
         line = "从菜店回来了，" + self._unpack(room, done).removeprefix("去菜店")
         self.note(room, done, line, change, routine=room.pending.get("routine", False))
+        room.been["shop"] = _iso(done)
         room.pending = {}
 
     @staticmethod

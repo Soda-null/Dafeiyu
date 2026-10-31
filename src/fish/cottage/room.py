@@ -104,6 +104,7 @@ class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin, Ga
         if now <= last:
             return change
         awake = _awake_hours(last, now)
+        room.been.setdefault("since", room.last or _iso(now))  # going out is counted from here (decision 46)
         self._shop_on_the_way(room, now)  # done choosing: the bag is packed
         change.hunger += HUNGER_PER_HOUR * awake
         change.energy -= ENERGY_PER_HOUR * awake
@@ -231,6 +232,10 @@ class Cottage(ActionsMixin, ShopMixin, VisitorMixin, DrawerMixin, GuestMixin, Ga
         # "买了米和鸡蛋" while the room never left, then "我去把米缸填上" with no rice to pour)
         out.append("你今天在家：" + "；".join(done) + "。" if done else "你今天在家还什么都没做。")
         return "\n".join(out)
+
+    def been(self, now: datetime) -> dict[str, str]:
+        """When she was last back from each place, and since when that is kept (decision 46)."""
+        return dict(self.load(now).been)
 
     def menu_for_chat(self, now: datetime, hunger: float, energy: float) -> str:
         """What she could start right now, by key, for a chat turn (decision 35). "" when she is

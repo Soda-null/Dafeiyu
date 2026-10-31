@@ -21,8 +21,9 @@ from fish.cottage import invented_act, layout
 from fish.brain.prompt import WEEKDAYS
 from fish.brain.world import Browser
 from fish.memory import MemoryStore, Moment, Pastimes, last_his_message
-from fish.mood import MoodStore
+from fish.mood import Mood, MoodStore
 from fish.msgs import MoodMoved, SheSaid, TimePassed
+from fish.urges import Scene, wanted
 from fish.world import Fetch, Searcher, load_sources, urllib_fetch
 
 if TYPE_CHECKING:
@@ -112,11 +113,11 @@ class Leisure:
         kit = self.kit(now)
         moment_id = kit.pastimes.begin_moment(now)
         choices = self.menu(kit)
-        data = ask_json(brain.llm, "leisure_choose", persona=brain.persona, now=self.when(now),
-                        mood=MoodStore.apply_clock(brain.moods.load(), now, kitchen=brain.cottage is not None).describe(),
+        mood = MoodStore.apply_clock(brain.moods.load(), now, kitchen=brain.cottage is not None)
+        data = ask_json(brain.llm, "leisure_choose", persona=brain.persona, now=self.when(now), mood=mood.describe(),
                         threads="\n".join(f"- {m.line()}" for m in kit.store.alive("self")[-5:]) or "（没什么特别的）",
-                        earlier=self.earlier(kit, now), home=self.home(now), menu=render_menu(choices),
-                        temperature=1.0)
+                        earlier=self.earlier(kit, now), home=self.home(now), wants=self.wants(kit, mood, choices),
+                        menu=render_menu(choices), temperature=1.0)
         pick = (data or {}).get("pick")
         if not isinstance(pick, int) or not 1 <= pick <= len(choices):
             kit.pastimes.end_moment(moment_id, "nothing", NOTHING.line, "（没想好）")
@@ -183,6 +184,21 @@ class Leisure:
             return "## 你的小屋\n" + layout() + "\n\n屋里现在：\n" + cottage.for_leisure(now) + "\n"
         except ValueError:
             return ""
+
+    def wants(self, kit: Kit, mood: Mood, choices: list[Choice]) -> str:
+        """What she half wants to do (decision 46), among what is on the menu now: a section of
+        its own, or nothing. She still picks."""
+        cottage = self.brain.cottage
+        if cottage is None:
+            return ""
+        on_menu = {c.payload.get("action") for c in choices if c.payload}
+        try:
+            urges = [u for u in wanted(Scene(kit.conn, kit.now, mood, been=cottage.been(kit.now))) if u.about in on_menu]
+        except ValueError:
+            return ""
+        if not urges:
+            return ""
+        return "## 你心里有点想做的\n" + "\n".join(f"- {u.line}" for u in urges) + "\n\n"
 
     @staticmethod
     def when(now: datetime) -> str:

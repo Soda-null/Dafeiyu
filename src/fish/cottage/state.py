@@ -46,6 +46,7 @@ class Room:
     grew: str = ""  # the last morning the pots grew
     tank: dict = field(default_factory=dict)  # her goldfish: {"name", "since", "from", "fed", "water"} (decision 43)
     flowers: list[dict] = field(default_factory=list)  # from the flower shop, on the sill: {"name", "bought", "watered"} (decision 45)
+    been: dict = field(default_factory=dict)  # when she was last back from each place ({"lake": ts}), and "since" it was kept (decision 46)
     events: list[dict] = field(default_factory=list)  # {"ts", "line"}, the last two days
     last: str = ""  # up to when time has moved the room
 
